@@ -8,7 +8,7 @@ use crate::{
 use rsxp::{graphics::Bitmap, input::Input};
 use serde_json::{json, Value};
 use std::{
-    net::TcpListener,
+    net::{TcpListener, TcpStream},
     process::{Child, Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -88,6 +88,14 @@ fn forward_output(
     }
 }
 
+fn accept_runner(listener: &TcpListener) -> std::io::Result<TcpStream> {
+    let (stream, _) = listener.accept()?;
+    // BSD/macOS inherits O_NONBLOCK from the listener. The framed protocol
+    // uses blocking read_exact/write_all on its dedicated transport thread.
+    stream.set_nonblocking(false)?;
+    Ok(stream)
+}
+
 impl Session {
     fn start(args: &[String]) -> Result<Self, String> {
         let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(|e| e.to_string())?;
@@ -148,8 +156,8 @@ impl Session {
                     if stop.load(Ordering::Relaxed) {
                         return Ok(());
                     }
-                    match listener.accept() {
-                        Ok((s, _)) => break s,
+                    match accept_runner(&listener) {
+                        Ok(s) => break s,
                         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                             if start.elapsed() > Duration::from_secs(30) {
                                 return Err("Game did not connect within 30 seconds".into());
@@ -577,6 +585,39 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runner_connection_waits_for_fragmented_messages() {
+        use std::io::Write;
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        let mut server = loop {
+            match accept_runner(&listener) {
+                Ok(stream) => break stream,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(std::time::Instant::now() < deadline);
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                Err(error) => panic!("{error}"),
+            }
+        };
+        server
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        let payload = br#"{"poll":true}"#;
+        let length = (payload.len() as u32).to_le_bytes();
+        client.write_all(&length[..2]).unwrap();
+        let writer = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            client.write_all(&length[2..]).unwrap();
+            client.write_all(payload).unwrap();
+        });
+        let result = read_message(&mut server);
+        writer.join().unwrap();
+        assert_eq!(result.unwrap(), json!({"poll":true}));
+    }
 
     #[test]
     fn crash_output_reaches_terminal_and_survives_pipe_eof() {

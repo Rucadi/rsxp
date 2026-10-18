@@ -28,6 +28,8 @@ pkgs.rustPlatform.buildRustPackage {
   };
 
   cargoLock.lockFile = ./Cargo.lock;
+  # A few relay tests share process-global state and assume serial execution.
+  cargoTestThreads = 1;
   # Cargo emits release debuginfo for perf; preserve it during Nix fixup too.
   dontStrip = true;
   buildInputs = runtimeLibraries ++ [ pkgs.ruby ];

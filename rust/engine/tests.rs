@@ -173,15 +173,24 @@ fn rejects_bad_scripted_input() {
     assert!(parse_scripted("1:2:3:4").is_err());
 }
 
-/// Loads a real animated GIF from the bundled test game and checks the engine
-/// decoder composes frames the RGSS bitmap animation API can drive.
+/// Checks the engine decoder composes GIF frames for the RGSS bitmap animation API.
 #[test]
 fn animated_gif_decodes_and_advances_frames() {
-    let path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/ericlostie/Graphics/UI/evolution_bg.gif"
-    );
-    let bytes = std::fs::read(path).expect("gif fixture should exist");
+    // Two 1x1 frames with different colors; generated in memory so the test
+    // does not depend on assets from a bundled game.
+    let mut bytes = Vec::new();
+    {
+        let mut encoder = gif::Encoder::new(&mut bytes, 1, 1, &[0xff, 0, 0, 0, 0xff, 0]).unwrap();
+        encoder.set_repeat(gif::Repeat::Infinite).unwrap();
+        for color in [0, 1] {
+            let mut frame = gif::Frame::default();
+            frame.width = 1;
+            frame.height = 1;
+            frame.delay = 10;
+            frame.buffer = vec![color].into();
+            encoder.write_frame(&frame).unwrap();
+        }
+    }
     assert!(crate::media::gif::is_gif(&bytes), "fixture should be a GIF");
     let mut bitmap = crate::media::gif::decode(&bytes).expect("gif should decode");
     assert!(bitmap.animated(), "fixture should be animated");

@@ -132,20 +132,41 @@ def mac_dependencies(executable, ruby, contents):
         run("codesign", "--force", "--sign", "-", str(path))
 
 
+# MinGW runtime DLLs the GNU linker pulls into `*-windows-gnu` binaries. They
+# live next to the cross `gcc`, not in Ruby's bin, so bundle them explicitly.
+MINGW_RUNTIME_DLLS = (
+    "libgcc_s_seh-1.dll",
+    "libstdc++-6.dll",
+    "libwinpthread-1.dll",
+    "libssp-0.dll",
+    "libatomic-1.dll",
+    "libgomp-1.dll",
+)
+
+
 def windows_dependencies(executable, ruby):
     destination = executable.parent
     # Prefer the MinGW PE-aware objdump over whatever else is on PATH.
     objdump = shutil.which("x86_64-w64-mingw32-objdump") or shutil.which("objdump")
     if objdump is None:
         raise RuntimeError("objdump is required to bundle Windows DLLs")
-    search = [Path(ruby["bin"])] + [Path(p) for p in os.environ["PATH"].split(os.pathsep)]
+    compiler = shutil.which("x86_64-w64-mingw32-gcc") or shutil.which("gcc")
+    toolchain = Path(compiler).parent if compiler else None
+    search = [Path(ruby["bin"])]
+    if toolchain is not None:
+        search.append(toolchain)
+    search += [Path(p) for p in os.environ["PATH"].split(os.pathsep)]
     system = Path(os.environ["SystemRoot"]).resolve()
+    # Ruby loads its own runtime DLLs dynamically; the GNU toolchain supplies
+    # the MinGW runtime. Copy both before scanning so their imports are covered.
+    bundled = list(Path(ruby["bin"]).glob("*.dll"))
+    if toolchain is not None:
+        bundled += [toolchain / name for name in MINGW_RUNTIME_DLLS]
+    for path in bundled:
+        if path.is_file() and not (destination / path.name).exists():
+            copy(path, destination / path.name)
     queue = [executable]
     queue.extend(p for p in destination.rglob("*") if p.suffix.lower() in (".dll", ".so"))
-    # Ruby may load these dynamically, so include its runtime DLLs up front.
-    for path in Path(ruby["bin"]).glob("*.dll"):
-        copy(path, destination / path.name)
-        queue.append(destination / path.name)
     done = set()
     while queue:
         path = queue.pop()

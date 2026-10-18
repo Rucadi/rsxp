@@ -29,7 +29,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: cachix/install-nix-action@v31
-      - uses: cachix/cache-nix-action@v6
+      - uses: nix-community/cache-nix-action@v6
         with:
           primary-key: nix-linux-${{ hashFiles('flake.lock', 'Cargo.lock', '**/*.nix') }}
           restore-prefixes-first-match: nix-linux-
@@ -98,31 +98,21 @@ jobs:
       - name: Build desktop
         env:
           BUILD_TARGET: ${{ matrix.target }}
-        run: |
-          if [ "$RUNNER_OS" = Windows ]; then
-            ridk exec cargo build --locked --release --bin rsxp --target "$BUILD_TARGET"
-          else
-            cargo build --locked --release --bin rsxp --target "$BUILD_TARGET"
-          fi
+        run: cargo build --locked --release --bin rsxp --target "$BUILD_TARGET"
       - name: Smoke-test desktop and embedded Ruby
         env:
           BUILD_TARGET: ${{ matrix.target }}
           EXE_SUFFIX: ${{ matrix.suffix }}
         run: |
           binary="target/$BUILD_TARGET/release/rsxp$EXE_SUFFIX"
-          if [ "$RUNNER_OS" = Windows ]; then
-            ridk exec "$binary" --version
-            ridk exec "$binary" run --script rust/testdata/rgss_smoke.rb --headless
-          else
-            "$binary" --version
-            "$binary" run --script rust/testdata/rgss_smoke.rb --headless
-          fi
+          "$binary" --version
+          "$binary" run --script rust/testdata/rgss_smoke.rb --headless
       - name: Bundle Ruby and native dependencies
         env:
           BUILD_TARGET: ${{ matrix.target }}
         run: |
           if [ "$RUNNER_OS" = Windows ]; then
-            ridk exec python tools/package-runtime.py "target/$BUILD_TARGET/release/rsxp.exe" artifacts/windows
+            python tools/package-runtime.py "target/$BUILD_TARGET/release/rsxp.exe" artifacts/windows
           else
             python tools/package-runtime.py "target/$BUILD_TARGET/release/rsxp" artifacts/macos
           fi
@@ -186,7 +176,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: cachix/install-nix-action@v31
-      - uses: cachix/cache-nix-action@v6
+      - uses: nix-community/cache-nix-action@v6
         with:
           primary-key: nix-browser-${{ hashFiles('flake.lock', 'Cargo.lock', 'web/**/Cargo.lock', '**/*.nix') }}
           restore-prefixes-first-match: nix-browser-

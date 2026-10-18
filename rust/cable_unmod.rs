@@ -536,21 +536,27 @@ mod tests {
         start("127.0.0.1", port).unwrap();
 
         let mut first = TcpStream::connect(("127.0.0.1", port)).unwrap();
-        let mut second = TcpStream::connect(("127.0.0.1", port)).unwrap();
         first
             .set_read_timeout(Some(Duration::from_secs(2)))
             .unwrap();
-        second
-            .set_read_timeout(Some(Duration::from_secs(2)))
-            .unwrap();
+        let mut first_reader = BufReader::new(first.try_clone().unwrap());
         first
             .write_all(b"find,1.0.0,2,Alice,1,TRAINER,0,0,1,Pkmn\n")
             .unwrap();
+        // Each client is served by its own thread, so wait for Alice to be
+        // queued before Bob searches. Otherwise the two `find` records can be
+        // processed out of order and swap the 0/1 slots in `found`.
+        wait_until_searching("Alice");
+
+        let mut second = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        second
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        let mut second_reader = BufReader::new(second.try_clone().unwrap());
         second
             .write_all(b"find,1.0.0,1,Bob,2,TRAINER,0,0,1,Eevee\n")
             .unwrap();
-        let mut first_reader = BufReader::new(first.try_clone().unwrap());
-        let mut second_reader = BufReader::new(second.try_clone().unwrap());
+
         let mut received = String::new();
         first_reader.read_line(&mut received).unwrap();
         assert_eq!(received.trim_end(), "found,0,Bob,TRAINER,0,0,1,Eevee,0");
@@ -563,5 +569,20 @@ mod tests {
         second_reader.read_line(&mut received).unwrap();
         assert_eq!(received.trim_end(), "battle,turn,1");
         stop();
+    }
+
+    fn wait_until_searching(name: &str) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !status()
+            .clients
+            .iter()
+            .any(|client| client.name == name && client.state == "searching")
+        {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "{name} never reached the searching state"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
     }
 }

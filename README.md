@@ -118,7 +118,9 @@ The repository's `Build` GitHub Actions workflow runs on pushes, pull requests,
 and manual dispatch. It produces desktop `rsxp` and self-contained `rsxp-web`
 archives for Linux x86-64, Windows x86-64, and macOS ARM64, plus the reusable
 `player.html`. Download them from the workflow run's Artifacts section.
-Desktop archives require matching shared MRI Ruby 3.4 and platform libraries;
-see their `RUNTIME.txt`. They are not standalone installers. macOS builds are
-unsigned. The web executables include the browser runtime and require no Ruby
-installation. Games are not included in any CI artifact.
+The desktop builds bundle MRI Ruby 3.4 and their native libraries: Linux ships
+a Nix AppImage, Windows a portable `.zip` (executable plus DLLs, no installer),
+and macOS a drag-to-Applications `.dmg`. macOS builds are only ad-hoc signed, so
+Gatekeeper requires a right-click → Open (or clearing the quarantine attribute)
+on first launch. The web executables include the browser runtime and require no
+Ruby installation. Games are not included in any CI artifact.

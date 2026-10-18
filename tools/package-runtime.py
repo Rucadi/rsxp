@@ -134,6 +134,10 @@ def mac_dependencies(executable, ruby, contents):
 
 def windows_dependencies(executable, ruby):
     destination = executable.parent
+    # Prefer the MinGW PE-aware objdump over whatever else is on PATH.
+    objdump = shutil.which("x86_64-w64-mingw32-objdump") or shutil.which("objdump")
+    if objdump is None:
+        raise RuntimeError("objdump is required to bundle Windows DLLs")
     search = [Path(ruby["bin"])] + [Path(p) for p in os.environ["PATH"].split(os.pathsep)]
     system = Path(os.environ["SystemRoot"]).resolve()
     queue = [executable]
@@ -148,7 +152,10 @@ def windows_dependencies(executable, ruby):
         if path in done:
             continue
         done.add(path)
-        for name in re.findall(r"DLL Name:\s*(\S+)", output("objdump", "-p", str(path))):
+        names = re.findall(r"DLL Name:\s*(\S+)", output(objdump, "-p", str(path)))
+        if path == executable and not names:
+            raise RuntimeError("objdump reported no imports for the executable")
+        for name in names:
             if name.lower().startswith(("api-ms-", "ext-ms-")):
                 continue
             existing = destination / name

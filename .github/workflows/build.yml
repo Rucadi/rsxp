@@ -43,8 +43,11 @@ jobs:
           chmod +x artifacts/rsxp-linux-x86_64.AppImage
       - name: Smoke-test AppImage without a Nix store
         run: |
+          # The nix-appimage AppRun uses an unprivileged user namespace plus
+          # chroot; Docker's default seccomp/AppArmor profiles block that.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          docker run --rm -v "$PWD:/work" -w /work ubuntu:24.04 \
+          docker run --rm --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
+            -v "$PWD:/work" -w /work ubuntu:24.04 \
             bash -ec 'export APPIMAGE_EXTRACT_AND_RUN=1; \
               artifacts/rsxp-linux-x86_64.AppImage --version; \
               artifacts/rsxp-linux-x86_64.AppImage run --script tools/package-smoke.rb --headless'
@@ -117,54 +120,66 @@ jobs:
             python tools/package-runtime.py "target/$BUILD_TARGET/release/rsxp" artifacts/macos
           fi
       - name: Test relocated runtime without development environment
+        if: runner.os == 'macOS'
         run: |
-          if [ "$RUNNER_OS" = Windows ]; then
-            mv artifacts/windows 'artifacts/Relocated RSXP'
-            binary="$PWD/artifacts/Relocated RSXP/rsxp.exe"
-          else
-            mv artifacts/macos 'artifacts/Relocated RSXP'
-            binary="$PWD/artifacts/Relocated RSXP/RSXP.app/Contents/MacOS/rsxp"
-          fi
+          mv artifacts/macos 'artifacts/Relocated RSXP'
+          binary="$PWD/artifacts/Relocated RSXP/RSXP.app/Contents/MacOS/rsxp"
           env -u RUBYLIB -u GEM_HOME -u GEM_PATH -u DYLD_LIBRARY_PATH -u LD_LIBRARY_PATH \
             PATH=/usr/bin:/bin "$binary" --version
           env -u RUBYLIB -u GEM_HOME -u GEM_PATH -u DYLD_LIBRARY_PATH -u LD_LIBRARY_PATH \
             PATH=/usr/bin:/bin "$binary" run --script "$PWD/tools/package-smoke.rb" --headless
-          if [ "$RUNNER_OS" = Windows ]; then
-            mv 'artifacts/Relocated RSXP' artifacts/windows
-          else
-            mv 'artifacts/Relocated RSXP' artifacts/macos
-          fi
-      - name: Build macOS installer
+          mv 'artifacts/Relocated RSXP' artifacts/macos
+      - name: Build and test macOS disk image
         if: runner.os == 'macOS'
         run: |
-          pkgbuild --component artifacts/macos/RSXP.app --install-location /Applications \
-            --identifier org.rsxp.engine --version 0.1.0 artifacts/rsxp-macos-arm64.pkg
-          pkgutil --expand-full artifacts/rsxp-macos-arm64.pkg artifacts/pkg-expanded
-          binary=$(find artifacts/pkg-expanded -path '*/RSXP.app/Contents/MacOS/rsxp' -type f -print -quit)
-          test -n "$binary"
+          # The app bundles its own Ruby and libraries, so it ships as a normal
+          # drag-to-Applications disk image rather than a system installer.
+          mkdir -p artifacts/dmg
+          ditto artifacts/macos/RSXP.app artifacts/dmg/RSXP.app
+          ln -s /Applications artifacts/dmg/Applications
+          hdiutil create -volname RSXP -srcfolder artifacts/dmg -ov -format UDZO \
+            artifacts/rsxp-macos-arm64.dmg
+          rm -rf artifacts/dmg
+          # Mount the image and copy the app out, exactly like dragging it to
+          # /Applications, then smoke-test the relocated copy.
+          mount=$(mktemp -d)
+          install=$(mktemp -d)
+          hdiutil attach artifacts/rsxp-macos-arm64.dmg -nobrowse -readonly -mountpoint "$mount"
+          test -d "$mount/RSXP.app"
+          ditto "$mount/RSXP.app" "$install/RSXP.app"
+          hdiutil detach "$mount"
           env -u RUBYLIB -u GEM_HOME -u GEM_PATH PATH=/usr/bin:/bin \
-            "$binary" run --script "$PWD/tools/package-smoke.rb" --headless
-      - name: Build and test Windows installer
+            "$install/RSXP.app/Contents/MacOS/rsxp" run --script "$PWD/tools/package-smoke.rb" --headless
+          rm -rf "$install" "$mount"
+      - name: Test and package Windows portable build
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (!(Test-Path $compiler)) { throw "Inno Setup 6 is missing from the runner" }
-          & $compiler tools/windows-installer.iss
-          if ($LASTEXITCODE -ne 0) { throw "Installer compilation failed" }
-          $install = Join-Path $env:RUNNER_TEMP 'RSXP installed test'
-          $process = Start-Process artifacts/rsxp-windows-x86_64-setup.exe -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$install`"") -Wait -PassThru
-          if ($process.ExitCode -ne 0) { throw "Installation failed: $($process.ExitCode)" }
-          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          # Ship the executable plus its DLLs as a portable folder; no installer.
+          $portable = Join-Path $env:RUNNER_TEMP 'RSXP portable test'
+          New-Item -ItemType Directory -Force -Path $portable | Out-Null
+          Copy-Item -Recurse -Force artifacts/windows/* $portable
+          # Restrict PATH to the bundled files and Windows itself so the test
+          # proves nothing is needed from the build toolchain.
+          $env:PATH = "$portable;$env:SystemRoot\System32;$env:SystemRoot"
           Remove-Item Env:RUBYLIB,Env:GEM_HOME,Env:GEM_PATH -ErrorAction SilentlyContinue
-          & "$install\rsxp.exe" run --script "$PWD/tools/package-smoke.rb" --headless
-          if ($LASTEXITCODE -ne 0) { throw "Installed runtime failed" }
+          & "$portable\rsxp.exe" --version
+          if ($LASTEXITCODE -ne 0) {
+            Get-ChildItem $portable | Select-Object Name | Out-String | Write-Host
+            throw "portable rsxp --version failed ($LASTEXITCODE)"
+          }
+          & "$portable\rsxp.exe" run --script "$PWD/tools/package-smoke.rb" --headless
+          if ($LASTEXITCODE -ne 0) { throw "portable runtime smoke test failed" }
+          $stage = 'artifacts/rsxp-windows-x86_64'
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item -Recurse -Force artifacts/windows/* $stage
+          Compress-Archive -Path $stage -DestinationPath artifacts/rsxp-windows-x86_64.zip -Force
       - uses: actions/upload-artifact@v4
         with:
           name: rsxp-${{ matrix.platform }}
           path: |
-            artifacts/*.pkg
-            artifacts/*-setup.exe
+            artifacts/*.dmg
+            artifacts/*.zip
           if-no-files-found: error
 
   browser:

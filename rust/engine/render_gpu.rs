@@ -1,5 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Translate RGSS scene resources into GPU draws, with compatibility fallback.
+//!
+//! `render_gpu` returns `Ok(false)` (so the caller runs the software renderer)
+//! when no GPU host is present, or when a feature cannot be matched exactly:
+//! fractional plane tiling or pattern sprites with zero pattern zoom. It draws
+//! the retained `scene_plan` from `prepare_scene`, translating viewport groups
+//! into scissor offsets, then overlays the frozen transition frame and the FPS
+//! counter (sentinel bitmap ids `u64::MAX-1`/`u64::MAX-2`), applies brightness
+//! and submits. Sprites use the tiled path only when flagged `native_tile`.
 use super::{Runtime, RuntimePlane, RuntimeSprite, SceneDraw};
 use crate::graphics::{Bitmap, SpriteFx, SpriteTransform};
 use std::{collections::HashMap, time::Instant};

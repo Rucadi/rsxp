@@ -1,6 +1,17 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #![allow(dead_code)]
-//! Code-first OpenAPI contract for the HTTP handlers in `rust/api_bridge.rs`.
+//! Code-first OpenAPI contract for the live game HTTP API.
+//!
+//! This module is compiled into the `rsxp-mcp` binary from `api/main.rs` (via
+//! `#[path = "openapi.rs"]`) and describes the REST handlers implemented in
+//! `rust/api_bridge.rs`. `ApiDoc` aggregates the operation metadata and schemas:
+//! the `#[utoipa::path]` stub functions below give each route its method, tag,
+//! query/path parameters and response bodies, while the `ToSchema` structs
+//! define the shared JSON shapes (game state, maps/tiles, Pokémon Essentials
+//! party/dex/encounter/battle data, and input results). The functions are
+//! documentation-only and intentionally empty. `rsxp-mcp --openapi` (or the
+//! `cargo api-openapi` alias) pretty-prints this contract; the result is checked
+//! in as `api/openapi.json`.
 use utoipa::OpenApi;
 
 #[derive(OpenApi)]

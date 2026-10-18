@@ -1,5 +1,32 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Adapter/device selection, compute pipeline and initial GPU buffers.
+//! Renderer construction: adapter/device selection, the packed-pixel compute
+//! pipeline, and the initial GPU buffers.
+//!
+//! `new` creates its own `wgpu::Instance`; `new_for_surface` accepts an instance
+//! and surface so the chosen adapter is presentation-compatible. `initialize`
+//! requests a high-performance adapter (falling back to none), clamps
+//! `max_storage_buffer_binding_size` to the adapter limit and at most 512 MiB,
+//! and requests a device with no optional features (`Features::empty()`),
+//! `MemoryHints::Performance` and tracing off. It builds the compute pipeline
+//! from `shader.wgsl` and validates creation through an error scope.
+//!
+//! Bind group layout (compute-visible, matching `shader.wgsl`):
+//! - `0` atlas: read-only storage, packed source pixels.
+//! - `1` frame: read-write storage, main + scratch pixels.
+//! - `2` commands: read-only storage, `Params` records (min 256 bytes).
+//! - `3` batch offsets: dynamic-offset uniform (min 16 bytes) selecting a
+//!   batch's first command.
+//! - `4` tile geometry: read-only storage, native tile bins/quads.
+//!
+//! Initial buffers: a 64 KiB atlas, a width*height*8 frame (two `u32` per
+//! pixel: main and scratch), a 256-byte command buffer holding one `Params`,
+//! a 256-byte tile-geometry buffer, and `batch_offsets` sized capacity*256.
+//! `batching` is enabled unless the `RSXP_GPU_BATCH` environment variable is
+//! exactly `"0"` (used to A/B the serial and grouped dispatch paths).
+//!
+//! `frame_buffer` enforces adapter limits: each dimension must fit
+//! `max_compute_workgroups_per_dimension * 8` and the total allocation must not
+//! exceed `max_storage_buffer_binding_size`.
 use super::GpuRenderer;
 use crate::tilemap::TileAtlas;
 use std::{

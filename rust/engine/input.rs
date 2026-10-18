@@ -1,4 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+//! Per-frame keyboard/mouse state and its compact wire snapshot.
+//!
+//! `Input` tracks button edges keyed by SDL scancodes (layout-independent):
+//! held, triggered, released and repeated sets. `begin_frame` clears the
+//! per-frame edges and scroll, while `advance` ages the repeat counters
+//! (`repeat_start` held updates before the first repeat, then every
+//! `repeat_delay`). `copy_state_from` copies another `Input`'s button state
+//! while preserving this instance's repeat counters, and `release_all` drops
+//! every held key (focus loss). `snapshot` serializes the union of active keys
+//! as repeated `i32` little-endian scancode + one flag byte (bit 0 pressed,
+//! bit 1 triggered, bit 2 released, bit 3 repeated) for a single bridge call.
 use std::collections::{HashMap, HashSet};
 
 /// SDL scancodes are independent of the user's keyboard layout.

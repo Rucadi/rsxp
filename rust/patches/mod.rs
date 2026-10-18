@@ -10,6 +10,13 @@
 //! calls its `apply`/`revert`/`value` procs. Because the source only runs when
 //! enabled, a patch can touch game internals without affecting games that never
 //! enable it.
+//!
+//! ## State
+//! The catalog, enabled set and parameter values all live in thread-locals, so
+//! they follow the game thread. The built-in catalog is compiled in; a game may
+//! also drop Ruby files into its `patches/` folder ([`load_user_patches`]), and
+//! [`patches`] reports built-ins followed by those user patches. [`reset`]
+//! clears all state between runs.
 
 use std::borrow::Cow;
 use std::cell::RefCell;

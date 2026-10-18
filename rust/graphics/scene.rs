@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Small owned sprite scene used by the standalone demo.
+//! A small owned sprite scene used by the standalone demo, not the RGSS runtime.
 //! RGSS runtime registries and viewport ordering live in `crate::engine`.
+//!
+//! [`Sprite`] owns its [`Bitmap`], exposes a source rectangle plus x/y/z,
+//! width/height, opacity and visibility, and starts sized to the bitmap.
+//! [`Scene::render`] clears the target to a background colour, keeps only visible
+//! sprites, sorts them by `z`, and draws each with `stretch_blt`. The sort is
+//! stable, so equal-`z` sprites keep creation order (a y tie-breaker would
+//! reorder same-z overlays and windows).
 use super::{Bitmap, Color, Rect};
 
 pub struct Sprite {

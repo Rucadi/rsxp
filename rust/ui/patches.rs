@@ -1,4 +1,20 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+//! Left-hand "Tools" panel: tool selection and the runtime-patch catalog.
+//!
+//! `draw_patches_panel` builds the resizable `workspace-game-panel` side panel.
+//! It shows the logical game size, a row of tool tabs (`Tool::Runtime`,
+//! `Tool::Essentials`, and the feature-gated `Tool::PokeApi` / `Tool::OnlinePlay`),
+//! and dispatches to the matching body:
+//!
+//! * `draw_patch_catalog(ui, user_patches)` lists patches from
+//!   `crate::runtime_patch::patches()`, split into built-in and user patches by
+//!   the `user/` id prefix. Each row is a checkbox — driving
+//!   `Backend::patch_enabled` / `Backend::set_patch_enabled` — plus, when the
+//!   patch exposes a `PatchParameter`, a slider that reads and writes
+//!   `Backend::patch_value` / `Backend::set_patch_value`.
+//! * `draw_api_endpoint` (`game-api` only) shows the external HTTP API status
+//!   and starts it via `Backend::start_api`; on wasm it explains that external
+//!   networking is unavailable.
 use super::*;
 impl Workspace {
     pub(super) fn draw_patches_panel(&mut self, context: &egui::Context, info: &WorkspaceInfo) {

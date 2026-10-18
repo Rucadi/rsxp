@@ -1,5 +1,19 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Group adjacent disjoint writes while preserving viewport barriers.
+//! Draw batching: groups runs of independent sprite/plane writes into a single
+//! compute dispatch so their pixels may execute concurrently.
+//!
+//! `DrawBatch` records a contiguous command range (`start`, `len`) plus the
+//! largest destination extent (`width`, `height`) the dispatch must cover.
+//!
+//! `draw_batches` walks the encoded `Params` list and extends the current batch
+//! only when batching is enabled, the draw has a non-empty rectangle, it is an
+//! operation-1 sprite/plane (`a[0][0] == 1`), the batch holds fewer than 64
+//! draws, and every command already in the batch writes either a different
+//! buffer (`a[0][1]`, the main frame vs the scratch layer) or a disjoint
+//! rectangle. Overlapping writes, and all non-draw operations (clear,
+//! viewport, brightness, native tile geometry), therefore begin a new batch,
+//! preserving scratch and ordering dependencies. When `enabled` is false each
+//! command becomes its own single-command batch.
 use super::Params;
 
 pub(super) struct DrawBatch {

@@ -1,5 +1,17 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Word-argument Windows ABI calls and RAII DLL ownership. No Ruby values.
+//!
+//! `LibraryFunction::open` resolves a symbol with `LoadLibraryW`/
+//! `GetProcAddress`, retrying the `{function}A` suffix when the bare name is
+//! missing and the caller did not request an explicit `A`/`W` variant; the
+//! loaded library is released by `Drop`. `LibraryFunction::call` dispatches on
+//! the declared return `Kind` (`Void`/`Integer`/`Pointer`).
+//!
+//! `invoke<R>` reinterprets the resolved address as a fixed-arity `extern
+//! "system"` (stdcall) or `extern "C"` (cdecl) function pointer for 0–16 word
+//! arguments — the only shapes `Win32API` supports; floats, structs and
+//! callbacks are rejected. This module is compiled only on Windows (and in
+//! tests), so a non-Windows build never sees it.
 use super::Abi;
 #[cfg(windows)]
 use super::Kind;

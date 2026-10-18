@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Software pixel parity, bitmap ownership and scene ordering checks.
+//! Unit tests for the software renderer: pixel parity, bitmap ownership and
+//! revisions, clipping, alpha blending, GIF playback, KGL2 shaders and scene
+//! ordering.
+//!
+//! The checks pin behaviour that the GPU compositor must match, for example that
+//! the contiguous blit fast path produces the same pixels as the general scaled
+//! path across clipping and opacity, and that a clone shares storage until it is
+//! written.
 use super::*;
 #[test]
 fn clones_share_until_written_and_revisions_invalidate() {

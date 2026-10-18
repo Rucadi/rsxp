@@ -1,5 +1,22 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Serialized RGSS command protocol: decode requests and update the runtime.
+//!
+//! A request is a header line followed by an optional raw payload:
+//! `op\targ\targ...\n<payload>`. `op` selects the branch; positional args are
+//! parsed with the `number`/`rect`/`color` helpers (rect = x,y,w,h; color =
+//! r,g,b,a). Text results are returned as raw UTF-8 bytes. An error string of
+//! `__RSXP_STOP__` tells the bridge to unwind and stop the game cleanly.
+//!
+//! `sync_batch` is a micro-batch: its payload holds 0x1e-separated records that
+//! must be `sprite_sync`, `plane_sync` or `viewport_sync`, dispatched in order
+//! so one bridge call replaces many per-object queries. Object syncs are
+//! index-based and therefore positional — e.g. `sprite_sync` reads bitmap/src,
+//! transform, clip, z/blend/color/tone, pattern fields and viewport from fixed
+//! argument slots, with trailing bush_depth/bush_opacity optional.
+//!
+//! Some operations are feature-gated (`game-api`) or platform-gated (writing
+//! bitmap files), and repo/host catalogs (runtime patches, settings, RPG
+//! scripts) are served straight from embedded bytes.
 use super::{Runtime, RuntimePlane, RuntimeSprite, RuntimeViewport, SpriteState};
 use crate::graphics::{Bitmap, Color, Rect, Tone};
 use crate::host::AudioChannel;

@@ -1,6 +1,19 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Typed desktop sprite synchronization. Ruby getters remain authoritative,
 //! including overrides; only conversion and snapshot submission move to Rust.
+//!
+//! `__rsxp_sprite_sync` (installed unless `RSXP_SPRITE_SYNC=ruby`) receives the
+//! 39-element snapshot built by `rgss.rb`/`retained.rb` and converts it into an
+//! engine `SpriteState`. It resolves the bitmap/viewport/pattern engine ids via
+//! their `__id`, derives the clip `Rect` from the viewport's `rect` (or the full
+//! `Graphics` size), and reads `disposed?` to hide sprites whose bitmap or
+//! viewport went away. `blend_type` must be 0/1/2 and zoom must be finite; nil
+//! properties take RGSS defaults. The finished state is submitted through one
+//! `engine::with_runtime_mut` call, which also clears any stale world placement
+//! for sprites that are not world-bound; no Ruby call happens while that borrow
+//! is held. Arguments are read straight off the Ruby stack, and `int`/`channel`
+//! are shared with the tilemap binding. The whole conversion runs inside
+//! `runtime::direct_call` so it is attributed to the native sprite category.
 use magnus::{
     function, prelude::*, value::LazyId, Error, ExceptionClass, RArray, RString, Ruby, TryConvert,
     Value,

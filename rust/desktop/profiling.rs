@@ -1,5 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Optional desktop Ruby sampling; no hooks or dependency loading when disabled.
+//! Optional desktop-side Ruby sampling profiler, disabled by default.
+//!
+//! [`Options`] mirrors the `--ruby-profile*` CLI flags (output path, `cpu`/`wall`
+//! mode, sampling interval, start frame and frame count); [`Options::validate`]
+//! enforces those constraints. When no output path is set, [`install`] is a no-op:
+//! the bundled `sampler.rb` and its `stackprof` dependency are only loaded on demand,
+//! so profiling costs nothing when disabled.
+//!
+//! [`install`] evaluates `sampler.rb` (which defines `RSXP::RubyProfiler`), configures
+//! it, and starts sampling immediately when `start == 0`. Otherwise a thread-local
+//! `Recording` tracks frame numbers: the runtime calls [`frame`] once per update to
+//! open and close the requested recording window, and [`finish`] flushes it at
+//! shutdown. If the requested start frame is never reached, a warning goes to stderr.
+//! [`module`] resolves the `RSXP::RubyProfiler` module defined by `sampler.rb`.
 use magnus::{prelude::*, Error, RModule, Ruby, Value};
 use std::{cell::RefCell, path::PathBuf};
 

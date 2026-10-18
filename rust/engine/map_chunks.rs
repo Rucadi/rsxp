@@ -1,6 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Bounded world-cell chunks, prefetched one chunk beyond the viewport.
 //! Hidden chunks retain tile data without allocating Ruby sprites or bitmaps.
+//!
+//! Tiles are cached in `CHUNK_SIZE` (16) × 16 × 3-layer blocks keyed by the
+//! map's `data_identity` plus chunk coordinates. `prefetch` marks every chunk
+//! covering the viewport plus a one-chunk margin; `tile` reads a single cell
+//! (building its chunk on demand) and `begin`/`finish` bracket a frame.
+//! Chunks are validated by `map.revision`; a revision bump re-reads cells but
+//! only replaces data that actually changed. `finish` evicts chunks not touched
+//! this epoch (oldest first) once `budget` is exceeded, preserving the active
+//! viewport working set. `ChunkStats` reports builds/hits/checks/evictions.
 use super::retained_map::MapView;
 use std::collections::HashMap;
 pub const CHUNK_SIZE: usize = 16;

@@ -1,5 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Desktop `run` arguments, validation and launch-directory output paths.
+//! Desktop `run` subcommand arguments, validation and path resolution.
+//!
+//! [`RunOptions::parse`] consumes the argument list into the renderer selection,
+//! exactly one of `--script` or `--game`, `--headless`, `--frames`, `--output`, an
+//! optional `--rgss` version override, and the `--ruby-profile*` sampler settings
+//! (validated by [`crate::profiling::Options::validate`]). The renderer defaults to
+//! `RSXP_RENDERER` or `auto` and must be `auto`, `software` or `wgpu`.
+//! `--trace-scripts` sets `RSXP_TRACE=1`, and the legacy `--profile NAME` flag is
+//! accepted and ignored. Unknown arguments are an error.
+//!
+//! Relative `--output` and `--ruby-profile` paths are resolved against the current
+//! (launch) directory before `GameConfig::prepare` switches it to the game directory;
+//! the profiler file's parent directory is created, and it may not point at an existing
+//! directory.
 use super::set_startup_env;
 use std::{error::Error, fs, path::PathBuf};
 

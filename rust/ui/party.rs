@@ -1,4 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+//! Party-slot detail renderer for the Pokémon Essentials API window.
+//!
+//! `draw_pokemon_details` renders `Workspace::api_response_json` — the reply to
+//! a party-slot detail request — into a scrolling `ui`. It requires that reply
+//! to contain `ivs` or `evs`; otherwise it prompts the user to request a slot.
+//! It first prints a fixed set of scalar fields (species name, nickname, level,
+//! form, gender, shiny, HP, status), then a fixed set of nested tables (battle
+//! stats, base stats, IVs, EVs, ability, nature, held item, moves, owner,
+//! obtain, species data, extensions), rendering objects and arrays as
+//! two-column grids through `display_json_value`. Only compiled under `game-api`.
 use super::*;
 impl Workspace {
     #[cfg(feature = "game-api")]

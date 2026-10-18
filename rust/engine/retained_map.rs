@@ -1,5 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Retained Essentials visible-cell selection, independent of Ruby and GPU.
+//!
+//! `MapView` describes one connected map's visible window into its `Table`
+//! (identity, data revision, camera `x`/`y`, size). `RetainedMap::update`
+//! recomputes the `width × height × 3`-layer screen grid, later maps
+//! overwriting earlier ones where they overlap, and returns only the `Change`s
+//! versus the previous frame (`None` cell = uncovered). It skips work when the
+//! view keys are unchanged unless `force`. `shift` rotates retained cells to
+//! match Essentials' reused sprite columns/rows, so scrolling reports only the
+//! newly exposed strips. Cell count is capped at 4,000,000. Optional
+//! `MapChunks` caching is toggled with `set_chunks_enabled`.
 use crate::table::Table;
 
 pub struct MapView<'a> {

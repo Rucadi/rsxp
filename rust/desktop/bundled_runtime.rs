@@ -1,5 +1,22 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Relocate packaged Ruby before any subsystem creates threads or embeds Ruby.
+//!
+//! [`configure`] makes a relocatable installation work: it locates the
+//! `ruby-runtime.json` manifest that ships beside the executable (or, on
+//! macOS, in `../Resources/` so the bundle's `MacOS` directory holds only
+//! signed Mach-O code), then rewrites the process environment so the embedded
+//! MRI finds its packaged standard library and gems:
+//! - `RUBYLIB` from the manifest's `load_paths`, and `GEM_PATH`/`GEM_HOME`
+//!   from `gem_paths`/`gem_home`, all resolved relative to the executable
+//!   directory via the [`paths`] helper (which joins relative entries and
+//!   rejects non-array or non-string entries).
+//! - `PATH` is prefixed with the executable directory because the packaged
+//!   layout also carries the Windows DLLs Ruby needs.
+//!
+//! This must run first in the process entry point, before Ruby, audio, or UI
+//! threads exist: `env::set_var` is only safe while the process is still
+//! single-threaded. When no manifest is present (e.g. a development build)
+//! the function is a no-op and the ambient Ruby installation is used.
 use std::{env, error::Error, fs, path::Path};
 
 fn paths(base: &Path, entries: &serde_json::Value) -> Result<std::ffi::OsString, Box<dyn Error>> {

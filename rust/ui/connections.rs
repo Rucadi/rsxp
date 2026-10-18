@@ -1,4 +1,24 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+//! Cable Club relay and client panel, drawn as the "Online play" tool.
+//!
+//! `draw_cable_club_panel` is the body of `Tool::OnlinePlay` on the left tools
+//! panel (dispatched from `patches.rs`). It is compiled only for the `game-api`
+//! desktop build (`not(target_arch = "wasm32")`), because the local relay needs
+//! a TCP socket. The panel has two halves:
+//!
+//! * **Relay** — when the backend reports a bound address, it lists it and the
+//!   connected `ClientStatus` rows (name · state · room · address) and offers
+//!   Stop; otherwise it shows the bind/port fields from `Workspace::cable_bind`
+//!   and `Workspace::cable_port` and a Start button.
+//! * **Game client** — queues a tagged `start_cable_club` API request to open
+//!   the in-game menu directly, and lets the user persist a host/port for the
+//!   game via `Backend::save_endpoint`.
+//!
+//! The launch request is tagged `cable_club_launch` so its reply or error is
+//! routed to the Cable Club fields instead of the general API error. Errors
+//! surface from `ServerStatus::error`, `Workspace::cable_error`, and
+//! `Workspace::api_error`; a live request id in `api_pending` disables the
+//! in-game launch button until it is answered.
 use super::*;
 impl Workspace {
     #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]

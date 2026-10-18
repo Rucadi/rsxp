@@ -1,5 +1,30 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Pure-Rust desktop host: winit windows, wgpu presentation and Rust media APIs.
+//!
+//! [`DesktopHost`] implements [`rsxp::host::Host`], supplying the engine with
+//! windowing, input, audio, image/text rendering, timing, and presentation.
+//! It runs in one of three modes chosen by `new`:
+//! - a local windowed session with a winit [`Window`], a wgpu surface and a
+//!   [`crate::gpu_present::GpuDisplay`];
+//! - a headless session (no window, silent audio) for scripted runs;
+//! - a remote *runner* connected back to the dashboard over TCP when
+//!   `RSXP_SESSION_ADDR` is set (see [`crate::session::Runner`]), in which case
+//!   it owns no window and streams frames to the dashboard.
+//!
+//! The `renderer` argument (`auto`, `wgpu`, or `software`) selects composition:
+//! `software` keeps RGSS composition on the CPU but still presents through
+//! wgpu, while `auto`/`wgpu` use the GPU compositor. Headless runs default to
+//! software unless `wgpu` is requested explicitly. The `gpu` feature gates all
+//! wgpu/window code paths; without it only headless and remote modes compile.
+//!
+//! Notable behavior: [`case_path`] resolves paths case-insensitively so
+//! Windows-authored game data loads on case-sensitive filesystems; when
+//! `RSXP_RECORD` is set, every file read is appended (slash-normalized) to a
+//! process-global log via a thread-local writer; a paused remote runner mutes
+//! all four audio channels and restores their volumes on resume; and
+//! [`DesktopHost`] merges its render/present timings into
+//! [`rsxp::host::ProfileStats`]. The GPU surface is declared before the window
+//! and device so it is dropped first.
 use crate::media;
 use crate::window::Window;
 use rsxp::graphics::{Bitmap, Color};

@@ -1,5 +1,23 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! MCP stdio server for the live rsxp game API.
+//! `rsxp-mcp`: a Model Context Protocol (MCP) stdio server that bridges MCP
+//! clients to the live game HTTP API of a running desktop `rsxp`.
+//!
+//! The binary speaks newline-delimited JSON-RPC 2.0 on stdin/stdout and answers
+//! the `initialize`, `ping`, `tools/list` and `tools/call` methods. Request
+//! parsing (`Parser`, `Json`) and response encoding are implemented here so the
+//! server needs no serialization dependency. `tools/call` maps each advertised
+//! tool (see `tools`) to a REST request handled by `rust/api_bridge.rs`;
+//! `call_game` opens a short-lived loopback connection, picks the HTTP method
+//! from the path, and unwraps the JSON body (or its `error` field) into the MCP
+//! text result. Tool arguments are validated in Rust before any request is sent
+//! (for example `wild_encounter_path`).
+//!
+//! Environment: `RSXP_API_HOST` / `RSXP_API_PORT` select the game endpoint
+//! (defaults `127.0.0.1` / `47821`).
+//!
+//! This binary is only built with the `api-docs` feature (see `Cargo.toml`).
+//! With that feature, `--openapi` prints the utoipa-generated document from the
+//! `openapi` module instead of starting the stdio loop.
 use std::{
     io::{self, BufRead, BufReader, Read, Write},
     net::TcpStream,

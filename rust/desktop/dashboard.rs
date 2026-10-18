@@ -1,5 +1,44 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Persistent native shell. Blocking runner I/O lives on a dedicated thread.
+//! Persistent native shell: the dashboard / game-workspace window.
+//!
+//! This is what `rsxp` (no subcommand) and an interactive `rsxp run` open. It
+//! is a control-plane process only: it never embeds Ruby. It launches itself
+//! again as a child with the `run` subcommand, which acts as the actual game
+//! runner, and talks to it over a loopback TCP socket using the length-prefixed
+//! JSON framing in [`crate::session`]. Wire details live there; this module
+//! relies on `read_message`/`write_message`.
+//!
+//! Main types and flow:
+//! - [`Exchange`] is the shared state between the UI thread and the blocking
+//!   I/O thread: the latest CPU [`Bitmap`] or [`rsxp::gpu::GpuFrame`], drained
+//!   runtime logs, the pending `control` payload for the runner, the last
+//!   error, frame rate/frame counters, profiling stats, and text-input/cursor
+//!   requests. It is guarded by a `Mutex` inside an `Arc`.
+//! - [`Session`] owns the child process, the shared [`Exchange`], a stop flag,
+//!   and the stdout/stderr drain threads. Dropping it kills and reaps the
+//!   child. `Session::start` binds an ephemeral loopback listener, generates a
+//!   32-byte hex nonce, spawns the child with `RSXP_SESSION_ADDR`,
+//!   `RSXP_API=0`, and `RSXP_SESSION_TOKEN`, and spawns the I/O thread.
+//! - [`forward_output`] copies a child pipe verbatim to the launching terminal
+//!   while also pushing a bounded (300-entry), lossy UTF-8 view into
+//!   `Exchange::logs` for the embedded output panel. A closed terminal must
+//!   not stop log collection.
+//! - [`run`] is the main loop: it creates the winit [`Window`], a wgpu surface
+//!   and [`GpuDisplay`], and the egui workspace panel; then per frame it pumps
+//!   input, (re)launches or stops sessions via the workspace actions, folds
+//!   input into the runner `control` message, applies returned frames to the
+//!   GPU, and presents. Sessions restart on "restart", stop/launch requests,
+//!   or a reset requested through `rsxp::runtime_settings`; save backup/restore
+//!   runs on a detached thread and reports through a channel.
+//!
+//! Protocol notes enforced here: the handshake and 30 s connect timeout, a
+//! token check on the first message, and then a 5 s write timeout. Poll replies
+//! carry `control`; frame messages carry `width`/`height` plus either a
+//! `gpu_bytes` packet (bounded to 512 MiB, decoded via `GpuFrame::decode`) or
+//! raw ARGB pixels (bounded to 16,777,216 pixels per frame). GPU packets are
+//! merged into a pending frame and, once queued upload bytes exceed 64 MiB,
+//! the I/O thread throttles to apply backpressure; ordered atlas deltas mean
+//! non-draw-list data must not be dropped.
 use crate::{
     gpu_present::{GpuDisplay, Presentation},
     session::{read_message, write_message},

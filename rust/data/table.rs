@@ -1,6 +1,20 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Ported from src/etc/table.cpp, Copyright (C) 2013–2021 Amaryllis Kulla.
 //! RGSS signed 16-bit tables and their Ruby Marshal payload format.
+//!
+//! [`Table`] is up to three-dimensional and stores `i16` values row-major with
+//! `x` fastest, then `y`, then `z` (`(z * ys + y) * xs + x`). [`Table::new`]
+//! checks the dimensions and allocation, rejecting sizes over `i32::MAX`.
+//! [`Table::get`] is bounds-checked, while [`Table::set`] silently ignores
+//! out-of-range writes like the original engine. [`Table::resize`] allocates a
+//! new table and copies the overlapping region.
+//!
+//! [`Table::serialize`]/[`Table::deserialize`] handle the Ruby Marshal payload:
+//! five little-endian `i32` header fields (`dim` ∈ 1..=3, `x`, `y`, `z`,
+//! element count) followed by the `i16` values. `dim` is 3 when `z > 1`, 2 when
+//! `y > 1`, otherwise 1, so trailing singleton dimensions are not written.
+//! Deserialization validates the header, that `x * y * z == count`, and that the
+//! payload is exactly `20 + count * 2` bytes; any mismatch is [`InvalidTable`].
 use std::{error::Error, fmt};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

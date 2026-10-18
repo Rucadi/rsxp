@@ -1,4 +1,24 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+//! `rsxp-web`: host binary for the standalone browser player.
+//!
+//! It embeds `web/dist/player.html` at compile time (`include_str!`) and offers
+//! three subcommands:
+//!
+//! - `serve [GAME_FOLDER] [--bind 127.0.0.1] [--port 8000]` — serves the player
+//!   plus an optional game folder over loopback HTTP. It serves `/` and
+//!   `/player.html` (the player with an injected `globalThis.RSXP_GAME` config
+//!   script), `/game/files.json` (the sorted asset list) and `/game/<asset>`
+//!   (raw bytes, matched case-insensitively against that list). Responses carry
+//!   COOP/COEP headers so the page is cross-origin isolated.
+//! - `export [player.html]` — writes the embedded player HTML unchanged.
+//! - `embed GAME_FOLDER [player.html]` — writes the player with every game file
+//!   base64-encoded into `<script type="application/octet-stream">` blocks
+//!   (chunked to 768 KiB to bound DOM string size) and recorded in
+//!   `globalThis.RSXP_GAME`.
+//!
+//! Asset paths are validated by `decode_path`, which rejects traversal (`..`),
+//! hidden/dot segments, backslashes and NUL bytes. `--help` prints the usage
+//! summary.
 use std::{
     env, fs,
     io::{self, Read, Write},

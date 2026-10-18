@@ -1,4 +1,52 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+//! The API console and the Essentials inspector/tools for a running game.
+//!
+//! This file adds the request/response plumbing and the "pokeAPI · API +
+//! testing" window to [`Workspace`]. Every backend operation is queued with
+//! `Workspace::queue_api_request`/`queue_api_request_tagged`, which remembers
+//! the returned id in `api_pending` (a single foreground slot), and is consumed
+//! by [`Workspace::poll_api_response`] via `backend.take_response`. The window
+//! provides an endpoint tester driven by the checked-in
+//! `api/openapi.json` contract, a free-form game console, map/Pokémon
+//! utilities, and the "Essentials" debug-mode toggle.
+//!
+//! ## Main functions
+//! * [`Workspace::poll_api_response`] — drains the pending foreground response
+//!   and routes it by operation. Notable results: `pokemon_essentials_status`
+//!   updates the cached `$DEBUG` flag and map id; `world_map` replaces
+//!   `world_map_data`, clears the layout, opens the window, and queues
+//!   `map_preview` for each un-cached outdoor map; `map_preview` stores the
+//!   preview and continues draining the tile queue; a map change while the
+//!   encounter window is open refreshes `pokemon_essentials_encounters`.
+//! * [`Workspace::queue_api_request`] / [`Workspace::queue_api_request_tagged`]
+//!   — send an operation through the backend, tracking the response against a
+//!   possibly different operation tag.
+//! * [`Workspace::poll_pokemon_encounter_map`] — a *background* poller with its
+//!   own request slot: every 750 ms it asks `pokemon_essentials_status`, and on
+//!   a map change loads the new `pokemon_essentials_encounters` table without
+//!   touching the foreground response, spinner, or `api_pending`.
+//! * `draw_essentials_tools`, `draw_api_utilities`, `draw_api_console`,
+//!   `draw_pokeapi_window`, `draw_openapi_operation`, `draw_api_response` — the
+//!   UI, grouped into collapsible sections.
+//! * `draw_debug_toggle` / `poll_essentials_debug` / `request_essentials_debug`
+//!   — query and set the game's `$DEBUG` through `pokemon_essentials_debug`
+//!   (empty argument queries; `"true"`/`"false"` sets).
+//!
+//! ## Backend and JSON use
+//! `backend.send_request(operation, args)` returns a request id and
+//! `backend.take_response(id)` yields `Ok(json_string)` or `Err(message)`.
+//! Responses are parsed into `serde_json::Value` (`api_response_json`):
+//! `pokemon_essentials_encounters` returns `{ "map_id", "tables": [...] }`;
+//! `pokemon_essentials_status` returns `{ "map_id", "debug": bool }`;
+//! `world_map` returns `{ "maps": [{ "id", "outdoor", ... }], "connections",
+//! "transfers", "current_map_id" }`; `map_preview` returns
+//! `{ "map_id", "width", "height", "tileset", "autotiles", "autotile_parts",
+//! "layers" }`; `pokemon_essentials_debug` returns `{ "debug": bool }` or
+//! `{ "error": "..." }`. An API response carrying `ivs`/`evs` is offered as a
+//! collapsible "Pokémon details" view. The OpenAPI contract is embedded from
+//! `api/openapi.json`, its `paths` are listed as operations whose parameter
+//! defaults seed URL/query values, and "Send request" resolves the URL back to
+//! an operation through `crate::api_bridge::route_http`.
 use super::*;
 impl Workspace {
     #[cfg(feature = "game-api")]

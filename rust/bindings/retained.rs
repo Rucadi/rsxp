@@ -1,6 +1,30 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Change-driven synchronization. Only IDs cross frame boundaries; Ruby owns
 //! object lifetimes and the engine owns the last resolved rendering state.
+//!
+//! This module installs the `__rsxp_*` global functions consumed by the bundled
+//! `retained.rb` adapter (also exposed verbatim as `__rsxp_retained_source` via
+//! `include_str!`) and the per-class scalar setters. `CHANGES` is a process-wide
+//! mutex holding the dirty/volatile ID sets and the dependency graph; it never
+//! holds Ruby values.
+//!
+//! ID model: a resource is keyed by its engine id `@__id`, while dependency-only
+//! objects (nested `Rect`/`Color`/`Tone` values) get a synthetic token with the
+//! high bit set, stored as `@__rsxp_dependency_token`. `touch` marks a resource
+//! dirty and transitively dirties its dependents; `watch`/`unwatch` maintain the
+//! edge sets; `volatile` forces an id to re-resolve every frame; `drain` returns
+//! the union of dirty and volatile ids and clears the dirty set; `forget` drops a
+//! resource from both the world registry and the graph.
+//!
+//! `install_scalars(class, kind)` is the only class-level entry point; `kind` is
+//! `0` for `Sprite`, `1` for `Viewport`, `2` for `Plane` (the values chosen by
+//! `retained.rb`). Every kind gets `z/ox/oy/visible`; non-viewport kinds also get
+//! `zoom_x/zoom_y/blend_type`; `Sprite` additionally gets the full scalar set and
+//! the world-aware `x/y/z` getters from `world`. Setters run through `scalar`,
+//! which keeps the Ruby ivars authoritative, compares numerically to detect
+//! no-op writes, flags non-scalar values volatile, and touches the object only
+//! when the value actually changed. `x/y/z` setters first detach the sprite from
+//! any world group.
 use magnus::{
     function, method,
     prelude::*,

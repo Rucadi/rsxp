@@ -1,5 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Asset lookup and image/audio/font resolution through the platform Host.
+//!
+//! `Runtime::asset` is the single entry point for reading game data: it
+//! normalizes `\` to `/`, asks the host for a loose file first, then scans the
+//! encrypted `archives` (raw `Archive` blobs) for a case-insensitive name match.
+//!
+//! The typed helpers retry with a fixed extension list when the exact name is
+//! missing: images (`png`,`jpg`,`jpeg`,`bmp`,`gif`), audio
+//! (`ogg`,`wav`,`mp3`,`mid`,`midi`,`flac`,`opus`) and movies (preferring
+//! Theora `ogv`). `font_bytes` splits a U+001F-separated fallback list and
+//! loads the first existing `Fonts/<name>.ttf`; hits and misses are memoized in
+//! a 16-entry cache, which is why it needs `&mut self`.
 use super::Runtime;
 use crate::archive::Archive;
 use std::sync::Arc;

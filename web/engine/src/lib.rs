@@ -10,6 +10,15 @@
 //! This module exposes runtime, input, profiling and framebuffer operations.
 //! `host` implements platform services and `files` owns virtual file access;
 //! file exports are re-exported here to preserve the frontend API.
+//!
+//! Lifecycle: after files/archives are added, `web_init` builds the runtime;
+//! `web_native_call` dispatches Ruby native commands while `web_key`/`web_text`/
+//! `web_mouse`/`web_scroll` queue input. `web_framebuffer` returns a zero-copy
+//! view of the CPU frame for the canvas path. When the page opts into the
+//! wgpu/egui workspace, `web_init_gpu`/`web_present_gpu` upload and draw frames
+//! (see `present`) and the `web_ui_*` functions forward pointer, keyboard,
+//! resize, loading and diagnostic events into that workspace. `web_profile_*`
+//! accumulate native/graphics timings for the FPS overlay.
 use js_sys::Uint8Array;
 mod audio;
 mod files;

@@ -1,4 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+//! Placement of the game view within the workspace.
+//!
+//! `draw_game_view` decides where the frontend should render the game and
+//! reports that rectangle through `WorkspaceOutput::game_rect`:
+//!
+//! * when controls are hidden, or `view_mode` is not `ViewMode::Floating`, the
+//!   game fills a borderless `CentralPanel` and its `max_rect` becomes the game
+//!   rect (the common docked and workspace-fullscreen path);
+//! * when controls are visible and `view_mode == ViewMode::Floating`, a
+//!   placeholder is drawn in the central panel and the game instead occupies a
+//!   movable, resizable egui window ("Game") whose available rect is recorded.
+//!
+//! The frontend reads `game_rect` each frame to position its own rendering and
+//! input mapping.
 use super::*;
 impl Workspace {
     pub(super) fn draw_game_view(&mut self, context: &egui::Context, output: &mut WorkspaceOutput) {

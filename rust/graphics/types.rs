@@ -1,5 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Shared geometry, color, tone and sprite parameter values.
+//! Shared geometry, colour, tone and sprite-parameter values used by the
+//! software renderer and the GPU command layer.
+//!
+//! [`Color`] stores 8-bit RGBA and packs to/from the renderer's internal `u32`
+//! pixel via [`Color::packed`]/[`Color::unpack`] (big-endian `[alpha, red,
+//! green, blue]`). [`Rect`] is a signed origin with an unsigned size, matching
+//! RGSS coordinates (callers clip it explicitly). [`Tone`] holds RGSS tone
+//! channels, where RGB are signed shifts and `gray` is a desaturation amount.
+//!
+//! [`SpriteFx`] carries the per-sprite shader uniforms (opacity, blend type,
+//! colour, tone, inversion, bush row, mirroring and pattern overlay settings);
+//! its [`Default`] is the neutral, fully-opaque, unblended sprite. It borrows the
+//! optional pattern [`Bitmap`]. [`SpriteTransform`] mirrors the engine's
+//! position/scale/rotation matrix (origin offset, zoom, angle, mirror).
 use super::Bitmap;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

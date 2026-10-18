@@ -1,4 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+//! The `SessionPanel` "Save files" screen: a presentation-only backup/restore UI.
+//!
+//! [`SessionPanel::draw_saves`] edits a save directory and a backup directory
+//! and offers "Back up saves" / "Restore saves". It emits
+//! [`SessionActions::backup`] as `(save_directory, backup_directory)` and
+//! [`SessionActions::restore`] as `(backup_directory, save_directory)` for the
+//! frontend to perform; no copying happens here and no
+//! [`super::backend::Backend`] is used. The whole selected directory is copied,
+//! restore replaces matching files while keeping a safety copy of each
+//! original, and the buttons are disabled while the game is active or busy.
 use super::session::{SessionActions, SessionPanel};
 impl SessionPanel {
     pub(super) fn draw_saves(&mut self, ui: &mut egui::Ui, actions: &mut SessionActions) {

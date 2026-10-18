@@ -1,5 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Ruby-GC-owned RGSS Table objects, bound directly through Magnus.
+//! Ruby-GC-owned RGSS `Table` objects, bound directly through Magnus.
+//!
+//! `RubyTable` wraps `RefCell<Option<Table>>` (the engine `rsxp::table::Table`)
+//! plus a `Cell<u64>` revision counter, and is registered as the `Table` class.
+//! The game-visible API is layered on top of the private `__` methods by
+//! `rgss.rb`: `__initialize`, `__get`/`__set`, `__resize`, `__dimensions` and
+//! `__rsxp_revision`. The revision is bumped on every value-changing mutation and
+//! lets the retained map and tilemap caches detect edits without re-reading every
+//! cell.
+//!
+//! Tables are capped at 16,777,216 elements (`ArgumentError` beyond that); a
+//! write only bumps the revision when the stored `i16` actually changes.
+//! `_dump`/`_load` provide Marshal serialization, and `initialize_copy` deep
+//! copies the table and bumps the revision.
 use magnus::{function, method, prelude::*, Error, RString, Ruby};
 use rsxp::table::Table;
 use std::cell::{Cell, RefCell};

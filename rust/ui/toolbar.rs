@@ -1,4 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+//! Top workspace toolbar.
+//!
+//! `draw_toolbar` renders the `workspace-toolbar` top panel: the Workspace menu
+//! (panel-visibility toggles), the game-view mode combo (`ViewMode`), an
+//! optional global-fullscreen button, the Controls menu (controller mapping
+//! from `crate::controls`), and runtime frame pacing — an "Uncapped" checkbox
+//! and an FPS drag value, both driven through the injected
+//! `backend::Backend`. It also surfaces save export/import and reset buttons
+//! when the frontend enables them, recording those requests in
+//! `WorkspaceOutput` / the workspace's confirmation state.
 use super::*;
 impl Workspace {
     pub(super) fn draw_toolbar(

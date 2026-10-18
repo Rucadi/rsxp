@@ -5,6 +5,23 @@
 //! ID: each client enters the other trainer's ID, and the server pairs them
 //! only when both searches are reciprocal. EricLostie's shared-room-code
 //! variant is implemented separately in [`crate::cable_club`].
+//!
+//! ## Protocol
+//! Records are one line of comma-separated fields, with `\,` and `\\` escaping
+//! a literal comma or backslash. A client opens with
+//! `find,<version>,<peer-id>,<name>,<trainer-id>,<trainer-type>,<win-msg>,<losemsg>,<party…>`,
+//! where `<peer-id>` is the trainer ID it is looking for and `<trainer-id>` is
+//! its own (masked to 16 bits). Two `searching` clients match only when each
+//! names the other's ID, after which the server sends each side
+//! `found,<0|1>,<peer name>,<trainer type>,<win>,<lose>,<party…>,0` and
+//! forwards every later line verbatim to the peer.
+//!
+//! ## API
+//! [`start`] / [`stop`] manage a single process-wide server and [`status`]
+//! returns a UI snapshot. [`save_client_endpoint`] writes the
+//! `Data/serverinfo.ini` endpoint the client reads. Records are capped at
+//! 256 KiB and the server at 64 simultaneous clients; each client has its own
+//! thread.
 
 use std::{
     collections::HashMap,

@@ -1,5 +1,20 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Working directory, Game.ini, RGSS version inference and archive discovery.
+//! Game discovery: working directory, `Game.ini`, RGSS version inference and
+//! archive loading.
+//!
+//! [`GameConfig`] carries the resolved RGSS `version` and the raw bytes of any
+//! encrypted archives that must be searched. [`GameConfig::prepare`] runs before any
+//! subsystem that creates threads: it canonicalizes `--script` or `--game`, sets the
+//! process working directory, and publishes the Ruby shim's startup environment via
+//! `set_startup_env`/`remove_startup_env` (`RSXP_SCRIPT`, `RSXP_GAME_TITLE`,
+//! `RSXP_SCRIPTS`).
+//!
+//! The RGSS version is the explicit `--rgss` override when given, else inferred from
+//! the `Scripts=` entry in `Game.ini` (`.rvdata2`→3, `.rvdata`→2, `.rxdata`→1), else
+//! from the presence of `Game.rgss3a`/`Game.rgss2a` plus `Data/Scripts.*`, defaulting
+//! to RGSS1. Archives are discovered case-insensitively through `crate::host::case_path`
+//! across `Game.rgssad`, `Game.rgss2a` and `Game.rgss3a`, and each is parsed with
+//! `Archive::parse` to validate it before being retained.
 use super::{remove_startup_env, set_startup_env};
 use crate::host::case_path;
 use rsxp::archive::Archive;

@@ -1,5 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Bounded asset decoding queue. Panels only ever read completed snapshots.
+//! Bounded background asset-decoding queue for the workspace panels.
+//!
+//! [`Assets`] owns a worker thread and a 32-slot `SyncSender`. [`Assets::image`]
+//! returns a cached image once decoding has finished; otherwise it records a
+//! `None` placeholder under `category/name`, enqueues the request (removing the
+//! placeholder if the queue is full) and returns `None` immediately, so panels
+//! never block and only ever read completed snapshots.
+//!
+//! The worker resolves `Graphics/<category>/<name>` (trying the bare path then
+//! `.png`/`.bmp`) into an `Arc<RgbaImage>` and stores it in the shared map that
+//! `image` reads.
 use std::{
     collections::HashMap,
     path::PathBuf,

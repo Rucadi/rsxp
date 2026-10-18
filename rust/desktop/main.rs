@@ -1,4 +1,33 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+//! `rsxp` desktop binary: the entry point, CLI dispatch, archive tooling, and
+//! the standalone demo scene.
+//!
+//! Submodules wire the frontend together: [`audio`] (Kira audio), [`bindings`]
+//! (the Ruby/Magnus RGSS bindings, shared via `../bindings/mod.rs`),
+//! [`bundled_runtime`] (packaged-Ruby relocation), [`controller`] (gamepads),
+//! [`dashboard`], [`gpu_present`], [`host`], [`library`], [`media`],
+//! [`profiling`], [`runtime`] (the actual MRI runner), [`saves`], [`session`]
+//! (dashboard↔runner transport), and [`window`]. Several are gated on the
+//! `gpu` feature.
+//!
+//! [`run`] is the dispatcher. It calls [`bundled_runtime::configure`] first,
+//! before any thread exists, then branches on the first argument:
+//! - no arguments (with `gpu`) → [`dashboard::run`] opens the workspace;
+//! - `--help`/`-h` → [`HELP`]; `--version`/`-V` → the crate version;
+//! - `archive-list`/`archive-cat` → [`archive_command`] parses an RGSS archive
+//!   and either lists entries or streams decrypted entry bytes to stdout in
+//!   64 KiB chunks;
+//! - `demo` → [`demo`], a self-contained animated sprite scene that also
+//!   exercises the window/GPU path, with `--headless`/`--frames`/`--output`
+//!   (writes a PPM of the last frame);
+//! - `run` → validates options and, unless `--headless` or `RSXP_SESSION_ADDR`
+//!   is set (which means this is the runner side of a dashboard session),
+//!   opens the dashboard around the run; otherwise calls [`runtime::run`].
+//!
+//! `RSXP_RENDERER`, `RSXP_INPUT`, `RSXP_PATCH`, `RSXP_RECORD`, and
+//! `RSXP_SESSION_ADDR` are the relevant environment variables; [`HELP`]
+//! documents the full CLI, frame pacing, and profiling. `main` maps the
+//! returned status (or an error) to the process exit code.
 mod audio;
 #[path = "../bindings/mod.rs"]
 mod bindings;

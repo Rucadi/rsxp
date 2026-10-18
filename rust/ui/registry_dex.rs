@@ -1,5 +1,46 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Move and item explorers backed by the running game's registries.
+//!
+//! One [`RegistryDex`] instance backs each of `Workspace::movedex` and
+//! `Workspace::itemdex`; [`Workspace::draw_registry_dex_windows`] draws both and
+//! lets the itemdex open a taught move in the movedex. Both windows share the
+//! same filter/search/list/detail layout and hit their own registry through the
+//! backend.
+//!
+//! ## Main types and functions
+//! * [`DexKind`] — which registry a `RegistryDex` shows, mapping to the
+//!   `pokemon_essentials_movedex` / `pokemon_essentials_itemdex` operations.
+//! * `RegistryDex` (`pub(super)`) — the entry cache, filters, memoized matches,
+//!   selection, texture cache, and load/error state.
+//! * `Filters` / `NumberFilter` / `Sort` — the search and filter model
+//!   (`accepts` decides which entries pass; `Sort` covers relevance, name,
+//!   power/accuracy/PP, and price).
+//! * `InventoryAction` — the shared "add to bag / add TM" action, including the
+//!   per-move machine picker.
+//! * `RegistryDex::load_if_needed` / `request` / `poll` — fetch and cache the
+//!   catalog; `add_inventory` / `poll_inventory` — queue
+//!   `pokemon_essentials_add_item`.
+//! * `draw_filters`, `draw_list`, `draw_detail`, `draw_facts`,
+//!   `draw_inventory_action`, `item_texture` — the UI.
+//!
+//! ## Backend use
+//! `load_if_needed` and `request` send the kind's operation with `["refresh"]`;
+//! responses are consumed through `backend.take_response`. Item icons are loaded
+//! with `backend.asset_image(category, name)` (falling back to the `Items`
+//! category) using the entry's `icon` path with the leading `Graphics/`
+//! stripped. Search reuses `dex_search::{fuzzy_score, normalized}`.
+//!
+//! ## JSON schema
+//! A catalog response is `{ "entries": [ ... ] }` or `{ "error": "..." }`.
+//! Move entries carry `id`, `name`, `type`, `type_name`, `category`,
+//! `category_name`, `power`, `accuracy`, `pp`, `priority`, `description`,
+//! `function_code`, `number`, `target`, `effect_chance`, `machines`
+//! (`[{ id, name }]`), `flags`, and `raw`. Item entries carry `id`, `number`,
+//! `name`, `description`, `pocket`, `pocket_name`, `price`, `sell_price`,
+//! `bp_price`, `consumable`, `field_use`/`field_use_label`,
+//! `battle_use`/`battle_use_label`, `tags`, `flags`, `move`, `icon`, and `raw`.
+//! The add-item response reports `{ "added", "total", "complete", "name" }` or
+//! `{ "error": "..." }`.
 use super::{
     dex_search::{fuzzy_score, normalized},
     *,

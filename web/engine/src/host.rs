@@ -1,5 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Browser platform adapter: virtual files, image/font decoding and audio.
+//!
+//! `WebHost` is the `rsxp::host::Host` implementation used by the WASM runtime.
+//! `read_file` delegates to the virtual filesystem, `image` decodes any format
+//! supported by the `image` crate into an RGBA `Bitmap`, and `text` rasterizes
+//! with `fontdue` using the embedded `assets/liberation.ttf` when the game
+//! supplies no font. `text` also measures the line (advance width plus ascent
+//! and descenders) even when only metrics are requested, and rejects font sizes
+//! outside `1..=512`. Audio comes from `BrowserAudio`.
 use crate::{audio::BrowserAudio, files::read_via_host};
 use rsxp::{
     graphics::{Bitmap, Color},

@@ -1,5 +1,28 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! CPU blits, nearest-neighbor sampling and sprite/plane rasterization.
+//! CPU rasterization onto [`Bitmap`] targets: blitting, nearest-neighbor
+//! sampling and sprite/plane drawing.
+//!
+//! Public entry points are all inherent methods on [`Bitmap`]:
+//! - [`Bitmap::stretch_blt`]/[`Bitmap::stretch_blt_clipped`] scale a source
+//!   rectangle into a destination rectangle (optionally clipped) using integer
+//!   nearest-neighbor sampling and source-over composition.
+//! - [`Bitmap::draw_sprite`] draws one sprite with the full [`SpriteFx`] effect
+//!   pipeline.
+//! - [`Bitmap::draw_sprite_rotated`] reverse-maps destination pixels through a
+//!   [`SpriteTransform`] matrix to draw rotated/scaled sprites.
+//! - [`Bitmap::draw_plane`] tiles a bitmap across the clip rect with scroll and
+//!   zoom.
+//!
+//! Sampling divides with integer arithmetic
+//! (`area.origin + (dest - dst) * area.size / dst.size`), so every path picks the
+//! same texel. `mirror` mirrors within the source area as
+//! `area.x + area.width - 1 - (sx - area.x)`.
+//!
+//! Two private fast paths keep the common case cheap: `blit_simple` handles
+//! opacity-only draws (with an extra contiguous-row path when the draw is
+//! unscaled and unmirrored), and `blend_pixel` is the integer source-over used by
+//! both contiguous and scaled blits so rounding matches everywhere. [`Bitmap::draw_sprite`]
+//! falls back to `shade_pixel` + `compose` only when an effect is actually active.
 use super::effects::{compose, shade_pixel};
 use super::{Bitmap, Color, Rect, SpriteFx, SpriteTransform};
 

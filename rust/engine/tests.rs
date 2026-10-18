@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Runtime integration checks with lightweight test hosts.
+//!
+//! Covers retained scene order/membership/disposal, frame pacing that budgets
+//! Ruby work between updates, `RSXP_INPUT` parsing, animated-GIF decode/advance,
+//! movie YCbCr conversion, and `Graphics.snap_to_bitmap` recomposition against
+//! the current scene rather than the previously presented frame.
 use super::*;
 use std::time::Duration;
 #[cfg(feature = "gpu")]

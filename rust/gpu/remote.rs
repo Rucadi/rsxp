@@ -1,7 +1,38 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Portable compositor submissions: ordered commands plus revision-based uploads.
-//! The runner builds these without executing GPU work. The presentation device
-//! applies them directly, so normal game frames never pass through readback.
+//! Portable compositor submissions: ordered commands plus revision-based
+//! uploads carried between processes.
+//!
+//! A recording `GpuRenderer` (`enable_remote`) accumulates queued bitmap
+//! updates in `RemoteState` instead of writing them to a GPU and, on `submit`,
+//! only records. `take_remote_frame` snapshots the current `size`, atlas
+//! capacity, batching flag, command list and tile data into a `GpuFrame` while
+//! draining the pending `Upload`s. A display device applies that frame with
+//! `apply_remote_frame`, so ordinary game frames never pass through readback.
+//!
+//! `GpuFrame::merge` folds successive frames together: it adopts the newest
+//! size, atlas capacity, batching flag, commands and tiles, but appends uploads
+//! so no asset update is lost. Because uploads are keyed by atlas offset, an
+//! intermediate draw list can be dropped safely once superseded.
+//!
+//! Wire format (`encode`/`decode`), all little-endian and prefixed by
+//! `MAGIC = 0x52534731`:
+//! - header: width, height, batching flag, command count, tile count, upload
+//!   count (u32 each), then `atlas_capacity` (u64) - 36 bytes total;
+//! - `command_count` `Params` records of 256 bytes each;
+//! - `tile_count` `u32` tile-geometry words;
+//! - each upload: `u32` atlas offset, `u32` pixel count, then `count * 4` bytes
+//!   of pixels.
+//! On little-endian targets the command and pixel arrays are cast directly
+//! (`Params` holds only `u32`, no pointers or padding); other targets serialize
+//! per word. `decode` rejects packets over `MAX_PACKET` (512 MiB), zero or
+//! oversized dimensions (`w*h` over `16_777_216`), non-multiple-of-4 or
+//! oversized `atlas_capacity`, uploads past the atlas, truncation and trailing
+//! bytes.
+//!
+//! `materialize_remote` lets a recording device satisfy an explicit snapshot by
+//! writing its mirrored bitmaps back for live slots before submitting.
+//! `ensure_atlas_capacity` grows the atlas to the next power of two, refusing
+//! sizes beyond the adapter binding limit (suggesting `--renderer software`).
 use super::{GpuRenderer, Params};
 use crate::graphics::Bitmap;
 use std::{collections::HashMap, sync::Arc};

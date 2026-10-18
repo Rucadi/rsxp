@@ -1,6 +1,25 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Magnus command callbacks and desktop bridge/frame timing.
-//! Ruby sampling itself lives in `crate::profiling`.
+//! Magnus command callbacks and desktop-side bridge/frame timing.
+//!
+//! [`native_call`] is exposed to Ruby as `__rsxp_native` (and the legacy
+//! `__mkxp_native`); it decodes a tab/newline-separated byte request, dispatches it
+//! through [`engine::native_call_bytes`], and returns the reply as a Ruby string,
+//! raising a `RuntimeError` on failure. After a successful `graphics_update` it also
+//! advances the Ruby sampler via [`crate::profiling::frame`].
+//!
+//! Timing is opt-in. [`start`] reads `RSXP_PROFILE=1` into a global flag, while the
+//! engine's own counter exposes a profiling flag and generation through
+//! [`engine::profile_counter_state`]. [`direct_call`] wraps typed Magnus entry points
+//! and attributes their whole duration to the native API category.
+//!
+//! Measurements feed two thread-local accumulators: `PROFILE`, drained by the shutdown
+//! [`report`], and `FRAME_PROFILE`, which reconstructs ruby/bridge/native durations
+//! across `graphics_update` boundaries into per-frame [`ProfileStats`] and publishes
+//! the top eight hotspots over rolling five-second windows. [`profile_stats`] returns
+//! the latest frame stats (or `None` when profiling is off) and [`report`] prints up to
+//! twenty native operations ranked by total time.
+//!
+//! Ruby-side sampling itself lives in `crate::profiling`.
 use magnus::{RString, Ruby};
 use rsxp::{
     engine,

@@ -1,4 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+//! Shared egui theme for the workspace.
+//!
+//! `apply` installs the dark visual style — panel and window fills, the green
+//! selection/active accents, tighter item spacing, button padding, and window
+//! margins — and enables selectable labels. It is idempotent per
+//! `egui::Context`: a `"rsxp-theme-v1"` temp flag in the context's data cache
+//! makes later frames a no-op, so callers may invoke it unconditionally each
+//! frame (`Workspace::draw` does).
 pub(super) fn apply(context: &egui::Context) {
     let id = egui::Id::new("rsxp-theme-v1");
     if context.data_mut(|d| d.get_temp::<bool>(id).unwrap_or(false)) {

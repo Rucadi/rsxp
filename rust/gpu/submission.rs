@@ -1,5 +1,19 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Retained-frame reuse, buffer bindings, dispatch and atlas reclamation.
+//! Frame submission: retained-frame reuse, buffer/bind-group upkeep, compute
+//! dispatch and atlas reclamation.
+//!
+//! `submit` flushes pending native tiles, then either records a remote frame
+//! (no GPU work) or compares the new commands, uploads, batching flag and tile
+//! geometry against the previous frame. An identical frame is reused verbatim
+//! (`reused_frames`), skipping the dispatch entirely. Otherwise it grows and
+//! uploads the tile-geometry, command and batch-offset buffers as needed,
+//! rebuilds the batch schedule via `draw_batches` when the layout changed
+//! (outputs, targets or bounds), lazily recreates the bind group after any
+//! buffer growth, and dispatches one workgroup per 8x8 destination tile with
+//! the batch count on the z axis. Separate dispatches in one compute pass keep
+//! ordered storage visibility, so barriers between batches hold. Finally
+//! `reclaim_sources` frees atlas slots unused this frame, coalesces adjacent
+//! free ranges and shrinks `atlas_end` when the tail is free.
 use super::batching::draw_batches;
 use super::GpuRenderer;
 use std::num::NonZeroU64;

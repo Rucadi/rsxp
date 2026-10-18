@@ -1,5 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Browser virtual filesystem, on-demand page reader and startup archives.
+//!
+//! Game files live in a thread-local `HashMap` keyed by lower-cased,
+//! forward-slash-normalized paths. JavaScript populates it with `web_add_file`
+//! (or `web_add_archive` for encrypted `Game.rgssad`/`2a`/`3a` images, which
+//! `web_init` drains via `take_archives`). For paths that are not cached,
+//! `read_via_host` falls back to a registered reader function (`web_set_reader`,
+//! signature `(path) => Uint8Array | null`) so the host page can fetch assets on
+//! demand. `web_file_count` and `web_read_file` are introspection/debugging
+//! helpers.
 use js_sys::Uint8Array;
 use std::{cell::RefCell, collections::HashMap};
 use wasm_bindgen::{prelude::*, JsCast};

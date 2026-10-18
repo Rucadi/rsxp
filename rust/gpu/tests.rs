@@ -1,5 +1,30 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! GPU parity, retained resources and batching regression checks.
+//! GPU regression tests: compositor/software parity, retained-resource and
+//! binding upkeep, batching correctness, and native tile invariants.
+//!
+//! Most tests construct a real `GpuRenderer`, so they are `#[ignore = "requires
+//! a wgpu adapter"]` and run with
+//! `cargo test --lib gpu::tests -- --ignored --nocapture`. The pure-CPU
+//! `batches_preserve_overlaps_and_viewport_dependencies` exercises `draw_batches`
+//! directly. `compare` asserts per-channel ARGB equality within a tolerance.
+//!
+//! Coverage:
+//! - `native_tile_atlas_and_layers_match_individual_sprites`: the native tile
+//!   path matches per-sprite draws across animation phases and confirms quads
+//!   outnumber batches (adjacent priority layers batch).
+//! - `retained_batches_handle_pixel_animation_and_changed_overlap`: batch
+//!   schedules track pixel animation and changed overlap, and fully clipped
+//!   sprites add no command or upload.
+//! - `retained_bindings_follow_atlas_growth_and_frame_resize`: retained bind
+//!   groups stay valid after atlas growth and frame resize.
+//! - `batched_draws_match_serial_with_overlaps_and_viewports`: grouped output
+//!   matches serial and actually reduces dispatches.
+//! - `compositor_matches_software_and_tracks_dirty_sources`: blend modes,
+//!   mirror/invert, color/tone, pattern, bush and rotation plus plane and
+//!   viewport effects match the software renderer; unchanged bitmaps are not
+//!   re-uploaded and unchanged frames are reused.
+//! - `culled_sprites_and_planes_do_not_split_native_tile_draws`: culled or
+//!   transparent non-tile draws leave a native tile run intact.
 use super::batching::draw_batches;
 use super::*;
 use crate::graphics::{Bitmap, Color, Rect, SpriteFx, SpriteTransform, Tone};

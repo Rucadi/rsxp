@@ -1,4 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+//! Right-hand profiler panel.
+//!
+//! `draw_profiler_panel` renders the resizable `workspace-profiler-panel` with
+//! per-frame figures from `WorkspaceInfo`: FPS, total frame count, and the
+//! derived frame time. When `WorkspaceInfo::show_profile_details` is set and a
+//! `host::ProfileStats` is supplied, it adds the Ruby/bridge/native/render/
+//! present milliseconds, the native call count, and a grid of the native
+//! hotpaths seen in the latest five-second window (with its age), or a
+//! "Collecting profile data…" placeholder while the window is still empty. The
+//! browser frontend leaves `show_profile_details` false, so only the FPS shows.
 use super::*;
 impl Workspace {
     pub(super) fn draw_profiler_panel(&mut self, context: &egui::Context, info: &WorkspaceInfo) {

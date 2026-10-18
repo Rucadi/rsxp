@@ -1,4 +1,43 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+//! The "Connected world" window: an interactive canvas of RPG Maker maps,
+//! Essentials connections, linked interiors, and a teleport target picker.
+//!
+//! [`Workspace::draw_world_map_window`] is the window itself, split into a left
+//! canvas (drawn by [`Workspace::draw_world_canvas`]) and a right pane that
+//! chooses either a map/tile destination or the interiors linked to the current
+//! overworld map. Selecting a tile sets the `teleport` target; "Teleport to
+//! tile" queues it. The canvas supports pan (drag) and zoom (scroll or ±), and
+//! `build_world_map_layout` in the parent module positions the maps.
+//!
+//! ## Main functions
+//! * [`Workspace::draw_world_map_window`] — the window, destination/indoors
+//!   pane, and tile-preview placement.
+//! * [`Workspace::draw_world_canvas`] — paints map rectangles and connection
+//!   edges, handles pan/zoom, and lets a click select a map and tile.
+//! * [`Workspace::draw_map_tiles`] / [`Workspace::draw_map_tiles_preview`] —
+//!   render a single map's real tile layers with a selectable tile.
+//! * [`Workspace::paint_map_preview`] — uploads/uses a composed texture for a
+//!   preview; [`Workspace::compose_map_texture`] rasterizes the layers.
+//! * [`Workspace::map_asset_image`] / [`Workspace::map_asset_image_scaled`] —
+//!   fetch and cache tileset/autotile bitmaps at a requested tile resolution.
+//!
+//! ## Backend use
+//! This file reads `world_map_data`, `world_map_previews`, and
+//! `map_preview_data` (populated by `poll_api_response` in `inspector`) and
+//! queues `map_preview` / `teleport` through `queue_api_request`. Asset bytes
+//! come from `backend.asset_image(category, name)`.
+//!
+//! ## JSON schema
+//! The world map is `{ "maps": [{ "id", "name", "width", "height",
+//! "tileset_id", "outdoor", "region", "world_x", "world_y" }], "connections":
+//! [[6 ints]], "transfers": [[6 ints]], "current_map_id" }`; each edge is
+//! `[map, x, y, map, x, y]`. A map preview is `{ "map_id", "width", "height",
+//! "tileset", "autotiles": [names], "autotile_parts": [[...]], "layers":
+//! [[[tile ids]]] }`. While composing, tile ids below 48 are empty; ids
+//! `48..384` are autotiles (index `id/48 - 1`, quadrant layout `id % 48` from
+//! `autotile_parts`); ids `>= 384` index tileset cells `(id-384) % 8` by
+//! `(id-384) / 8`. Tiles are 32 px in RGSS and each autotile is a 6-column
+//! sheet of half-tile quadrants.
 use super::*;
 impl Workspace {
     #[cfg(feature = "game-api")]

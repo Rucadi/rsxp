@@ -10,6 +10,14 @@
 //! The `pokemonz` cases accept `RSXP_POKEMONZ_ROOT`/`RSXP_POKEMONZ_SAVE`; the
 //! world-camera case also needs a wgpu adapter and is `#[ignore]`d (add
 //! `-- --ignored`).
+//!
+//! Coverage: the Pokémon Z starter event writes and reads its binary save data;
+//! the Pokédex/movedex/itemdex/encounter and debug game-API surface reads legacy
+//! PBS data; continuing loads a temporary save copy (with
+//! `RUBY_FIBER_MACHINE_STACK_SIZE` raised for the debug dispatcher); and the
+//! retained Essentials map frames match legacy frames. The `ericlostie/` case
+//! exercises the real Essentials `TilemapRenderer`; its GPU world-camera
+//! comparison is `#[ignore]`d.
 use std::{
     fs,
     path::PathBuf,

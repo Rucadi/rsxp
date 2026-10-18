@@ -6,6 +6,10 @@
 //! Playback is driven by the game's normal update loop: the caller asks for the
 //! frame that should be visible at a given elapsed time, and this module decodes
 //! ahead only as far as needed.
+//!
+//! [`Movie::open`] parses the Theora headers so `width`/`height` are known
+//! before the first frame; [`Movie::frame_at`] returns the frame visible at a
+//! given elapsed time, and [`Movie::finished`] reports end of stream.
 use crate::graphics::Bitmap;
 use ogg::reading::PacketReader;
 use std::io::{BufReader, Cursor};

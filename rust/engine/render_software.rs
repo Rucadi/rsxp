@@ -1,5 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Compose RGSS sprites, planes and viewport groups through CPU bitmaps.
+//!
+//! `compose_scene` resolves world tiles to current camera coordinates, buckets
+//! visible sprites/planes by viewport, sorts by `(z, order)` — never `y`, which
+//! would push full-screen overlays behind windows — and draws each element into
+//! `target`. Viewports render into a reusable off-screen buffer, get their
+//! color/tone applied, then blit back. `render_software` wraps that with the
+//! frozen-transition overlay, brightness and FPS counter, then presents;
+//! `snapshot` recomposes and clones for `Graphics.snap_to_bitmap`.
 use super::{DrawItem, Element, Runtime, RuntimePlane, RuntimeSprite};
 use crate::graphics::{Bitmap, Color, Rect, SpriteFx, SpriteTransform};
 use std::{collections::HashMap, time::Instant};

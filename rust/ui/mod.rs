@@ -1,10 +1,50 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! One egui workspace for every frontend.
+//! Workspace root: the single egui UI shared by every frontend.
 //!
-//! The desktop window and the browser canvas both render this: the toolbar, the
-//! runtime-patches panel, the profiler and the game view placement. A frontend
-//! supplies input, presentation, and an injected Backend for runtime services.
-//! Session panels emit platform-neutral launcher/save intents.
+//! The desktop window and the browser canvas both render this module: the
+//! toolbar, the runtime-patches panel, the output log, the profiler, the game
+//! view placement, and — behind `game-api` — the API console and the
+//! Essentials inspector windows. A frontend supplies per-frame
+//! [`WorkspaceInfo`] plus an injected [`backend::Backend`] for runtime services,
+//! then reads back a [`WorkspaceOutput`] describing where the game view landed
+//! and which global actions (fullscreen, save import/export) were requested.
+//!
+//! ## Main types
+//! * [`Workspace`] — persistent UI state: panel visibility, [`ViewMode`], the
+//!   session panel, and (behind `game-api`) the Pokedex/Movedex/Itemdex and
+//!   world-map data and texture caches. [`Workspace::draw`] is the per-frame
+//!   entry point; it applies the theme, handles keyboard shortcuts (F1 toggles
+//!   all chrome, F2/F3/F10 toggle the left/output/profiler panels, F4 requests
+//!   frontend fullscreen), and lays out the panels around the game view.
+//! * [`WorkspaceInfo`] — the frame's frontend-provided facts (logical size,
+//!   FPS/frame count, global fullscreen, optional [`ProfileStats`], and which
+//!   controls the frontend supports).
+//! * [`WorkspaceOutput`] — the frame's results: the `game_rect`, an optional
+//!   `fullscreen_request`, and `export_saves` / `import_saves` intents.
+//! * [`ViewMode`] — how the game view is placed (docked, workspace-fullscreen,
+//!   or floating).
+//! * `Tool` (private) — the active tool tab (runtime, pokeAPI, Essentials,
+//!   online play).
+//!
+//! ## Backend use
+//! All runtime interaction goes through `Workspace::backend`; the workspace
+//! never handles VM or window types directly. The session panels ([`session`])
+//! present the launcher/save UI and emit platform-neutral [`session::SessionActions`]
+//! intents for the frontend to execute, and the `game-api` tool windows queue
+//! named operations through the backend.
+//!
+//! ## Game data
+//! Behind `game-api`, [`build_world_map_layout`] turns the world-map JSON
+//! (`maps` with `id`/`width`/`height`/`world_x`/`world_y`, plus `connections`
+//! and `transfers` edges encoded as 6-element `[map, x, y, map, x, y]` arrays)
+//! into a deterministic, non-overlapping `WorldMapLayout`; [`overlay_map_region`]
+//! alpha-blends RGBA tiles when composing map previews; and
+//! [`first_pokemon_sprite_frame`] extracts the first square frame from an
+//! animated species sprite strip.
+//!
+//! The panel implementations live in the sibling modules declared below
+//! (toolbar, logs, patches, performance, game_view, session, and the `game-api`
+//! explorers).
 use crate::host::ProfileStats;
 pub mod backend;
 mod connections;

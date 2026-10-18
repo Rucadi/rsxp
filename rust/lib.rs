@@ -1,10 +1,44 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Platform-independent components of the standalone Rust engine.
+//! Platform-independent core of the standalone Rust engine for RPG Maker RGSS
+//! games.
 //!
-//! [`engine`] owns RGSS state and frame execution; [`host`] defines the platform
-//! services supplied by desktop and browser frontends. [`graphics`] provides
-//! software pixel operations and the optional `gpu` module provides composition
-//! on the device. Ruby and frontend integration live outside this library.
+//! This library is the reusable engine, not a frontend: the native desktop
+//! binary and the WebAssembly browser host both link it and supply platform
+//! services. Ruby integration (the Magnus bindings and `rgss.rb`) lives outside
+//! the library.
+//!
+//! ## Module map
+//! * [`engine`] — RGSS runtime state and frame execution (bitmaps, sprites,
+//!   viewports, input and the native command dispatcher). Its platform-service
+//!   traits and input types are re-exported as [`host`] and [`input`].
+//! * [`graphics`] — deterministic CPU software rendering, plus the public
+//!   [`tilemap`] helpers; the reference for the optional GPU compositor.
+//! * [`gpu`] *(feature `gpu`)* — device-side composition on the GPU; CPU
+//!   bitmaps remain authoritative for pixel access.
+//! * [`data`] — RGSS formats independent of Ruby and rendering: encrypted
+//!   archives ([`archive`]) and the signed 16-bit [`table`] type.
+//! * [`media`] — pure-Rust cross-platform animated GIF and Theora (`.ogv`)
+//!   decoders.
+//! * [`patches`] — the runtime-patch catalog and per-thread enabled/parameter
+//!   state, re-exported at the crate root as [`runtime_patch`].
+//! * [`runtime_settings`] — thread-local live settings (frame-rate cap,
+//!   fast-forward, reset) a host UI can change while the game runs.
+//! * [`controls`] — the shared gamepad-to-RGSS-action mapping.
+//! * [`workspace_services`] *(feature `ui`)* — the default
+//!   [`ui::backend::Backend`] adapter bridging the egui workspace to the engine
+//!   and host.
+//! * [`api_bridge`] *(feature `game-api`)* — the local game-command queue and
+//!   HTTP routing used by the desktop and browser tools.
+//! * [`cable_club`] / [`cable_unmod`] *(feature `game-api`, non-WASM)* — the
+//!   Cable Club peer-relay servers.
+//! * [`ui`] *(feature `ui`)* — the shared egui workspace rendered by both the
+//!   native and browser frontends.
+//!
+//! ## Features
+//! `desktop` builds the native frontend and enables `game-api`; `ui` enables the
+//! shared egui workspace; `gpu` enables `ui` plus the device compositor;
+//! `game-api` enables the command bridge; `api-docs` enables the code-first
+//! OpenAPI schema used by the `rsxp-mcp` binary.
 #[cfg(feature = "game-api")]
 pub mod api_bridge;
 #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]

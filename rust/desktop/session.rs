@@ -1,5 +1,27 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Desktop-only isolated runner transport. The dashboard never owns Ruby state.
+//! Desktop-only transport to an isolated "runner" process; the dashboard never
+//! owns Ruby state itself.
+//!
+//! When `RSXP_SESSION_ADDR` is set, [`Runner::connect`] opens a TCP connection,
+//! sends a length-prefixed JSON handshake carrying `RSXP_SESSION_TOKEN`, enables the
+//! API relay, and spawns a background `rsxp-session-controls` thread that decodes
+//! control messages into a bounded channel. If the variable is unset, connect returns
+//! `Ok(None)` and no runner is used.
+//!
+//! Frames are sent one-way: a JSON header from [`Runner::frame_header`] (fps/frame
+//! counters, optional [`rsxp::host::ProfileStats`], input/rate state and relay
+//! replies) followed by the pixel payload. [`Runner::frame`] writes little-endian
+//! pixel bytes (zero-copy `bytemuck` cast when the `gpu` feature is on and the target
+//! is little-endian); with the `gpu` feature, [`Runner::gpu_frame`] instead writes an
+//! encoded GPU frame and records `gpu_bytes`. [`write_message`]/[`read_message`] use a
+//! 4-byte little-endian length prefix with a 16 MiB cap.
+//!
+//! [`Runner::poll`] sends a poll request and applies queued controls. Only the first
+//! poll waits (up to 30s) for the handshake; afterward controls are drained without
+//! blocking, so GPU packet decoding never forces a round trip on every game update.
+//! [`Runner::apply_control`] maps JSON fields onto `Input` (keys, mouse, scroll, text),
+//! runtime settings (fast-forward, rate override) and runtime patches, returning
+//! `false` on a `stop` request or when the stream/peer is lost.
 use rsxp::{graphics::Bitmap, input::Input};
 use serde_json::{json, Value};
 use std::{

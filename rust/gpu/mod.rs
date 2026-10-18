@@ -3,9 +3,23 @@
 //! access; only changed source revisions are uploaded. Presentation has no
 //! framebuffer readback; snapshots explicitly synchronize when requested.
 //!
-//! This module owns state and begins frames. `initialize` creates the pipeline,
-//! `resources` transfers pixels, `commands` encodes draws, `batching` groups
-//! independent writes, and `submission` dispatches or reuses the retained frame.
+//! State lives in `GpuRenderer`, which owns the device, pipeline, atlas,
+//! retained frame and command list. `Params` is the 256-byte command record
+//! shared with `shader.wgsl`: an operation tag in `a[0][0]` (0 clear, 1
+//! sprite/plane, 2 viewport, 3 brightness, 4 native tile geometry) plus source
+//! transform, color/tone and pattern fields, with floats stored as bit
+//! patterns. `Slot` tracks each uploaded bitmap's atlas placement and revision.
+//! See `commands` for the full field layout.
+//!
+//! `begin(w, h)` starts a frame: it reallocates the frame buffer on resize and
+//! resets tile collection, the atlas frame, commands, used ids and the retained
+//! comparison. `clear`, `sprite`, `tile`, `plane`, `viewport` and `brightness`
+//! are defined in submodules; `submit` dispatches or reuses the frame.
+//!
+//! Module map: `initialize` creates the pipeline and buffers, `resources`
+//! transfers pixels and owns atlas slots, `commands` encodes draws, `batching`
+//! groups independent writes, `submission` dispatches or reuses the retained
+//! frame, and `remote` produces/consumes portable `GpuFrame` submissions.
 use crate::tilemap::{TileAtlas, TileGeometryCache, TileQuad};
 use std::collections::{HashMap, HashSet};
 

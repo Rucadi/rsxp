@@ -1,5 +1,46 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Game-backed species explorer. Requests and results are independent of the API console.
+//! Game-backed species explorer for Pokémon Essentials projects.
+//!
+//! The Pokedex window lists every species and form the running game exposes,
+//! then renders a detail view with Overview, Locations, Moves, Evolution, and
+//! Cheats tabs. Its requests and cached results live in `Workspace::pokedex`,
+//! entirely separate from the API console's foreground request slot, so opening
+//! or refreshing the dex never overwrites `api_response`/`api_error`.
+//!
+//! ## Main types and functions
+//! * `Pokedex` (`pub(super)`) — cached catalog (`Vec<Value>`), the query and
+//!   its memoized matches, `known_only` filter, the selected species id, the
+//!   active [`DetailTab`], per-species detail cache, and load/error state.
+//! * `DetailTab` — which detail view is shown.
+//! * `EncounterCheats` — options for the Cheats tab's "start a wild encounter".
+//! * [`Workspace::request_pokedex`] (sends `pokemon_essentials_pokedex` with
+//!   `["refresh"]` or no args) and `poll_pokedex`, which consumes the index or a
+//!   single `pokemon_essentials_species_entry`, and lazily requests details for
+//!   the current selection.
+//! * [`Workspace::draw_pokedex_window`] plus the per-tab drawing helpers.
+//! * `type_color` / `types` — shared type-chip rendering (also used by the
+//!   RegistryDex for moves).
+//! * `start_cheat_encounter` / `poll_cheats` — queue
+//!   `pokemon_essentials_wild_encounter` and report its outcome.
+//!
+//! ## Backend use
+//! All data comes from `backend.send_request` / `backend.take_response`, with
+//! the pending id + species kept in `pokedex.pending`; sprite textures for the
+//! header use `Workspace::pokemon_sprite_texture`. Search reuses the shared
+//! `dex_search::{fuzzy_score, normalized}` helpers (name, id, and dex number).
+//!
+//! ## JSON schema
+//! The index response is `{ "species": [{ "id", "name", "number", "form",
+//! "form_name", "types": [...], "source", "map_count" }], "note" }`; errors come
+//! back as `{ "error": "..." }`. A species entry adds `entry`, `stats`
+//! (HP/ATTACK/DEFENSE/SPECIAL_ATTACK/SPECIAL_DEFENSE/SPEED), `facts`
+//! (`height_m`, `weight_kg`, `evs`, `base_exp`, `happiness`, ...),
+//! `abilities`/`hidden_abilities` (`[{ id, name, description }]`), `locations`
+//! (`[{ map_id, map_name, type, version, min_level, max_level, percent }]`),
+//! `moves` (`[{ id, name, method, level, type, category, power, accuracy, pp,
+//! priority, description, function_code }]`), `evolutions`/`previous`
+//! (`[{ id, name, condition, method, parameter }]`), and `raw`. The cheats
+//! response reports `{ "name", "level", "shiny" }` or `{ "error": "..." }`.
 use super::dex_search::{fuzzy_score, normalized};
 use super::*;
 use serde_json::Value;

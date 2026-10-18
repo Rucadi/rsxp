@@ -1,5 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Repeatable compositing workload; no Ruby, disk, window, or FPS cap.
+//! `render-bench`: a repeatable compositing microbenchmark with no Ruby, disk,
+//! window or FPS cap.
+//!
+//! The optional first argument sets the frame count (default 20). It builds a
+//! synthetic source bitmap and pattern, then draws 80 blended sprites per frame
+//! into a 640x480 CPU bitmap to report software ms/frame and bitmap clone cost.
+//! With the `gpu` feature it additionally submits the same workload to
+//! `GpuRenderer`, reports the adapter/speedup, and asserts the GPU readback
+//! stays within 3 per-channel steps of the software reference. Run with
+//! `cargo run --release --example render-bench [FRAMES]`.
 use rsxp::graphics::{Bitmap, Color, Rect, SpriteFx, Tone};
 use std::{hint::black_box, time::Instant};
 fn main() {

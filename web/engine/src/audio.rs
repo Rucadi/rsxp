@@ -4,6 +4,16 @@
 //! HTMLMediaElement keeps compressed music compressed and streams it through
 //! the browser's codec stack. This is a better fit for the web build than
 //! decoding entire BGM files to PCM in WASM.
+//!
+//! `BrowserAudio` implements `rsxp::host::AudioBackend`. Each play creates an
+//! `HtmlAudioElement` routed through a Web Audio `GainNode` (when an
+//! `AudioContext` is available) so per-channel master volume and fades can be
+//! applied without touching the element's own volume. BGM/BGS loop and are
+//! exclusive per channel; SE voices are one-shot and stack. Because browsers
+//! block autoplay until a user gesture, `pointerdown`/`touchstart`/`keydown`
+//! listeners resume the context and retry pending playback. A 25 ms interval
+//! advances fades even while the game frame pump is idle, and `Drop` removes the
+//! listeners, clears the timer and revokes the object URLs.
 use js_sys::{Array, Date, Uint8Array};
 use rsxp::host::{AudioBackend, AudioChannel};
 use std::cell::RefCell;

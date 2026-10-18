@@ -1,5 +1,30 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! A wgpu surface on a winit-owned native window.
+//! A wgpu surface on a winit-owned native window, plus the shared workspace UI.
+//!
+//! [`GpuDisplay`] owns the swapchain (`wgpu::Surface` + configuration), the
+//! presentation render pipeline, a [`rsxp::ui::Workspace`] instance, the egui
+//! renderer, and presentation statistics. It draws everything into one render
+//! pass per frame: first the game image, then the egui overlay on top.
+//!
+//! Two presentation entry points implement the same [`Presentation`] contract
+//! (window size, egui context/input, fullscreen state, profiling stats):
+//! - [`GpuDisplay::present`] draws the GPU-composited framebuffer produced by
+//!   [`rsxp::gpu::GpuRenderer`]; used for local GPU composition and for
+//!   forwarding a remote runner's frames.
+//! - [`GpuDisplay::present_bitmap`] uploads a CPU-side [`Bitmap`] into a
+//!   storage buffer and draws it with a small WGSL shader that scales and
+//!   letterboxes the image into the game rect reported by the workspace UI.
+//!   The buffer grows to a power of two when needed and is re-uploaded only
+//!   when the bitmap's revision changes.
+//!
+//! Details a reader needs: the surface config picks the first non-sRGB format
+//! the adapter can present and uses `AutoNoVsync`; the game image is positioned
+//! by a uniform holding the logical size and the target rect, written only when
+//! it changes; the bind group is rebuilt only when the source buffer changes.
+//! A lost/outdated surface is reconfigured, a timeout is skipped, and a
+//! zero-sized window is ignored, each returning an empty `PlatformOutput`.
+//! The workspace reports the game pointer rect and any global fullscreen
+//! request, which `run` forwards to the window.
 use rsxp::gpu::GpuRenderer;
 use rsxp::graphics::Bitmap;
 use rsxp::host::ProfileStats;

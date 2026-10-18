@@ -1,5 +1,32 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Shared local game-command queue and routing for desktop and browser tools.
+//! Shared local game-command queue and HTTP routing used by the desktop and
+//! browser tools (the egui inspector, the desktop workspace, and `rsxp-mcp`).
+//!
+//! The bridge is a process-local request queue. A caller submits a named
+//! operation ([`send_from_ui`], or the desktop HTTP transport) and the *game
+//! thread* drains it from Ruby's `Input.update` via [`poll`], then answers with
+//! [`respond`]. Submission never blocks the game thread: the egui path returns a
+//! request id whose reply is polled later with [`take_ui_response`].
+//!
+//! ## Wire format
+//! [`poll`] yields zero or more newline-terminated requests, each
+//! `id<TAB>method<TAB>arg…`, where `id` is a monotonic `u64`. `route_http` maps
+//! an HTTP method and target (`/v1/…`, with URL-decoded query parameters) to
+//! `(operation, args)` or an HTTP `(status, message)`, validating map/slot ids,
+//! item names and quantities. `respond` completes the request with a JSON
+//! string.
+//!
+//! ## Threading and lifecycle
+//! `Bridge` holds a `std::sync::mpsc` request channel, the reply senders for
+//! requests handed to Ruby, and the receivers polled by the egui workspace.
+//! [`initialize`] creates it lazily. The network transports ([`start`],
+//! [`start_from_env`], [`listening_port`]) are desktop-only and live in the
+//! private `transport` submodule; on WASM they are stubbed because external
+//! networking is unavailable. The runner side (a separate process) uses the
+//! [`relay_enable`] / [`relay_requests`] / [`relay_replies`] thread-locals to
+//! shuttle the same protocol across the session boundary. [`end_session`] fails
+//! any in-flight requests when the selected game ends, so they are never
+//! replayed into another game.
 use std::sync::{atomic::AtomicBool, Arc};
 use std::{
     collections::HashMap,

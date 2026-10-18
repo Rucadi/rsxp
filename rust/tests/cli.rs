@@ -1,4 +1,24 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+//! End-to-end integration tests for the `rsxp` command-line binary.
+//!
+//! Every test drives the compiled `rsxp` executable through
+//! `CARGO_BIN_EXE_rsxp` (no window server required) using the Ruby fixtures in
+//! `rust/testdata/` and temporary game folders. Coverage includes:
+//!
+//! - deterministic headless framebuffer output (`--headless --output`, PPM);
+//! - `archive-list`/`archive-cat` against fixed RGSSAD fixtures;
+//! - argument validation and `--help`/`--version`;
+//! - runtime patches (`RSXP_PATCH`, panoramic/zoom, cable-club RNG) through
+//!   embedded Ruby scripts;
+//! - scripted input and controller events (`RSXP_INPUT`) plus RGSS value/media
+//!   smoke tests across RGSS 1-3;
+//! - script-bundle loading, `Game.ini` handling and encrypted archives;
+//! - the isolated runner session protocol (`RSXP_SESSION_ADDR`/`TOKEN`);
+//! - retained/native state equivalence under `RSXP_*` feature flags.
+//!
+//! Run with `cargo test --test cli` (default features). Tests marked `#[ignore]`
+//! need a wgpu adapter or StackProf; run them with `-- --ignored`, the latter
+//! inside nix-shell.
 use std::{
     fs,
     path::PathBuf,

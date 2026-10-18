@@ -1,5 +1,43 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Encode sprites, tile geometry, planes and effects into shader parameters.
+//! CPU-side command encoding: turns RGSS scene elements into the flat `Params`
+//! records the compute shader consumes.
+//!
+//! Each public method appends one 256-byte `Params` (16 `vec4<u32>` rows) to
+//! `GpuRenderer::commands`; `shader.wgsl` decodes the same rows. All entries are
+//! `u32`; floating-point fields are bit patterns written through
+//! `Params::floats`. The operation code lives in `a[0][0]`:
+//! - `0` clear: fill the clipped region with the ARGB color in `a[3][0]`.
+//! - `1` sprite/plane: sample an atlas source (and optional pattern) and
+//!   transform it into the destination.
+//! - `2` viewport: apply color/tone to the scratch layer (read at byte offset
+//!   `a[0][2] == w*h`) and composite it into the destination.
+//! - `3` brightness: scale destination RGB by `a[3][0] / 255`.
+//! - `4` native tile geometry: draw the bin/quad list encoded in `tile_data`,
+//!   bounded by `a[1]`.
+//!
+//! Common field layout (rows below the operation tag):
+//! - `a[0] = [operation, dest_offset, source_atlas, pattern_atlas]`, where
+//!   `dest_offset` is `w*h` for the scratch layer and `0` for the frame.
+//! - `a[1] = [x, y, x1, y1]` clipped destination bounds; empty rects are
+//!   dropped before uploads so they cannot split tile runs.
+//! - `a[2] = [frame_w, frame_h, source_w, source_h]`.
+//! - `a[3]`: source area rect, or the clear color / brightness value.
+//! - `a[4]` inverse transform, `a[5]` translation and size (floats).
+//! - `a[6]` color, `a[7]` tone, `a[8]` pattern zoom/scroll (floats).
+//! - `a[9] = [pattern_w, pattern_h, tile, blend]`.
+//! - `a[10] = [blend, invert, mirror, mode]`; `mode` is `0` for the
+//!   axis-aligned/zoom path, `1` for the rotated matrix path and `2` for a
+//!   tiled plane.
+//! - `a[11]` opacity floats `[opacity, pattern_opacity, 0, simple]`.
+//! - `a[12] = [opacity, bush, bush_y, bush_opacity]`.
+//! - `a[13]` zoomed destination size, `a[14]` tile bin origin,
+//!   `a[15] = [base, bin_width, BIN_SIZE, 0]`.
+//!
+//! `effects` fills the shared color/tone/pattern/opacity rows. `sprite` selects
+//! the axis-aligned, negative-zoom or rotated inverse-matrix path and narrows
+//! the clip to the real draw. `tile` defers compact `TileQuad`s to `flush_tiles`
+//! (which caches geometry through `TileGeometryCache`), routing oversized,
+//! rotated, patterned or bushed cells back to `sprite`.
 use super::{GpuRenderer, Params};
 use crate::graphics::{Bitmap, Color, Rect, SpriteFx, SpriteTransform, Tone};
 use crate::tilemap::{TileGeometry, TileGeometryCache, TileQuad};

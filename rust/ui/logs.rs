@@ -1,4 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+//! Runtime output panel.
+//!
+//! `draw_logs` renders the bottom, resizable `workspace-output-panel` over
+//! `Workspace::logs`, one monospace line each, auto-scrolled to the newest
+//! entry, with a Copy button that places the whole log on the clipboard. It is
+//! drawn for the `panels_output` toggle and, when a session has stopped, even
+//! with controls hidden so crash output stays visible (see `Workspace::draw`).
 use super::*;
 impl Workspace {
     pub(super) fn draw_logs(&mut self, context: &egui::Context) {

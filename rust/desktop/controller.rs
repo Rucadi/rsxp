@@ -1,4 +1,23 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+//! Native gamepad input via `gilrs`, translated into the engine's SDL-style
+//! key codes and merged into [`rsxp::input::Input`].
+//!
+//! [`Controllers`] owns the optional `gilrs` backend, the set of key codes it
+//! currently holds down, and the on-disk control mapping. The mapping is
+//! provided by the engine's `rsxp::controls` module: [`Controllers::new`]
+//! decodes any saved layout (from `rsxp/controls` under `%APPDATA%` on Windows
+//! or `$XDG_CONFIG_HOME`/`~/.config` elsewhere) and records an `encode()`d
+//! snapshot for change detection. If no backend can be created it logs and
+//! continues with keyboard-only input.
+//!
+//! Each [`Controllers::poll`] drains pending `gilrs` events, counts connected
+//! gamepads, and (only while the window is focused) samples the standard
+//! buttons plus the left stick against the mapping's deadzone. Button state is
+//! passed to `controls::keys` and extended with `620 + i` pad keys, then
+//! diffed against the previously held set: released keys get `key_up`, and all
+//! held keys are re-asserted with `key_down` so gameplay input survives a
+//! frame in which the UI suppressed input. When the encoded mapping changes it
+//! is persisted back to the config file.
 use gilrs::{Axis, Button, Gilrs};
 use rsxp::{controls, input::Input};
 use std::{collections::HashSet, path::PathBuf};

@@ -1,8 +1,35 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Native tile cells and ground/priority quad geometry. Source cells are
-//! deduplicated across tiles and animation frames. Geometry is ordered before
-//! spatial binning, so transparent ground layers and priority tiles preserve
-//! their exact relationship to characters and other scene elements.
+//! Native tile cells and ground/priority quad geometry for the GPU compositor.
+//!
+//! [`TileAtlas`] deduplicates small source cells across tiles and animation
+//! frames. Cells are keyed by `(source_id, x, y, width, height)`; the first
+//! request allocates a [`Bitmap`] for the cell, and later requests refresh its
+//! pixels only when the source bitmap's revision changes (clear, then
+//! `stretch_blt`). Each cell gets an id in a reserved range below the
+//! compositor's snapshot/overlay ids (`u64::MAX - 1024 - n`). `begin_frame`
+//! advances an epoch and, once more than 4096 cells exist, evicts cells unused
+//! for more than two frames, so the visible scene is never discarded.
+//!
+//! [`TileQuad`] holds one tile draw: a `z` plus the 16×4-word `params` copied
+//! from the compositor's sprite command. [`TileQuad::packed`] compresses it to
+//! [`TileQuad::WORDS`] (24) `u32` words (clipped bounds, destination size, atlas
+//! cell id, cell size, integer opacity, viewport buffer, frame width,
+//! blend/flags, colour and tone) for upload.
+//!
+//! [`TileGeometry::append`] turns an ordered quad list into a GPU index layout:
+//! quads sharing a `z` form one [`TileLayer`] run, and an intervening non-tile
+//! scene element ends the run so ordering relative to characters and other
+//! elements is preserved. From `base`, the buffer holds one `u32` offset per
+//! spatial bin, then per bin a count followed by that bin's quad offsets, then
+//! every quad as a [`TileQuad::WORDS`]-word record. Bins are
+//! [`TileGeometry::BIN_SIZE`] (32) pixel squares covering only the occupied
+//! bounds, not the whole screen.
+//!
+//! [`TileGeometryCache`] retains that bin layout between frames and rebuilds it
+//! only when the extent or any quad's `(z, clipped bounds)` changes; animation
+//! cell selection and atlas pixel changes just re-append the quad records with
+//! rebased indices. `append` returns a [`TileDrawGeometry`] describing the batch
+//! to dispatch.
 use crate::graphics::{Bitmap, Rect};
 use std::collections::HashMap;
 

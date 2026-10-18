@@ -1,5 +1,21 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Native library persistence and game discovery, separate from presentation.
+//!
+//! The "library" is the list of recently opened games plus the helpers the
+//! dashboard uses to turn a user-chosen path into a usable game root.
+//! - [`load`] and [`remember`] maintain up to 12 recent entries in
+//!   `library.json` under `$XDG_CONFIG_HOME` (or `~/.config`) `rsxp/`.
+//!   `remember` moves a path to the front, deduplicates, truncates, and writes
+//!   atomically through a pid-suffixed temp file and `rename`.
+//! - [`discover`] canonicalizes the chosen file or directory. A `Game.ini`
+//!   path selects its parent directory, and the directory must contain one of
+//!   the recognized RPG Maker markers (`Game.ini`, an RGSS archive, or a
+//!   `Data/Scripts.*` file), matched case-insensitively via
+//!   [`crate::host::case_path`].
+//! - [`title`] reads the `Title=` value from `Game.ini`, falling back to the
+//!   directory name, and [`save_directory`] returns the on-disk save folder
+//!   under `$XDG_DATA_HOME` (or `~/.local/share`) `rsxp/<sanitized title>` if
+//!   it already exists.
 use std::{
     fs,
     path::{Path, PathBuf},

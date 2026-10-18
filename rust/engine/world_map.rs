@@ -1,5 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! World-space tile placements and a shared camera transform. No Ruby values.
+//!
+//! A `WorldTile` is a stable placement in a group, projected on demand through
+//! that group's `MapCamera`: screen `(x, y)` is the tile minus the camera, and
+//! `z` follows RGSS priority rules — reflections are `-100`, tiles at priority
+//! 0 (or on the active bridge layer) are `0`, otherwise
+//! `((row - camera.row + priority + 1) * source_height + 1)` clamped to `i32`.
+//! `bind_world_tiles` attaches placements to sprites; `clear_world_tile` and
+//! `clear_map_camera` bake the current projection back into the sprite state.
+//! Camera changes that affect depth (`row`, `bridge`, `source_height`)
+//! invalidate the retained scene, but pixel `x`/`y` scrolling does not.
 use super::Runtime;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

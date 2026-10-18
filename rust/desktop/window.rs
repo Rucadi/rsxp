@@ -1,5 +1,23 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Native desktop window and input events, implemented with winit.
+//! Native desktop window and input handling built on `winit`.
+//!
+//! [`Window`] owns the `winit` `EventLoop`, the created OS window, a [`WindowApp`]
+//! `ApplicationHandler`, and the controller backend. [`Window::new`] creates and
+//! centers the window, pumping events once so creation errors surface eagerly.
+//! [`Window::poll`] pumps pending events, applies them to `Input`, and returns
+//! `false` once the window is closed; `escape_quits` makes Escape (scan code 41) close
+//! the window. Sizing honors a logical size scaled by [`Window::scale`], and the
+//! remaining setters cover title, fullscreen, cursor visibility and IME/text input.
+//!
+//! Window events are queued as [`PendingInput`] values and only applied in `poll`, so
+//! input is mutated on a single path. Physical keys are translated to SDL-compatible
+//! scan codes by [`scancode`] and mouse buttons to negative codes by [`mouse_button`],
+//! matching the RGSS bindings. Focus loss releases all held inputs. With the `gpu`
+//! feature, `egui` sees events first and [`WindowApp`] only forwards keyboard, mouse
+//! and scroll events `egui` did not consume (or that target the game's pointer rect
+//! set via [`Window::set_game_pointer_rect`]). Text entry is gated on
+//! [`Window::text_input`] and deduplicated between ordinary key text and IME commits
+//! via [`keyboard_text`].
 use rsxp::input::Input;
 use std::{
     collections::{HashSet, VecDeque},

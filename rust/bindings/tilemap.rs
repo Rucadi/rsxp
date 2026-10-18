@@ -1,5 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Apply engine-owned RGSS1 tile plans in one call. No Ruby values are retained.
+//!
+//! `__rsxp_apply_rgss_tiles(sprites, plan, color, tone, viewport, clip)` is the
+//! batch entry point used by the legacy `Tilemap` adapter. It preflights that
+//! every sprite is retained and not frozen, converts `color`/`tone` once, then
+//! walks `plan`, a parallel array of `[bitmap, src_x, src_y, src_size, x, y, z,
+//! priority]` rows. For each row it writes the tile's `@bitmap`, `@src_rect`,
+//! `@x`/`@y`/`@z`, `@visible`, `@__rsxp_rgss_priority`, `@color` and `@tone`
+//! ivars, clears the `@__sync_state`/`@__native_state` snapshot caches, calls
+//! `RSXP::Retained.rewire` when the bitmap identity changed, and builds a
+//! `NativeTileUpdate`. Sprites beyond the plan are hidden. One
+//! `engine::with_runtime_mut` call applies the updates; the whole call runs under
+//! `runtime::direct_call("tilemap_sync_native", ..)` for profiling. Returns
+//! `false` (game fallback) on any unsupported sprite.
 use magnus::{function, prelude::*, Error, RArray, RModule, RObject, Ruby, TryConvert, Value};
 use rsxp::{
     engine::{self, NativeTileUpdate},

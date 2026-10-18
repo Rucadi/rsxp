@@ -1,5 +1,21 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Pure-Rust image decoding and font rasterization for the desktop frontend.
+//!
+//! [`image`] decodes arbitrary encoded bytes (PNG/JPEG/etc. via the `image`
+//! crate) into an RGBA [`Bitmap`] for the RGSS surface.
+//!
+//! [`text`] rasterizes a string with `fontdue`: it measures the box from line
+//! ascent plus descenders and per-glyph advance widths (matching desktop RGSS
+//! sizing), then, when `render` is true, composites glyph coverage into a
+//! [`Bitmap`] using the requested [`Color`]'s RGB and alpha-scaled coverage.
+//! With `render == false` it only returns the measured `(width, height, None)`,
+//! which the engine uses for layout. Font size is validated to `1..=512`; the
+//! `_bold`/`_italic` parameters are accepted but currently ignored. A missing
+//! font falls back to the bundled `assets/liberation.ttf`.
+//!
+//! Decoded fonts are cached in a thread-local list keyed by exact font bytes,
+//! capped at 16 entries (oldest evicted), so the host must call these
+//! functions on the thread that owns the cache.
 use rsxp::graphics::{Bitmap, Color};
 use std::cell::RefCell;
 use std::rc::Rc;

@@ -1,4 +1,24 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+//! `RSXPRetainedMap`: the Ruby-visible handle to the engine's retained
+//! Essentials visible-cell cache (`rsxp::engine::retained_map::RetainedMap`).
+//!
+//! The class is `#[magnus::wrap]`ped over `RefCell<RetainedMap>` and exposes
+//! three methods to `retained.rb`:
+//!
+//! * `update(width, height, maps, force)` — `maps` is an array of per-connected-
+//!   map descriptors `[identity, Table, x, y, width, height, data_identity]`,
+//!   where `identity`/`data_identity` are Ruby `object_id`s of the map object and
+//!   its `Table`. Each `Table` is borrowed, wrapped as a `MapView` carrying the
+//!   table's `revision`, and diffed by `RetainedMap::update`. The returned Ruby
+//!   array holds one `[x, y, layer, map_index_or_nil, tile]` entry per changed
+//!   cell; `nil` marks a now-uncovered cell.
+//! * `shift(x, y)` — rotates retained cells to follow Essentials' reused sprite
+//!   columns/rows, so the next `update` reports only newly exposed strips.
+//! * `chunk_stats` — `[builds, hits, checks, evictions, resident]` counters.
+//!
+//! The chunk cache is enabled unless `RSXP_MAP_CHUNKS=0`. Ruby calls and engine
+//! borrows happen outside the `RefCell` borrows; an uninitialized `Table` raises
+//! `RuntimeError` and engine limits raise `ArgumentError`.
 use super::table::RubyTable;
 use magnus::{method, prelude::*, Error, RArray, Ruby};
 use rsxp::engine::retained_map::{MapView, RetainedMap};

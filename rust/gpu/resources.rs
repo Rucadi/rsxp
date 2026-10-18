@@ -1,5 +1,21 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Revision-based bitmap uploads, atlas allocation and explicit framebuffer readback.
+//! Source bitmap uploads, atlas slot management and explicit framebuffer
+//! readback.
+//!
+//! `upload` maps a caller-supplied bitmap id to a slot in the shared pixel
+//! atlas. `Slot` records the atlas `offset`, `len`, and the last uploaded
+//! `revision`, so a bitmap is re-sent only when `Bitmap::revision()` changes.
+//! Slots whose length no longer matches are freed and reallocated; new or
+//! resized bitmaps are placed in the first free hole large enough (splitting
+//! the remainder) or appended at `atlas_end`, growing the buffer when needed.
+//! While remote recording is active, changed pixels are queued instead of
+//! written (`record_upload`), so the runner emits no GPU work.
+//!
+//! `readback` is the only path that observes composited pixels on the CPU.
+//! It first materializes any recorded remote uploads, copies the frame buffer
+//! into a mappable staging buffer, maps it, and returns a `Bitmap` via
+//! `Bitmap::from_argb`, bumping the `readbacks` counter. Ordinary presentation
+//! never calls it.
 use super::{GpuRenderer, Slot};
 use crate::graphics::Bitmap;
 

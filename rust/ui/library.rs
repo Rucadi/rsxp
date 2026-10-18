@@ -1,4 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+//! The `SessionPanel` "Library" screen: a presentation-only game launcher.
+//!
+//! [`SessionPanel::draw_library`] renders the landing page shown before a game
+//! is running. It offers a text field for a game directory (or a dropped game
+//! folder / `Game.ini`), a "Launch game" button, and a grid of recently played
+//! games read from `self.recent`. Every action is emitted as a
+//! [`SessionActions::open`] path for the frontend to execute — this file never
+//! touches the filesystem or the VM, and it uses no [`super::backend::Backend`].
+//! The buttons are disabled while `self.busy` and while the directory field is
+//! empty; launching while a game is active warns that the current game will be
+//! replaced.
 use super::session::{SessionActions, SessionPanel};
 impl SessionPanel {
     pub(super) fn draw_library(&mut self, ui: &mut egui::Ui, actions: &mut SessionActions) {

@@ -6,7 +6,16 @@
 //! This module owns runtime state and the public bridge entry points. Internal
 //! modules separate asset resolution (`assets`), serialized protocol handling
 //! (`commands`), frame lifecycle (`frame`), retained order (`scene`) and
-//! composition (`render_software` / `render_gpu`).
+//! composition (`render_software` / `render_gpu`); `retained_map`,
+//! `map_chunks` and `world_map` provide Ruby-free tiling/camera helpers.
+//!
+//! One [`Runtime`] is stored per thread in the `ENGINE` thread-local; the Ruby
+//! host reaches it through `native_call_bytes`, which dispatches a request
+//! under `catch_unwind` and maps the `__RSXP_STOP__` error to `Ok(None)` (clean
+//! stop). Ruby wrappers hold numeric IDs into the runtime's resource maps,
+//! never references. `RSXP_INPUT` feeds deterministic headless key presses via
+//! [`parse_scripted`]; the `PROFILE_COUNTER_*` atomics expose the frame-profiler
+//! toggle to the host.
 use crate::graphics::{Bitmap, Color, Rect, Tone};
 use crate::host::{Host, InputEvent};
 use crate::input::Input;

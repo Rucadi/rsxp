@@ -1,5 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Shared fuzzy matching for the Essentials explorers.
+//! Shared fuzzy matching for the Essentials species/move explorers.
+//!
+//! Used by `pokedex.rs` and `registry_dex.rs` to filter catalog rows by a
+//! typed query. [`normalized`] lower-cases a string and folds the accented
+//! Latin letters used in Pokémon names (é/è/ê→e, á/à/ä→a, í/ï→i, ó/ö→o,
+//! ú/ü→u, ñ→n), dropping everything that is not alphanumeric. [`fuzzy_score`]
+//! then ranks a normalized candidate against a normalized query, returning
+//! `None` for no match and a lower number for a better match: exact (0),
+//! prefix (10+), substring (30+), in-order subsequence (60+), and finally a
+//! Levenshtein distance within 2 edits (100+), which is only attempted for
+//! queries of four or more characters. This module is compiled under
+//! `game-api`, like its callers.
 pub(super) fn normalized(value: &str) -> String {
     value
         .to_lowercase()

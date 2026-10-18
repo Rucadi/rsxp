@@ -1,7 +1,28 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Ported from src/crypto/rgssad.cpp, Copyright (C) 2014–2021 Amaryllis Kulla.
-//! Bounded RGSSAD/RGSS2A (v1) and RGSS3A (v3) readers.
-//! Filenames remain bytes: older games may use a non-UTF-8 encoding.
+//! Bounded readers for RGSS game archives: RGSSAD/RGSS2A (version 1) and RGSS3A
+//! (version 3).
+//!
+//! An archive begins with the 7-byte signature `RGSSAD\0` and a version byte.
+//! [`Archive::parse`] reads the encrypted index into [`Entry`] records while
+//! borrowing the archive bytes; [`Archive::read`] then decrypts a byte range of
+//! one entry. Filenames stay raw bytes because older games may use a non-UTF-8
+//! encoding, and `\` is normalised to `/`; empty or NUL-containing names are
+//! rejected.
+//!
+//! Both versions derive a wrapping 32-bit LCG key stream from `advance`
+//! (`key = key * 7 + 3`). Version 1 starts from `0xDEADCAFE` and XORs the entry
+//! length, each filename byte and the data size with successive key values; the
+//! file data is XORed with the stream advanced once per 4 bytes. Version 3
+//! starts from the first index word as `word * 9 + 3`; each index record is
+//! `(offset, size, data_key, name_len)`, all XORed with that key, an `offset` of
+//! zero terminates the index, names are XORed with the key's bytes by position
+//! `i % 4`, and entries must not overlap the index. `jump` skips `n` LCG steps in
+//! logarithmic time so unaligned `read` offsets are cheap.
+//!
+//! All cursor movement goes through `Reader`, which uses checked arithmetic and
+//! reports truncation/overflow as [`InvalidArchive`]; `read` clamps the request
+//! to the remaining entry length and rejects offsets past the end.
 use std::{error::Error, fmt, ops::Range};
 
 #[derive(Debug, Clone, PartialEq, Eq)]

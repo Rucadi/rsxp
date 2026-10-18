@@ -1,5 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Frame lifecycle: input, composition, presentation, profiling and pacing.
+//!
+//! `update_frame` is one RGSS `Graphics.update`. In order it: stops when the
+//! frame limit is reached, applies live rate/fast-forward settings from the
+//! workspace UI, flushes queued host events into the pending `Input`, advances
+//! animated GIF bitmaps (`advance_animations`, host-clock driven), polls the
+//! host (unless headless), injects scripted headless input, handles the F10
+//! frame-counter and F11 fast-forward keys (scancodes 67/68, unmapped by RGSS),
+//! renders via GPU when available and otherwise software, syncs profiler state,
+//! then sleeps until the next deadline.
+//!
+//! Pacing budgets time from the previous frame start so Ruby work between
+//! updates counts; an overloaded frame reschedules instead of accumulating lag.
+//! `counter_bitmap` builds the optional FPS/profile overlay.
 use super::{Runtime, PROFILE_COUNTER_ACTIVE, PROFILE_COUNTER_GENERATION};
 use crate::graphics::{Bitmap, Color, Rect, SpriteFx};
 use std::sync::atomic::Ordering;

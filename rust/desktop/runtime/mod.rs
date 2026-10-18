@@ -1,7 +1,26 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Desktop application lifecycle: configure, create the engine, execute Ruby,
-//! finalize Ruby resources, report profiling and capture the final frame.
-//! Argument validation, game discovery and bridge callbacks live in submodules.
+//! Desktop application lifecycle for the `rsxp` binary.
+//!
+//! [`run`] parses [`options::RunOptions`], remembers the launch directory, prepares
+//! the game working directory and archives ([`game::GameConfig`]), builds the
+//! [`DesktopHost`] and engine `Runtime`, then embeds Ruby with `magnus`, binds the host,
+//! registers the `__rsxp_native`/`__mkxp_native` bridge callbacks and the optional Ruby
+//! profiler, and evaluates the bundled `rgss.rb` shim. It then drops Ruby (running
+//! finalizers while the Rust resource registry is still available), prints the native
+//! profile, optionally captures a PPM frame, and returns the game status as a `u8`.
+//!
+//! Environment and lifecycle details:
+//! - [`set_startup_env`]/[`remove_startup_env`] must run on the single-threaded main
+//!   thread before `winit`, CPAL or Ruby create threads.
+//! - Scripted input comes from `RSXP_INPUT`; runtime patches come from
+//!   `runtime_patch::load_user_patches` plus `RSXP_PATCH`; YJIT is enabled unless
+//!   `RSXP_YJIT=0`.
+//! - [`validate`] only parses arguments. A reset requested during the run restarts the
+//!   process from the launch directory via [`restart`], rebuilding the engine, Ruby and
+//!   game exactly as a fresh launch would.
+//!
+//! Argument validation, game discovery and bridge callbacks live in the `options`,
+//! `game` and `bridge` submodules.
 use crate::host::DesktopHost;
 use magnus::function;
 use rsxp::engine::{self, RuntimeOptions};

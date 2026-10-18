@@ -1,5 +1,17 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Presentation-only launcher. Platform adapters execute these intents.
+//! Presentation-only launcher for opening games and managing save backups.
+//!
+//! [`SessionPanel`] holds all launcher state and is drawn by [`SessionPanel::draw`];
+//! it performs no I/O itself. Instead `draw` returns a [`SessionActions`] value
+//! describing the user's intents, which the platform adapter executes.
+//!
+//! While a session is inactive, the library/save screens fill a central panel;
+//! while one is active they hide behind the header's Library/Saves toggle and
+//! instead appear as a floating window, and the header offers Pause, Stop, and
+//! Restart. Stop and Restart route through a confirmation window before the
+//! corresponding [`SessionActions`] field is set. The actual library and save
+//! widgets are defined in `library.rs` / `saves.rs`
+//! (`SessionPanel::draw_library` and `SessionPanel::draw_saves`).
 #[derive(Default)]
 pub struct SessionPanel {
     pub source: String,
@@ -17,6 +29,7 @@ pub struct SessionPanel {
     confirm_stop: bool,
     confirm_restart: bool,
 }
+/// Intents produced by [`SessionPanel::draw`] for the platform adapter to run.
 #[derive(Default)]
 pub struct SessionActions {
     pub open: Option<String>,

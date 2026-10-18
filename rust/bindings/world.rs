@@ -1,6 +1,24 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Lazy Ruby screen coordinates backed by world placements and one camera.
 //! Persistent storage contains IDs and numbers only, never Ruby objects.
+//!
+//! `WORLD` is a process-wide mutex of `groups` (per-group `MapCamera`, member
+//! sprite ids, and a `valid` flag) and `tiles` (sprite id → engine `WorldTile`).
+//! `retained.rb` drives it through four globals: `__rsxp_world_camera` (12 args —
+//! group id, tile pool, changed cells, tile offsets, pixel offsets, display and
+//! source heights, bridge flag, requested reset) recomputes placements for the
+//! group as a whole or just the changed cells and pushes the camera and
+//! placements into the engine; `__rsxp_world_release` detaches a whole group;
+//! `__rsxp_world_metadata_changed` and `__rsxp_world_unbind` detach one sprite.
+//!
+//! While a sprite is world-bound, its `x`/`y`/`z` getters (`install_getters`,
+//! installed for `Sprite` by `retained`) project the placement through the group
+//! camera instead of reading the raw ivars. `detach` bakes the projected
+//! coordinates back into `@x`/`@y`/`@z` and clears the engine binding; an
+//! `internal` detach (map edits) keeps the group `valid`, while a metadata change
+//! invalidates it so the next camera update rebuilds placements. `bound`/`forget`
+//! expose this state to `sprite.rs` and `retained.rs`. State is read fresh per
+//! call; `MapCamera`/`WorldTile` come from `rsxp::engine::world_map`.
 use magnus::{
     function, method,
     prelude::*,

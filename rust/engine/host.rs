@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Platform services the engine needs, so the same engine runs under winit on
 //! desktop and under WebAssembly in the browser.
+//!
+//! [`Host`] is the object-safe backend trait: loose-file reads, image/font
+//! decoding and text, input polling, presentation, window state and optional
+//! audio/profiler/GPU hooks, most with no-op defaults for headless or WASM.
+//! [`AudioBackend`] is reached through `Host::audio` and plays the BGM/BGS/ME/SE
+//! channels. [`InputEvent`] carries browser-side events into the runtime, and
+//! [`ProfileStats`]/[`ProfileHotspot`] expose bridge timings for the overlay.
 use crate::graphics::{Bitmap, Color};
 use crate::input::Input;
 use std::time::Duration;

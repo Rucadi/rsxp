@@ -1,5 +1,23 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Optional desktop HTTP transport. Local tools use the shared queue directly.
+//! Optional desktop HTTP transport for the game-command bridge.
+//!
+//! Local tools (the egui inspector, the workspace) call the shared queue
+//! directly and never need this module. When enabled, it exposes the same
+//! operations over a loopback-only HTTP/1.1 service so external processes (for
+//! example `rsxp-mcp`) can drive the game.
+//!
+//! Environment: [`start_from_env`] starts the server only when `RSXP_API=1`,
+//! reading the port from `RSXP_API_PORT` (default `47821`). [`start`] can be
+//! called at runtime by the desktop workspace instead. The listener binds
+//! `127.0.0.1` only and is idempotent for the same port while rejecting a
+//! different one.
+//!
+//! Threading: one background thread (`rsxp-game-api`) accepts connections and
+//! spawns a short-lived `rsxp-game-api-client` thread per connection. Each
+//! client parses the request line and headers (bounded to 16 KiB), routes them
+//! with `route_http`, and forwards the operation to the game thread, waiting up
+//! to 10 seconds for the reply and cancelling the request on timeout. Responses
+//! are JSON with `Connection: close`.
 use super::*;
 use std::{
     io::{BufRead, BufReader, Write},

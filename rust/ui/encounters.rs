@@ -1,4 +1,25 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+//! Pokémon Essentials wild-encounter window (`game-api` builds only).
+//!
+//! `draw_api_windows` is the per-frame hook that opens auxiliary API windows;
+//! today it only calls `draw_pokemon_encounters_window`. That window renders
+//! `Workspace::pokemon_encounters_data`, the JSON reply to the
+//! `pokemon_essentials_encounters` API operation, whose shape is:
+//!
+//! * `map_id` (int) — picks the title suffix, e.g. "… · Map 3";
+//!   `available: false` short-circuits with a notice, and `probability_note`
+//!   (string) is shown small beneath the header;
+//! * `tables` (array) — each has `name`/`type`, an optional `step_chance`
+//!   (percent), and `entries`;
+//! * each entry has `species` (string or int), optional `dex_number`, `name`,
+//!   `min_level`/`max_level`, and `selection_percent`/`step_percent`.
+//!
+//! The window is only shown while `pokemon_encounters_window_open` is set; egui
+//! keeps its position/size by a fixed window id even as the title follows the
+//! map. `pokemon_sprite_texture` lazily fetches and caches an egui texture for
+//! an entry, keyed by `sprite_key|species|name`; it tries several asset
+//! categories, uses the first frame of an animated horizontal strip, and
+//! downscales to at most 512px per side before uploading (see the inline notes).
 use super::*;
 impl Workspace {
     #[cfg(feature = "game-api")]

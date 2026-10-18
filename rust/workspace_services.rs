@@ -1,6 +1,23 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Local service adapter used by desktop and cooperative browser presentation.
-//! Desktop settings are relayed to the runner by its session transport.
+//! Default [`crate::ui::backend::Backend`] adapter for the desktop and
+//! cooperative browser presentation.
+//!
+//! [`LocalServices`] is what the egui workspace talks to. Runtime settings and
+//! patches delegate straight to the thread-local state in `crate::runtime_settings`
+//! / `crate::runtime_patch`; the desktop settings are additionally relayed to
+//! the runner by its session transport.
+//!
+//! Behind `game-api` it exposes the async command bridge (`send_request` /
+//! `take_response`), the external HTTP port, and asset lookup. `asset_image`
+//! rejects any category or name that is not a single normal path component
+//! (blocking `..` traversal). When an `image_reader` is injected (the browser
+//! path) it decodes `Graphics/<category>/<name>` (with `.png`/`.bmp` fallbacks)
+//! into a 256-entry cache; otherwise it uses the bounded background decoder in
+//! the private `assets` submodule.
+//!
+//! The Cable Club methods (non-WASM) delegate to `crate::cable_club`, and
+//! `save_endpoint` writes the game's `Data/serverinfo.ini` under `game_root` (or
+//! the current directory).
 #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
 mod assets;
 

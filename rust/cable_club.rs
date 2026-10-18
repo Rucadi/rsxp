@@ -1,11 +1,28 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Cable Club's line-based rendezvous and peer relay.
+//! Cable Club's line-based rendezvous and peer relay for the modified
+//! (EricLostie) client.
 //!
 //! Game clients still own battle/trade behavior. This service performs the
 //! Cable Club `find` handshake, returns the peer's serialized trainer record,
 //! and relays subsequent records unchanged. EricLostie's client uses a shared
 //! eight-digit room code, so matching is by that code (the upstream server's
 //! reciprocal trainer-ID rule does not match this game's modified client).
+//!
+//! ## Protocol
+//! Every record is one line of comma-separated fields, with `\,` and `\\`
+//! escaping a literal comma or backslash. A client opens with
+//! `find,<version>,<room>,<name>,<trainer-id>,<trainer-type>,<win-msg>,<losemsg>,<party…>`;
+//! the server queues it as `searching` and pairs it with another `searching`
+//! client that shares `<room>`, then sends each side
+//! `found,<0|1>,<peer name>,<trainer type>,<win>,<lose>,<party…>,0`. After
+//! pairing every line is forwarded verbatim to the peer until disconnect.
+//!
+//! ## API
+//! [`start`] / [`stop`] manage a single process-wide server and [`status`]
+//! returns a UI snapshot. [`save_client_endpoint`] writes the
+//! `Data/serverinfo.ini` endpoint the EricLostie client reads on each
+//! connection. Records are capped at 256 KiB, parties at 8192 fields, and the
+//! server at 64 simultaneous clients; each client has its own thread.
 
 use std::{
     collections::HashMap,

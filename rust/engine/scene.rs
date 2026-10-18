@@ -1,5 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Retained RGSS scene ordering and invalidation; resource IDs define draw order.
+//!
+//! Built only with the `gpu` feature. `prepare_scene` walks visible sprites,
+//! planes and viewports, nests children under their viewport (top-level items
+//! otherwise), sorts by `(z, order)`, and flattens into `scene_plan` as
+//! `SceneDraw` begin/end-viewport markers around their contents. `y` is never a
+//! tie-breaker: RGSS orders by z only and equal z keeps creation order, so
+//! full-screen overlays stay above windows. Plans cache IDs (never references)
+//! and are rebuilt only while `scene_dirty`; `invalidate_scene` sets that flag.
 use super::Runtime;
 #[cfg(feature = "gpu")]
 use super::SceneDraw;

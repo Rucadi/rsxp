@@ -1,5 +1,30 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Pure-Rust desktop audio backend using Kira/CPAL.
+//! Pure-Rust desktop audio backend built on Kira over CPAL.
+//!
+//! [`DesktopAudio`] is the concrete [`rsxp::host::AudioBackend`] the desktop
+//! host installs to service the engine's four RGSS audio channels
+//! ([`AudioChannel::Bgm`], `Bgs`, `Me`, `Se`), which are indexed here as
+//! `[Bgm, Bgs, Me, Se]` for per-channel master volumes.
+//!
+//! Design and lifecycle:
+//! - [`DesktopAudio::new`] opens a default Kira/CPAL [`AudioManager`]; if no
+//!   device is available it prints a warning and degrades to no sound instead
+//!   of failing, so the game still runs. [`DesktopAudio::silent`] skips the
+//!   manager outright and is used for headless runs. Both are non-fatal.
+//! - BGM and BGS are decoded as `StreamingSoundData` and looped
+//!   (`loop_region(..)`) so long music tracks do not have to fit in memory;
+//!   ME and SE use `StaticSoundData`, cached by source path in `static_sounds`
+//!   so repeated effects are decoded once. Each active sound is tracked as a
+//!   [`Voice`] wrapping either handle in a [`VoiceHandle`].
+//! - Volume is applied in decibels. A play call's volume is combined with the
+//!   channel master via [`DesktopAudio::effective_volume`]; zero gain maps to
+//!   [`Decibels::SILENCE`]. Pitch is expressed as RGSS percent and clamped to
+//!   a `0.01..=10.0` playback rate.
+//! - Playing on BGM/BGS/ME first stops the previous voice on that channel;
+//!   SE voices accumulate. Finished SE handles are reaped each `play` call so
+//!   a long session does not leak. `fade` stops with a tween (removing the
+//!   voice only when it is not fading); `position` reports the playback
+//!   position for the current non-fading BGM voice and `0.0` otherwise.
 use kira::{
     sound::{
         static_sound::{StaticSoundData, StaticSoundHandle},

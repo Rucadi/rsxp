@@ -1,5 +1,25 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Build orchestration lives here, not in the shipped player.
+//! `xtask`: build orchestration for the browser player, kept out of the shipped
+//! page.
+//!
+//! The single subcommand is `cargo xtask web [--ruby-runtime DIR]`. It:
+//! 1. provisions the pinned Ruby WASM runtime (`web/dist/ruby/browser.umd.js`
+//!    and `ruby+stdlib.wasm`), running `npm ci` when needed unless `--ruby-runtime`
+//!    supplies a directory;
+//! 2. locates a matching wasm-bindgen 0.2.121 (system copy, `WASM_BINDGEN`, or a
+//!    cached `target/tools` install) and builds `web/engine` for
+//!    `wasm32-unknown-unknown` via `wasm-ld` (`WASM_LD`);
+//! 3. runs wasm-bindgen into `web/dist/pkg` and optimizes the wasm with
+//!    `wasm-opt -O3` (`WASM_OPT` overrides the binary);
+//! 4. packages `web/dist/player.html` by inlining the JS modules in `MODULES`,
+//!    the engine and Ruby wasm (base64), `rust/rgss.rb`, license texts and the
+//!    `web/browser/assets.json` manifest into the `__RSXP_PAYLOAD__`
+//!    placeholder; and
+//! 5. builds `web/target/release/rsxp-web`.
+//!
+//! The payload is serialized JSON with `<` escaped as `\u003c` so no module text
+//! can close the surrounding `<script>` tag. Requires the
+//! `wasm32-unknown-unknown` target, npm, wasm-ld and wasm-opt.
 use serde_json::{json, Value};
 use std::{
     env, fs, io,

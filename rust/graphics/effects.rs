@@ -1,5 +1,26 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Pixel math: hue/brightness, viewport tint and the sprite shader equivalent.
+//! Pixel math shared by the CPU rasterizer: whole-bitmap colour adjustments and
+//! the per-pixel sprite shader.
+//!
+//! The three [`Bitmap`] methods mutate RGB in place and preserve alpha:
+//! [`Bitmap::brightness`] scales RGB by `value / 255`, [`Bitmap::hue_change`]
+//! rotates hue in HSV, and [`Bitmap::apply_color_tone`] reproduces the engine's
+//! `plane.frag` viewport effect (desaturate by `gray`, add `tone` RGB, then mix
+//! toward `color` by its alpha).
+//!
+//! The free functions implement the engine's shader pipeline:
+//! - `step`/`fract` are the GLSL built-ins, and `rgb_to_hsv`/`hsv_to_rgb` are
+//!   branchless transliterations of the conversions in `hue.frag`.
+//! - `shade_pixel` applies one [`SpriteFx`] to a sampled source pixel: pattern
+//!   overlay (blend mode, opacity, tiling, scroll, zoom), tone (gray + RGB),
+//!   bush row opacity, sprite opacity, colour blend and inversion. It is the
+//!   effect half of `raster::Bitmap::draw_sprite`.
+//! - `pattern_sample` computes the pattern lookup coordinate, mirroring
+//!   `sprite.vert`/`sprite.frag`; the blend modes are 0 normal, 1 addition,
+//!   2 subtraction.
+//! - `compose` writes one shaded pixel into the destination using the engine's
+//!   sprite blend modes (0 source-over, 1 addition, 2 subtraction), and `blend`
+//!   is the shared source-over helper.
 use super::{Bitmap, Color, SpriteFx, Tone};
 
 impl Bitmap {

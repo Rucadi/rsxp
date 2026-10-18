@@ -5,6 +5,13 @@
 //! adapter uses them directly. The native dashboard has its own settings mirror
 //! and relays changes across the isolated session transport; it never accesses
 //! the game thread's cells directly.
+//!
+//! Four thread-local cells back the accessors: the requested frame-rate cap
+//! ([`rate_override`], stored clamped to 1..=1000 by [`set_rate_override`]), the
+//! effective rate the engine reports for display ([`current_rate`]), the
+//! fast-forward flag ([`fast_forward`]), and a one-shot reset request
+//! ([`request_reset`]). [`reset`] restores every setting to its startup default
+//! when a run begins.
 
 use std::cell::Cell;
 

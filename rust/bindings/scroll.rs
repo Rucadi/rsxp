@@ -1,6 +1,25 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! One native call for tile scrolling: keep Ruby-visible coordinates in sync,
 //! update retained geometry directly, and avoid full property snapshots.
+//!
+//! Two global functions are installed. `__rsxp_scroll_tiles(tiles, ox, oy,
+//! width, height, source_height, move_xy, move_z, bridge, enabled)` walks a
+//! 3-level `tiles[i][j][k]` pool; it preflights that every sprite is retained
+//! (`@__rsxp_retained`) and, when `move_z`, has an integer `@priority`. Tiles not
+//! marked `@__rsxp_map_covered` are skipped. For each covered tile it detaches
+//! the sprite from its world group, computes screen `x = i*width - ox`,
+//! `y = j*height - oy` and the RGSS priority `z` (reflection `-100`, bridge or
+//! zero priority `0`, else `(j + priority + 1) * source_height + 1`), writes the
+//! `@x`/`@y`/`@z` ivars, and submits a `SpriteMotion` through a single runtime
+//! borrow. `__rsxp_scroll_rgss_tiles(tiles, dx, dy)` is the RGSS1 variant whose
+//! priority `z` also includes the pixel camera `y`, subtracting `dx`/`dy` with
+//! saturation.
+//!
+//! `patch_snapshot` rewrites the Ruby `@__sync_state` array slots `15`/`16`
+//! (x/y) and `23` (z) and clears `@__native_state`, so a later full sync compares
+//! against the fresh position instead of the pre-scroll one. All Ruby work
+//! completes before the engine borrow; overflow is reported as `RangeError` and
+//! unsupported pools return `false` so the game keeps its Ruby fallback.
 use magnus::{
     function,
     prelude::*,

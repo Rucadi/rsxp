@@ -1,8 +1,17 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Compare isolated runner transport with identical scene, GPU work and controls.
-//! cargo run --release --example session-bench -- /path/to/rsxp
-//! The consumer replaces the window with the same GPU compositor/upload path;
-//! timing excludes startup/warmup and fences the GPU at both measurement edges.
+//! `session-bench`: compares the isolated runner transport with an identical
+//! scene, GPU workload and control stream.
+//!
+//! Usage: `cargo run --release --example session-bench -- /path/to/rsxp
+//! [SCRIPT] [FRAME_LIMIT]`. The example spawns the given `rsxp` binary with
+//! `run --script ... --renderer wgpu --frames N` and `RSXP_SESSION_ADDR`/
+//! `RSXP_SESSION_TOKEN` pointing at a local listener (`RSXP_API=0`), then drives
+//! the length-prefixed JSON session protocol: it answers `poll` messages and
+//! consumes one frame packet per frame, applying GPU command frames or uploading
+//! pixels as a baseline. The first 60 frames are warmup and excluded, and the
+//! GPU is fenced at both measurement edges. It prints a JSON summary (frames,
+//! seconds, fps, ms/frame, payload bytes) plus any `BENCH`/`GPU:` diagnostics.
+//! When no script is given it generates a temporary sprite-spinning script.
 use rsxp::gpu::{GpuFrame, GpuRenderer};
 use serde_json::{json, Value};
 use std::{

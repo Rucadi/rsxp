@@ -1,4 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+//! Build script for the root `rsxp` crate.
+//!
+//! It converts the three checked-in `binding/module_rpg{1,2,3}.rb.xxd` C byte
+//! arrays (hex dumps of the per-RGSS-version Ruby bootstrap scripts) into raw
+//! `rpg{1,2,3}.rb` files in `OUT_DIR`, which `rust/engine/commands.rs` embeds
+//! with `include_bytes!`. It scans for `0x`-prefixed hex bytes, drops a single
+//! trailing NUL so the emitted file is exactly the script text, and registers
+//! each source file with `cargo:rerun-if-changed`.
 use std::{env, path::PathBuf};
 
 fn main() {

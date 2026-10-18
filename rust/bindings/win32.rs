@@ -1,6 +1,22 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Legacy Win32API native calls. The shared Ruby shim emulates supported APIs
+//! Legacy `Win32API` native calls. The shared Ruby shim emulates supported APIs
 //! off Windows; actual DLL calls use the desktop Windows ABI only.
+//!
+//! The `Win32API` class is `#[magnus::wrap]`ped over
+//! `RefCell<Option<Arc<Procedure>>>` (the `Arc` lets an in-flight `call` keep the
+//! procedure alive independently of the wrapper). `initialize` accepts 3–5
+//! arguments — DLL, function, argument type string/array, optional return type,
+//! optional calling convention — whose type codes are parsed by `Kind`
+//! (`Void`/`Integer`/`Pointer`) and `Abi` (`stdcall`→`System`, `cdecl`); `inputs`
+//! rejects mixed void codes and more than 16 arguments. `call` (aliased `Call`)
+//! marshals the arguments to machine words before dispatching.
+//!
+//! On Windows `native::LibraryFunction` loads the DLL (released by RAII) and
+//! `call_windows` copies mutable string arguments into Rust-owned buffers,
+//! invokes the function, and copies changed bytes back before freeing the
+//! buffers. Off Windows `initialize` raises `StandardError`, which the copied
+//! Ruby compatibility wrapper rescues to fall back to its portable
+//! implementation.
 #[cfg(windows)]
 use magnus::RString;
 use magnus::{method, prelude::*, Error, RArray, Ruby, TryConvert, Value};

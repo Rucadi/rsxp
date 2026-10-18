@@ -2,6 +2,13 @@
 //! Animated GIF decoding shared by every frontend. Decoding lives in the
 //! engine rather than the platform host so desktop and browser bitmaps behave
 //! identically.
+//!
+//! [`is_gif`] sniffs the GIF87a/GIF89a signature. [`decode`] builds a
+//! [`Bitmap`] from ARGB (`0xAARRGGBB`) pixels: a single-frame GIF stays static,
+//! while an animated GIF composites every frame onto the logical screen
+//! (honouring the disposal method) and installs them with per-frame delays in
+//! seconds. A zero centisecond delay is treated as one centisecond so the frame
+//! remains visible.
 use crate::graphics::Bitmap;
 use gif::{ColorOutput, DecodeOptions, DisposalMethod};
 use std::io::Cursor;

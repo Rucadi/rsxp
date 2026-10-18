@@ -1,5 +1,35 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Bitmap allocation, copy-on-write pixel storage, revisions and import/export.
+//! Copy-on-write bitmap storage for the software renderer: allocation, pixel
+//! access, RGBA import/export, GIF animation, revision tracking and KGL2
+//! compatibility shims.
+//!
+//! Pixels are ARGB packed into a `u32` with big-endian byte order
+//! `[alpha, red, green, blue]` (see [`super::Color::packed`]) and stored
+//! row-major. Clones share the immutable buffer through `Pixels` until the first
+//! write calls `Arc::make_mut`, so snapshots and blit sources stay cheap without
+//! aliasing mutable game data.
+//!
+//! Every mutation bumps `revision`, a process-global monotonic counter backed by
+//! `NEXT_REVISION` (`AtomicU64`, incremented with `Relaxed` ordering). The
+//! revision is *not* a synchronization barrier; it exists so caches such as
+//! `tilemap::TileAtlas` and `gpu::resources` can cheaply detect that a source
+//! bitmap's pixels changed.
+//!
+//! Construction rejects zero-sized bitmaps and bitmaps above 16,777,216 pixels
+//! (2^24) with [`InvalidBitmap`]; an allocation failure is reported the same way.
+//! [`Bitmap::from_rgba`]/[`Bitmap::to_rgba`]/[`Bitmap::write_rgba`] exchange
+//! tightly packed row-major RGBA8 bytes with hosts, while
+//! [`Bitmap::from_argb`]/[`Bitmap::from_argb_owned`] accept pre-packed pixels.
+//! [`Bitmap::write_ppm`] emits a binary P6 image (alpha dropped) for capture
+//! paths.
+//!
+//! `BitmapAnimation` backs animated GIF bitmaps: all frames share the canvas
+//! size, so advancing swaps a cheap shared frame buffer. A per-frame `delays`
+//! list (or an explicit FPS override set through [`Bitmap::set_frame_rate`])
+//! drives playback, and `loop_count` controls finite repeats. Two further
+//! inherent impl blocks add the KGL2 shim operations (`kgl_*`, used by
+//! `scripts/preload/kgl2_wrap.rb`) and mkxp-z gradient/blur/`static_copy`
+//! effects.
 use super::{Color, Rect};
 use std::{
     error::Error,
@@ -343,7 +373,8 @@ impl Bitmap {
             self.revision = next_revision();
         }
     }
-    /// Source-over alpha composition, with nearest-neighbor scaling and clipping.
+    /// Writes a binary PPM (P6, 8-bit RGB; alpha is dropped) for capture and
+    /// comparison fixtures.
     pub fn write_ppm(&self, mut writer: impl Write) -> io::Result<()> {
         write!(writer, "P6\n{} {}\n255\n", self.width, self.height)?;
         let mut row = Vec::with_capacity(self.width as usize * 3);

@@ -1,6 +1,17 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Standard gamepad mapping shared by both frontends. Virtual scancodes keep
-//! controller actions independent of physical keyboard state.
+//! Standard gamepad mapping shared by both frontends.
+//!
+//! The engine models controller input as virtual scancodes so actions stay
+//! independent of physical keyboard state. [`ACTIONS`] is the 13-entry RGSS
+//! action list (index 0 is `Unbound`); [`BUTTONS`] is the 20 physical gamepad
+//! inputs the UI offers. [`Mapping`] assigns each button an action index, plus a
+//! stick deadzone and a connected-device count.
+//!
+//! [`keys`] turns a pressed-button array into a set of virtual scancodes
+//! (`599 + action`) that the engine merges with keyboard input. [`encode`] /
+//! [`decode`] persist a mapping as `deadzone;b0,b1,…,b19`; `decode` rejects a
+//! non-finite or out-of-range deadzone and any malformed button list, leaving
+//! the existing value unchanged. The active mapping lives in a thread-local.
 use std::{cell::RefCell, collections::HashSet};
 pub const ACTIONS: [&str; 13] = [
     "Unbound",

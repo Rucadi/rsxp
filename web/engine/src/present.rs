@@ -6,6 +6,14 @@
 //! renders the shared egui workspace on top. On the web wgpu uses the browser's
 //! WebGL2 backend, which the browser software-emulates when the GPU is disabled,
 //! so no GPU is required (exactly like the egui.rs demo).
+//!
+//! `Presenter` owns the wgpu surface, the frame texture and the egui renderer,
+//! and reuses the shared `rsxp::ui::Workspace` from the desktop app. This module
+//! drains queued pointer/keyboard events into egui, tracks FPS, letterboxes the
+//! game frame into the workspace's game rect, and exposes that rect so the page
+//! routes pointer input to the game only when it is over the game view.
+//! `upload_frame` pads rows to 256 bytes as the WebGPU backend requires for
+//! `Queue::write_texture`.
 
 use rsxp::graphics::{Bitmap, Rect};
 use std::cell::RefCell;

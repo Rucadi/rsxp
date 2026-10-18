@@ -1,5 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Directory save backups with preflight validation and atomic file replacement.
+//! Directory save/backup copying with preflight validation and atomic replacement.
+//!
+//! [`copy`] recursively copies every file from `from` into `to`. In backup mode
+//! (`restore == false`) the destination must be empty; in restore mode existing
+//! destination files are first preserved under a `before-restore-<nonce>` directory.
+//! Source and target must not overlap, neither tree may contain symlinks, and a
+//! recursion depth cap (64) and file-count cap (100,000) guard against runaway trees.
+//!
+//! The operation is transactional: all incoming files are staged into a
+//! `.rsxp-copy-<nonce>` directory inside the target and every destination path is
+//! validated before any existing file is replaced, so a validation failure leaves
+//! saves untouched. The staging directory is always cleaned up afterward.
+//! [`validate_destination`] rejects symlinks and file/directory type mismatches, and
+//! [`collect`] walks the source rejecting symlinks.
 use std::{
     fs, io,
     path::{Component, Path, PathBuf},

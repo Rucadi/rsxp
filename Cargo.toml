@@ -10,7 +10,7 @@ description = "Native Rust engine for RPG Maker RGSS games"
 web-time = { version = "1.1", optional = true }
 getrandom = { version = "0.3", optional = true }
 magnus = { version = "0.9.2", default-features = false, features = ["embed"], optional = true }
-wgpu = { version = "27.0.1", default-features = false, features = ["std", "vulkan", "gles", "wgsl"], optional = true }
+wgpu = { version = "27.0.1", default-features = false, features = ["std", "vulkan", "gles", "metal", "wgsl"], optional = true }
 pollster = { version = "0.4", optional = true }
 bytemuck = { version = "1", features = ["derive"], optional = true }
 egui = { version = "0.33.3", optional = true }
@@ -27,7 +27,7 @@ gif = "0.14"
 # Pure-Rust Theora/Ogg movie decoding for Graphics.play_movie on every frontend.
 ogg = "0.9"
 theora-rs = "0.1"
-gilrs = { version = "0.11.2", optional = true, default-features = false }
+gilrs = { version = "0.11.2", optional = true }
 
 [features]
 default = ["desktop", "gpu"]

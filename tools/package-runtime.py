@@ -228,17 +228,20 @@ def linux_needed(path):
     return needed
 
 
-def linux_dependencies(executable, library_dir):
+def linux_dependencies(executable, library_dir, extra_libraries=()):
     """Copy the relocatable shared-library closure next to `executable`.
 
     Every bundled library is patched to `$ORIGIN`, and the executable to
     `$ORIGIN/../lib`, so the AppImage resolves its own libraries regardless of
     where it is mounted and irrespective of the host's library versions.
+
+    `extra_libraries` seeds the scan with files that are dlopen'd rather than
+    linked (Ruby's native extensions), so their dependencies are bundled too.
     """
     library_dir.mkdir(parents=True, exist_ok=True)
     copied = {}
     processed = set()
-    queue = [executable]
+    queue = [executable, *extra_libraries]
     while queue:
         original = queue.pop()
         if original in processed:
@@ -307,7 +310,8 @@ def main():
     elif sys.platform == "win32":
         windows_dependencies(executable, config)
     else:
-        linux_dependencies(executable, destination / "usr/lib")
+        linux_dependencies(executable, destination / "usr/lib",
+                           extra_libraries=sorted(runtime.rglob("*.so")))
     print(f"Staged standalone desktop at {destination}")
 
 

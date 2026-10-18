@@ -5,13 +5,7 @@ let
     udev alsa-lib libx11 libxkbcommon vulkan-loader wayland
   ]);
   platformLibraries = pkgs.lib.optionals pkgs.stdenv.isDarwin (with pkgs; [
-    darwin.apple_sdk.frameworks.AppKit
-    darwin.apple_sdk.frameworks.CoreAudio
-    darwin.apple_sdk.frameworks.CoreFoundation
-    darwin.apple_sdk.frameworks.CoreVideo
-    darwin.apple_sdk.frameworks.IoKit
-    darwin.apple_sdk.frameworks.Metal
-    darwin.apple_sdk.frameworks.QuartzCore
+    darwin.apple_sdk.frameworks
   ]);
 in
 

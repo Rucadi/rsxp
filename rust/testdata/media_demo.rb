@@ -2,7 +2,7 @@
 # Visual smoke test for the media decoders (rust/media).
 #
 # Animated GIF in a window (press B or C to stop):
-#   cargo run --release -- run --script rust/testdata/media_demo.rb
+#   RSXP_GIF=/path/to/animated.gif cargo run --release -- run --script rust/testdata/media_demo.rb
 #
 # Theora movie in a window (any .ogv path, absolute or relative to the cwd):
 #   RSXP_MOVIE=/path/to/intro.ogv cargo run --release -- run --script rust/testdata/media_demo.rb
@@ -22,9 +22,7 @@ if !movie.empty?
   puts 'MOVIE_DONE'
 else
   path = ENV['RSXP_GIF'].to_s
-  if path.empty?
-    path = File.expand_path('../../ericlostie/Graphics/UI/evolution_bg.gif', __dir__)
-  end
+  raise 'set RSXP_GIF to an animated GIF (or RSXP_MOVIE to a movie file)' if path.empty?
   bitmap = Bitmap.new(path)
   raise "not an animated GIF: #{path}" unless bitmap.animated?
   puts "gif=#{path}"

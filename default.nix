@@ -41,13 +41,6 @@ pkgs.rustPlatform.buildRustPackage {
   '';
   doCheck = doCheck;
 
-  postInstall = ''
-    install -Dm644 ${./COPYING} $out/share/licenses/rsxp/COPYING
-    install -Dm644 ${./docs/rust-port.md} $out/share/doc/rsxp/rust-port.md
-    install -Dm644 ${./docs/ruby-profiling.md} $out/share/doc/rsxp/ruby-profiling.md
-    install -Dm644 ${./rust/testdata/rgss_demo.rb} $out/share/doc/rsxp/rgss_demo.rb
-  '';
-
   doInstallCheck = true;
   installCheckPhase = ''
     runHook preInstallCheck

@@ -40,6 +40,11 @@ desktop = ["dep:getrandom", "dep:magnus", "dep:fontdue", "dep:image", "dep:kira"
 game-api = ["dep:serde_json", "dep:image"]
 # Compile-time, code-first OpenAPI generation for the MCP/HTTP API binary.
 api-docs = ["dep:utoipa"]
+# Manual integration tests that need the local game trees (`ericlostie/`,
+# `pokemonz/`). Off by default so they never run in `cargo test`/CI; enable and
+# target them explicitly:
+#   cargo test --features game-tests --test game-tests
+game-tests = ["desktop"]
 
 [lib]
 path = "rust/lib.rs"
@@ -58,6 +63,12 @@ required-features = ["api-docs"]
 name = "cli"
 path = "rust/tests/cli.rs"
 required-features = ["desktop"]
+
+# Game-asset tests, run manually only (see the `game-tests` feature).
+[[test]]
+name = "game-tests"
+path = "rust/tests/game-tests.rs"
+required-features = ["game-tests"]
 
 [[example]]
 name = "render-bench"

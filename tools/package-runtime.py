@@ -64,7 +64,9 @@ def ruby_runtime(binaries, root):
         gems.append(relative(target, binaries))
     if not gems:
         gems = [relative(root / "ruby/gems", binaries)]
-    (binaries / "ruby-runtime.json").write_text(json.dumps({
+    # Keep the manifest out of MacOS: codesign requires that code location to
+    # contain only signed Mach-O files.
+    (root / "ruby-runtime.json").write_text(json.dumps({
         "load_paths": loads, "gem_paths": gems, "gem_home": gems[0],
     }, indent=2))
     return config

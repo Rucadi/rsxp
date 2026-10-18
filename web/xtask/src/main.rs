@@ -60,21 +60,34 @@ fn copy(from: &Path, to: &Path) -> io::Result<()> {
     Ok(())
 }
 fn runtime(web: &Path, provided: Option<PathBuf>) -> io::Result<()> {
+    runtime_with(web, provided, |web| {
+        println!("Installing pinned Ruby WASM runtime dependencies...");
+        execute(
+            Command::new(if cfg!(windows) { "npm.cmd" } else { "npm" })
+                .current_dir(web)
+                .args(["ci", "--no-audit", "--no-fund"]),
+        )
+    })
+}
+fn runtime_with(
+    web: &Path,
+    provided: Option<PathBuf>,
+    provision: impl FnOnce(&Path) -> io::Result<()>,
+) -> io::Result<()> {
     let target = web.join("dist/ruby");
     let paths = if let Some(dir) = provided {
         (dir.join("browser.umd.js"), dir.join("ruby+stdlib.wasm"))
     } else if target.join("browser.umd.js").is_file() && target.join("ruby+stdlib.wasm").is_file() {
         return Ok(());
-    } else if web
-        .join("node_modules/@ruby/4.0-wasm-wasi/dist/ruby+stdlib.wasm")
-        .is_file()
-    {
-        (
+    } else {
+        let paths = (
             web.join("node_modules/@ruby/wasm-wasi/dist/browser.umd.js"),
             web.join("node_modules/@ruby/4.0-wasm-wasi/dist/ruby+stdlib.wasm"),
-        )
-    } else {
-        return Err(io::Error::other("Ruby WASM runtime missing. Supply --ruby-runtime DIR containing browser.umd.js and ruby+stdlib.wasm (Ruby 4.0 / @ruby packages 2.10.1), or provision it once with: npm --prefix web ci. Node/npm are not used by this build."));
+        );
+        if !paths.0.is_file() || !paths.1.is_file() {
+            provision(web)?;
+        }
+        paths
     };
     copy(&paths.0, &target.join("browser.umd.js"))?;
     copy(&paths.1, &target.join("ruby+stdlib.wasm"))?;
@@ -84,6 +97,49 @@ fn runtime(web: &Path, provided: Option<PathBuf>) -> io::Result<()> {
     }
     Ok(())
 }
+fn bindgen(web: &Path, cargo: &std::ffi::OsStr) -> io::Result<PathBuf> {
+    const VERSION: &str = "0.2.121";
+    if let Some(path) = env::var_os("WASM_BINDGEN") {
+        return Ok(path.into());
+    }
+    let matches = |path: &Path| {
+        Command::new(path)
+            .arg("--version")
+            .output()
+            .is_ok_and(|out| {
+                out.status.success()
+                    && String::from_utf8_lossy(&out.stdout).trim()
+                        == format!("wasm-bindgen {VERSION}")
+            })
+    };
+    let system = Path::new("wasm-bindgen");
+    if matches(system) {
+        return Ok(system.into());
+    }
+    let tools = web.join("target/tools");
+    let cached = tools.join("bin").join(if cfg!(windows) {
+        "wasm-bindgen.exe"
+    } else {
+        "wasm-bindgen"
+    });
+    if !matches(&cached) {
+        execute(
+            Command::new(cargo)
+                .args([
+                    "install",
+                    "wasm-bindgen-cli",
+                    "--version",
+                    VERSION,
+                    "--locked",
+                    "--bin",
+                    "wasm-bindgen",
+                    "--root",
+                ])
+                .arg(&tools),
+        )?;
+    }
+    Ok(cached)
+}
 fn render(template: &str, payload: &Value) -> io::Result<String> {
     if template.matches("__RSXP_PAYLOAD__").count() != 1 {
         return Err(io::Error::other(
@@ -92,6 +148,22 @@ fn render(template: &str, payload: &Value) -> io::Result<String> {
     }
     let serialized = serde_json::to_string(payload)?.replace('<', "\\u003c");
     Ok(template.replacen("__RSXP_PAYLOAD__", &serialized, 1))
+}
+fn optimize(wasm: &Path) -> io::Result<()> {
+    let tool = env::var_os("WASM_OPT").unwrap_or_else(|| "wasm-opt".into());
+    let output = wasm.with_extension("optimized.wasm");
+    let before = fs::metadata(wasm)?.len();
+    execute(
+        Command::new(tool)
+            .arg("-O3")
+            .arg(wasm)
+            .arg("-o")
+            .arg(&output),
+    )?;
+    let after = fs::metadata(&output)?.len();
+    fs::rename(output, wasm)?;
+    println!("Optimized engine WASM: {before} -> {after} bytes");
+    Ok(())
 }
 fn package(root: &Path, dist: &Path) -> io::Result<()> {
     let www = root.join("web/browser");
@@ -134,7 +206,7 @@ fn run() -> io::Result<()> {
     let mut args = env::args().skip(1);
     let command = args.next().unwrap_or_default();
     if command != "web" {
-        println!("cargo xtask web [--ruby-runtime DIR]\nBuild WASM, package dist/player.html and build web/target/release/rsxp-web.\nRequires wasm32-unknown-unknown, wasm-bindgen 0.2.121, and wasm-ld.");
+        println!("cargo xtask web [--ruby-runtime DIR]\nBuild WASM, optimize with wasm-opt -O3, package dist/player.html and build web/target/release/rsxp-web.\nRequires wasm32-unknown-unknown, npm, wasm-ld, and wasm-opt (provided by nix-shell).\nAutomatically provisions Ruby WASM and matching wasm-bindgen when missing.");
         return if command.is_empty() || command == "--help" {
             Ok(())
         } else {
@@ -176,7 +248,7 @@ fn run() -> io::Result<()> {
             ),
     )?;
     let dist = web.join("dist");
-    let bindgen = env::var_os("WASM_BINDGEN").unwrap_or_else(|| "wasm-bindgen".into());
+    let bindgen = bindgen(&web, &cargo)?;
     execute(
         Command::new(bindgen)
             .arg("--target")
@@ -185,6 +257,7 @@ fn run() -> io::Result<()> {
             .arg(dist.join("pkg"))
             .arg(web.join("engine/target/wasm32-unknown-unknown/release/rsxp_web.wasm")),
     )?;
+    optimize(&dist.join("pkg/rsxp_web_bg.wasm"))?;
     package(root, &dist)?;
     execute(
         Command::new(cargo)
@@ -207,6 +280,28 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn missing_runtime_is_provisioned_and_cached() {
+        let web = env::temp_dir().join(format!("rsxp-xtask-runtime-{}", std::process::id()));
+        fs::create_dir_all(&web).unwrap();
+        runtime_with(&web, None, |web| {
+            let js = web.join("node_modules/@ruby/wasm-wasi/dist");
+            let wasm = web.join("node_modules/@ruby/4.0-wasm-wasi/dist");
+            fs::create_dir_all(&js)?;
+            fs::create_dir_all(&wasm)?;
+            fs::write(js.join("browser.umd.js"), "runtime")?;
+            fs::write(wasm.join("ruby+stdlib.wasm"), b"\0asm\x01\0\0\0")
+        })
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(web.join("dist/ruby/browser.umd.js")).unwrap(),
+            "runtime"
+        );
+        fs::remove_dir_all(web.join("node_modules")).unwrap();
+        runtime_with(&web, None, |_| panic!("cached runtime must not run npm")).unwrap();
+        fs::remove_dir_all(web).unwrap();
+    }
+
     #[test]
     fn safe_payload() {
         let payload = json!({"modules":{"app.js":"</script><script>bad</script>"}});

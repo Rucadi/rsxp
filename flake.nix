@@ -2,8 +2,10 @@
   description = "Native Rust engine for RPG Maker RGSS games";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs.nix-appimage.url = "github:ralismark/nix-appimage";
+  inputs.nix-appimage.inputs.nixpkgs.follows = "nixpkgs";
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, nix-appimage }:
     let
       linuxSystems = [ "x86_64-linux" "aarch64-linux" ];
       darwinSystems = [ "x86_64-darwin" "aarch64-darwin" ];
@@ -22,24 +24,7 @@
         in {
           default = app;
           rsxp = app;
-          appimage = pkgs.appimageTools.wrapType2 {
-            pname = "rsxp";
-            version = "0.1.0";
-            pkgs = pkgs;
-            contents = [ app ];
-            extraPkgs = _: [ pkgs.ruby ];
-            extraInstallCommands = ''
-              mkdir -p $out/share/applications
-              cat > $out/share/applications/rsxp.desktop <<'EOF'
-              [Desktop Entry]
-              Type=Application
-              Name=RSXP
-              Exec=rsxp
-              Terminal=true
-              Categories=Game;Development;
-              EOF
-            '';
-          };
+          appimage = nix-appimage.bundlers.${system}.default app;
         }) // eachSystem darwinSystems (system:
           let
             pkgs = import nixpkgs { inherit system; };
@@ -82,11 +67,7 @@
       devShells = eachSystem (linuxSystems ++ darwinSystems) (system:
         let pkgs = import nixpkgs { inherit system; };
         in {
-          default = if pkgs.stdenv.isLinux
-            then import ./shell.nix { inherit pkgs; }
-            else pkgs.mkShell {
-              packages = with pkgs; [ cargo rustc rustfmt clippy pkg-config ruby nodejs ];
-            };
+          default = import ./shell.nix { inherit pkgs; };
         });
 
       formatter = eachSystem (linuxSystems ++ darwinSystems) (system: nixpkgs.legacyPackages.${system}.nixfmt);

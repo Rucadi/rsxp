@@ -2,6 +2,7 @@
 mod audio;
 #[path = "../bindings/mod.rs"]
 mod bindings;
+mod bundled_runtime;
 mod controller;
 #[cfg(feature = "gpu")]
 mod dashboard;
@@ -248,6 +249,7 @@ fn demo(args: &[String]) -> Result<(), Box<dyn Error>> {
 }
 
 fn run() -> Result<u8, Box<dyn Error>> {
+    bundled_runtime::configure()?;
     let args: Vec<_> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("--help" | "-h") => println!("{HELP}"),

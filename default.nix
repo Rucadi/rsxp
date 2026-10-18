@@ -2,11 +2,11 @@
 
 let
   isLinux = pkgs.stdenv.hostPlatform.isLinux;
-  isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
   runtimeLibraries = pkgs.lib.optionals isLinux (with pkgs; [
     udev alsa-lib libx11 libxkbcommon vulkan-loader wayland
   ]);
-  rubyPath = "${pkgs.ruby}/${pkgs.ruby.gemPath}/gems/stackprof-0.2.28/lib";
+  profiler = import ./ruby-profiler.nix { inherit pkgs; };
+  rubyPath = "${profiler}/${pkgs.ruby.gemPath}/gems/stackprof-0.2.28/lib";
 in
 
 pkgs.rustPlatform.buildRustPackage {

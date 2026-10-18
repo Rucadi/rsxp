@@ -2,13 +2,7 @@ name: Build
 
 on:
   push:
-    paths:
-      - 'rsxp/**'
-      - '.github/workflows/build.yml'
   pull_request:
-    paths:
-      - 'rsxp/**'
-      - '.github/workflows/build.yml'
   workflow_dispatch:
 
 permissions:
@@ -21,12 +15,45 @@ concurrency:
 defaults:
   run:
     shell: bash
-    working-directory: rsxp
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  linux:
+    name: Linux / Nix AppImage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cache-nix-action@v6
+        with:
+          primary-key: nix-linux-${{ hashFiles('flake.lock', 'Cargo.lock', '**/*.nix') }}
+          restore-prefixes-first-match: nix-linux-
+      - name: Build and test desktop with Nix
+        run: nix build --print-build-logs .#rsxp
+      - name: Build AppImage with its Nix runtime closure
+        run: |
+          nix build --print-build-logs .#appimage --out-link result-appimage
+          mkdir -p artifacts
+          cp -L result-appimage artifacts/rsxp-linux-x86_64.AppImage
+          chmod +x artifacts/rsxp-linux-x86_64.AppImage
+      - name: Smoke-test AppImage without a Nix store
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          docker run --rm -v "$PWD:/work" -w /work ubuntu:24.04 \
+            bash -ec 'export APPIMAGE_EXTRACT_AND_RUN=1; \
+              artifacts/rsxp-linux-x86_64.AppImage --version; \
+              artifacts/rsxp-linux-x86_64.AppImage run --script tools/package-smoke.rb --headless'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rsxp-linux-x86_64
+          path: artifacts/*.AppImage
+          if-no-files-found: error
+
   desktop:
     name: Desktop / ${{ matrix.platform }}
     runs-on: ${{ matrix.os }}
@@ -35,10 +62,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-24.04
-            platform: linux-x86_64
-            target: x86_64-unknown-linux-gnu
-            suffix: ''
           - os: windows-2022
             platform: windows-x86_64
             # Match RubyInstaller's GNU ABI rather than the MSVC default.
@@ -58,13 +81,9 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'
-      - name: Install Linux build dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang libclang-dev pkg-config libasound2-dev \
-            libx11-dev libxkbcommon-dev libwayland-dev libudev-dev libvulkan-dev
-          ruby -rrbconfig -e 'puts "LD_LIBRARY_PATH=#{RbConfig::CONFIG.fetch("libdir")}:#{ENV["LD_LIBRARY_PATH"]}"' >> "$GITHUB_ENV"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Configure Windows libclang
         if: runner.os == 'Windows'
         run: echo 'LIBCLANG_PATH=C:/Program Files/LLVM/bin' >> "$GITHUB_ENV"
@@ -74,7 +93,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: rsxp -> target
+          workspaces: . -> target
           key: desktop-${{ matrix.target }}-ruby-3.4
       - name: Build desktop
         env:
@@ -98,25 +117,64 @@ jobs:
             "$binary" --version
             "$binary" run --script rust/testdata/rgss_smoke.rb --headless
           fi
-      - name: Package desktop
+      - name: Bundle Ruby and native dependencies
         env:
           BUILD_TARGET: ${{ matrix.target }}
-          PLATFORM: ${{ matrix.platform }}
-          EXE_SUFFIX: ${{ matrix.suffix }}
         run: |
-          mkdir -p artifacts/rsxp
-          cp "target/$BUILD_TARGET/release/rsxp$EXE_SUFFIX" artifacts/rsxp/
-          cp COPYING README.md artifacts/rsxp/
-          printf '%s\n' 'Requires shared MRI Ruby 3.4 and its standard libraries (including Zlib).' \
-            'Windows: use 64-bit RubyInstaller 3.4 and launch via ridk exec, or put its runtime DLLs on PATH.' \
-            'Linux: install the matching Ruby library, ALSA, X11/Wayland and Vulkan runtime libraries.' \
-            'macOS: install matching ARM64 Ruby 3.4; this build is unsigned and not notarized.' \
-            'This is a build artifact, not a self-contained desktop installer.' > artifacts/rsxp/RUNTIME.txt
-          tar -czf "artifacts/rsxp-$PLATFORM.tar.gz" -C artifacts rsxp
+          if [ "$RUNNER_OS" = Windows ]; then
+            ridk exec python tools/package-runtime.py "target/$BUILD_TARGET/release/rsxp.exe" artifacts/windows
+          else
+            python tools/package-runtime.py "target/$BUILD_TARGET/release/rsxp" artifacts/macos
+          fi
+      - name: Test relocated runtime without development environment
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            mv artifacts/windows 'artifacts/Relocated RSXP'
+            binary="$PWD/artifacts/Relocated RSXP/rsxp.exe"
+          else
+            mv artifacts/macos 'artifacts/Relocated RSXP'
+            binary="$PWD/artifacts/Relocated RSXP/RSXP.app/Contents/MacOS/rsxp"
+          fi
+          env -u RUBYLIB -u GEM_HOME -u GEM_PATH -u DYLD_LIBRARY_PATH -u LD_LIBRARY_PATH \
+            PATH=/usr/bin:/bin "$binary" --version
+          env -u RUBYLIB -u GEM_HOME -u GEM_PATH -u DYLD_LIBRARY_PATH -u LD_LIBRARY_PATH \
+            PATH=/usr/bin:/bin "$binary" run --script "$PWD/tools/package-smoke.rb" --headless
+          if [ "$RUNNER_OS" = Windows ]; then
+            mv 'artifacts/Relocated RSXP' artifacts/windows
+          else
+            mv 'artifacts/Relocated RSXP' artifacts/macos
+          fi
+      - name: Build macOS installer
+        if: runner.os == 'macOS'
+        run: |
+          pkgbuild --component artifacts/macos/RSXP.app --install-location /Applications \
+            --identifier org.rsxp.engine --version 0.1.0 artifacts/rsxp-macos-arm64.pkg
+          pkgutil --expand-full artifacts/rsxp-macos-arm64.pkg artifacts/pkg-expanded
+          binary=$(find artifacts/pkg-expanded -path '*/RSXP.app/Contents/MacOS/rsxp' -type f -print -quit)
+          test -n "$binary"
+          env -u RUBYLIB -u GEM_HOME -u GEM_PATH PATH=/usr/bin:/bin \
+            "$binary" run --script "$PWD/tools/package-smoke.rb" --headless
+      - name: Build and test Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $compiler)) { throw "Inno Setup 6 is missing from the runner" }
+          & $compiler tools/windows-installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "Installer compilation failed" }
+          $install = Join-Path $env:RUNNER_TEMP 'RSXP installed test'
+          $process = Start-Process artifacts/rsxp-windows-x86_64-setup.exe -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$install`"") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installation failed: $($process.ExitCode)" }
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          Remove-Item Env:RUBYLIB,Env:GEM_HOME,Env:GEM_PATH -ErrorAction SilentlyContinue
+          & "$install\rsxp.exe" run --script "$PWD/tools/package-smoke.rb" --headless
+          if ($LASTEXITCODE -ne 0) { throw "Installed runtime failed" }
       - uses: actions/upload-artifact@v4
         with:
           name: rsxp-${{ matrix.platform }}
-          path: rsxp/artifacts/rsxp-${{ matrix.platform }}.tar.gz
+          path: |
+            artifacts/*.pkg
+            artifacts/*-setup.exe
           if-no-files-found: error
 
   browser:
@@ -127,40 +185,31 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cache-nix-action@v6
         with:
-          targets: wasm32-unknown-unknown
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: rsxp/web/package-lock.json
-      - name: Install WASM linker and pinned dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y lld
-          npm --prefix web ci
-          cargo install wasm-bindgen-cli --version 0.2.121 --locked
+          primary-key: nix-browser-${{ hashFiles('flake.lock', 'Cargo.lock', 'web/**/Cargo.lock', '**/*.nix') }}
+          restore-prefixes-first-match: nix-browser-
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            rsxp/web/engine -> target
-            rsxp/web/xtask -> target
-            rsxp/web -> target
+            web/engine -> target
+            web/xtask -> target
+            web -> target
           key: browser
       - name: Build browser player
-        run: cargo xtask web
+        run: nix develop --command cargo xtask web
       - name: Check build tool and browser runtime
         run: |
-          cargo test --locked --manifest-path web/xtask/Cargo.toml
-          cargo test --locked --manifest-path web/Cargo.toml
-          npm --prefix web test
-          npm --prefix web run test:cli
+          nix develop --command cargo test --locked --manifest-path web/xtask/Cargo.toml
+          nix develop --command cargo test --locked --manifest-path web/Cargo.toml
+          nix develop --command npm --prefix web test
+          nix develop --command npm --prefix web run test:cli
       - uses: actions/upload-artifact@v4
         with:
           name: player-html
-          path: rsxp/web/dist/player.html
+          path: web/dist/player.html
           if-no-files-found: error
 
   web-player:
@@ -185,13 +234,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - uses: cachix/install-nix-action@v31
+        if: runner.os == 'Linux'
       - uses: dtolnay/rust-toolchain@stable
+        if: runner.os != 'Linux'
       - uses: actions/download-artifact@v4
         with:
           name: player-html
-          path: rsxp/web/dist
+          path: web/dist
       - name: Build native web player
-        run: cargo build --locked --release --manifest-path web/Cargo.toml
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            nix develop --command cargo build --locked --release --manifest-path web/Cargo.toml
+          else
+            cargo build --locked --release --manifest-path web/Cargo.toml
+          fi
       - name: Smoke-test export
         env:
           EXE_SUFFIX: ${{ matrix.suffix }}
@@ -211,5 +268,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: rsxp-web-${{ matrix.platform }}
-          path: rsxp/artifacts/rsxp-web-${{ matrix.platform }}.tar.gz
+          path: artifacts/rsxp-web-${{ matrix.platform }}.tar.gz
           if-no-files-found: error

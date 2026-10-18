@@ -15,6 +15,7 @@ xxd+
 /profiles/
 /result
 /result-*
+/artifacts/
 /ccache
 
 # VS Code

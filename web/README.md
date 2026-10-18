@@ -221,12 +221,17 @@ cargo test --manifest-path web/Cargo.toml
 ### Build prerequisites
 
 The build command is implemented in Rust. It invokes Cargo and `wasm-bindgen`,
-with `wasm-ld` as the WASM linker; it does not invoke Bash, Node or npm.
+then runs Binaryen's `wasm-opt -O3` on the engine before embedding it in the
+player and host executable. It uses `wasm-ld` as the WASM linker.
+On the first build it runs `npm ci` if the
+pinned Ruby runtime is missing.
 Use the project's `nix-shell`, or supply Rust's `wasm32-unknown-unknown` target,
-`wasm-bindgen` **0.2.121**, and `wasm-ld`. `WASM_BINDGEN` and `WASM_LD` can
+Node/npm, `wasm-ld`, and Binaryen (`wasm-opt`). The build automatically installs and caches
+`wasm-bindgen` **0.2.121** when the matching tool is not on PATH. `WASM_BINDGEN`, `WASM_LD`, and `WASM_OPT` can
 select alternative executable paths.
 
-Ruby WASM is a prebuilt upstream dependency, not rebuilt by rsxp. Supply a folder
+Ruby WASM is a prebuilt upstream dependency, not rebuilt by rsxp. Running
+`cargo xtask web` provisions it automatically. For an existing runtime, supply a folder
 containing `browser.umd.js` and `ruby+stdlib.wasm` (Ruby 4.0, matching the pinned
 `@ruby` packages **2.10.1**):
 
@@ -234,10 +239,10 @@ containing `browser.umd.js` and `ruby+stdlib.wasm` (Ruby 4.0, matching the pinne
 cargo xtask web --ruby-runtime /path/to/ruby-runtime
 ```
 
-The runtime is cached in `web/dist/ruby/` for subsequent builds. For convenience,
-the build can also read the pinned packages from `web/node_modules/` if already
-present. `npm --prefix web ci` provisions those once; this is optional when
-supplying the runtime yourself. Node remains necessary for the headless browser
+The runtime is cached in `web/dist/ruby/` for subsequent builds, and the matching
+build tool is cached in `web/target/tools/`. The first build needs network access;
+subsequent builds reuse these dependencies. The build also reads the pinned
+packages from `web/node_modules/` if already present. Node is used for headless browser
 tests and benchmarks, which are separate from the build.
 
 Rust build-tool tests: `cargo test --manifest-path web/xtask/Cargo.toml`.

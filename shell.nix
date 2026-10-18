@@ -15,6 +15,7 @@ pkgs.mkShell {
     pkgs.rustfmt
     pkgs.clippy
     pkgs.wasm-bindgen-cli
+    pkgs.binaryen
     pkgs.lld
     pkgs.nodejs
   ] ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.mold ];

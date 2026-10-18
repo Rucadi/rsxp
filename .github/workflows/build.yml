@@ -1,0 +1,215 @@
+name: Build
+
+on:
+  push:
+    paths:
+      - 'rsxp/**'
+      - '.github/workflows/build.yml'
+  pull_request:
+    paths:
+      - 'rsxp/**'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+    working-directory: rsxp
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  desktop:
+    name: Desktop / ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+            target: x86_64-unknown-linux-gnu
+            suffix: ''
+          - os: windows-2022
+            platform: windows-x86_64
+            # Match RubyInstaller's GNU ABI rather than the MSVC default.
+            target: x86_64-pc-windows-gnu
+            suffix: .exe
+          - os: macos-14
+            platform: macos-arm64
+            target: aarch64-apple-darwin
+            suffix: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-dev pkg-config libasound2-dev \
+            libx11-dev libxkbcommon-dev libwayland-dev libudev-dev libvulkan-dev
+          ruby -rrbconfig -e 'puts "LD_LIBRARY_PATH=#{RbConfig::CONFIG.fetch("libdir")}:#{ENV["LD_LIBRARY_PATH"]}"' >> "$GITHUB_ENV"
+      - name: Configure Windows libclang
+        if: runner.os == 'Windows'
+        run: echo 'LIBCLANG_PATH=C:/Program Files/LLVM/bin' >> "$GITHUB_ENV"
+      - name: Configure macOS libclang
+        if: runner.os == 'macOS'
+        run: echo "LIBCLANG_PATH=$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib" >> "$GITHUB_ENV"
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rsxp -> target
+          key: desktop-${{ matrix.target }}-ruby-3.4
+      - name: Build desktop
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            ridk exec cargo build --locked --release --bin rsxp --target "$BUILD_TARGET"
+          else
+            cargo build --locked --release --bin rsxp --target "$BUILD_TARGET"
+          fi
+      - name: Smoke-test desktop and embedded Ruby
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          EXE_SUFFIX: ${{ matrix.suffix }}
+        run: |
+          binary="target/$BUILD_TARGET/release/rsxp$EXE_SUFFIX"
+          if [ "$RUNNER_OS" = Windows ]; then
+            ridk exec "$binary" --version
+            ridk exec "$binary" run --script rust/testdata/rgss_smoke.rb --headless
+          else
+            "$binary" --version
+            "$binary" run --script rust/testdata/rgss_smoke.rb --headless
+          fi
+      - name: Package desktop
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          PLATFORM: ${{ matrix.platform }}
+          EXE_SUFFIX: ${{ matrix.suffix }}
+        run: |
+          mkdir -p artifacts/rsxp
+          cp "target/$BUILD_TARGET/release/rsxp$EXE_SUFFIX" artifacts/rsxp/
+          cp COPYING README.md artifacts/rsxp/
+          printf '%s\n' 'Requires shared MRI Ruby 3.4 and its standard libraries (including Zlib).' \
+            'Windows: use 64-bit RubyInstaller 3.4 and launch via ridk exec, or put its runtime DLLs on PATH.' \
+            'Linux: install the matching Ruby library, ALSA, X11/Wayland and Vulkan runtime libraries.' \
+            'macOS: install matching ARM64 Ruby 3.4; this build is unsigned and not notarized.' \
+            'This is a build artifact, not a self-contained desktop installer.' > artifacts/rsxp/RUNTIME.txt
+          tar -czf "artifacts/rsxp-$PLATFORM.tar.gz" -C artifacts rsxp
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rsxp-${{ matrix.platform }}
+          path: rsxp/artifacts/rsxp-${{ matrix.platform }}.tar.gz
+          if-no-files-found: error
+
+  browser:
+    name: Browser bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: rsxp/web/package-lock.json
+      - name: Install WASM linker and pinned dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lld
+          npm --prefix web ci
+          cargo install wasm-bindgen-cli --version 0.2.121 --locked
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            rsxp/web/engine -> target
+            rsxp/web/xtask -> target
+            rsxp/web -> target
+          key: browser
+      - name: Build browser player
+        run: cargo xtask web
+      - name: Check build tool and browser runtime
+        run: |
+          cargo test --locked --manifest-path web/xtask/Cargo.toml
+          cargo test --locked --manifest-path web/Cargo.toml
+          npm --prefix web test
+          npm --prefix web run test:cli
+      - uses: actions/upload-artifact@v4
+        with:
+          name: player-html
+          path: rsxp/web/dist/player.html
+          if-no-files-found: error
+
+  web-player:
+    name: Web player / ${{ matrix.platform }}
+    needs: browser
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+            suffix: ''
+          - os: windows-2022
+            platform: windows-x86_64
+            suffix: .exe
+          - os: macos-14
+            platform: macos-arm64
+            suffix: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v4
+        with:
+          name: player-html
+          path: rsxp/web/dist
+      - name: Build native web player
+        run: cargo build --locked --release --manifest-path web/Cargo.toml
+      - name: Smoke-test export
+        env:
+          EXE_SUFFIX: ${{ matrix.suffix }}
+        run: |
+          "web/target/release/rsxp-web$EXE_SUFFIX" --help
+          "web/target/release/rsxp-web$EXE_SUFFIX" export web/dist/export-test.html
+          cmp web/dist/player.html web/dist/export-test.html
+      - name: Package web player
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          EXE_SUFFIX: ${{ matrix.suffix }}
+        run: |
+          mkdir -p artifacts/rsxp-web
+          cp "web/target/release/rsxp-web$EXE_SUFFIX" artifacts/rsxp-web/
+          cp COPYING web/README.md artifacts/rsxp-web/
+          tar -czf "artifacts/rsxp-web-$PLATFORM.tar.gz" -C artifacts rsxp-web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rsxp-web-${{ matrix.platform }}
+          path: rsxp/artifacts/rsxp-web-${{ matrix.platform }}.tar.gz
+          if-no-files-found: error

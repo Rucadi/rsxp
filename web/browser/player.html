@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rsxp player</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#101318;color:#eef3f1;font:16px system-ui,sans-serif}
+#screen{display:block;width:100%;height:100%;background:#000}
+#launcher{position:fixed;inset:0;display:grid;place-content:center;padding:28px;background:#101318}
+#launcher[hidden],[hidden]{display:none!important} .card{max-width:640px} h1{font-size:32px;color:#68d3b0}
+p{line-height:1.55;color:#bac9c3} button{padding:12px 20px;border:0;border-radius:8px;background:#68d3b0;color:#101318;font:600 16px system-ui;cursor:pointer}
+button:disabled{opacity:.6;cursor:wait} #launch-status{white-space:pre-wrap} small{color:#93a39d} input[type=url]{box-sizing:border-box;width:100%;padding:10px;margin:10px 0;background:#202a30;color:#eef3f1;border:1px solid #53675f;border-radius:6px} .actions{display:flex;gap:10px;flex-wrap:wrap} #drop-zone{padding:18px;margin:16px 0;border:2px dashed #53675f;border-radius:8px} #drop-zone.dragover{border-color:#68d3b0;background:#20382f}
+</style>
+<canvas id="screen" width="640" height="480" aria-label="Game and workspace. F1 opens controls; F2 opens tools."></canvas>
+<section id="launcher"><div class="card">
+<h1>rsxp player</h1>
+<p>Choose the RPG Maker game folder containing <strong>Game.ini</strong> and <strong>Data</strong>.</p>
+<button id="choose-game">Choose game folder</button>
+<input id="game-folder" type="file" webkitdirectory multiple hidden>
+<div id="source-options">
+<div id="drop-zone"><label for="game-zip">Drop a game ZIP here, or choose one:</label>
+<input id="game-zip" type="file" accept=".zip,application/zip"></div>
+<label for="torrent-url">WebTorrent magnet link or .torrent URL</label>
+<input id="torrent-url" type="url" placeholder="magnet:?xt=urn:btih:… or https://…/game.torrent" spellcheck="false">
+<div class="actions"><button id="download-torrent">Download game</button><button id="cancel-download" hidden>Cancel</button></div>
+<small>Torrents need WebRTC seeders or a browser-accessible web seed. Files are shared with peers while downloading.</small>
+</div>
+<p id="launch-status" role="status">Folder and ZIP files stay on your device.</p>
+<small>F1: workspace · F2: tools · F3: output · F10: performance<br>Use Export save to keep a portable save backup.</small>
+</div></section>
+<script id="rsxp-payload" type="application/json">__RSXP_PAYLOAD__</script>
+<script type="module">
+const payload = JSON.parse(document.getElementById('rsxp-payload').textContent);
+const urls = new Map();
+function decode(text) {
+  const padding = text.endsWith('==') ? 2 : text.endsWith('=') ? 1 : 0;
+  const bytes = new Uint8Array(text.length / 4 * 3 - padding);
+  let output = 0;
+  for (let offset = 0; offset < text.length; offset += 65536) {
+    const part = atob(text.slice(offset, offset + 65536));
+    for (let i = 0; i < part.length; i += 1) bytes[output++] = part.charCodeAt(i);
+  }
+  return bytes;
+}
+function moduleURL(name) {
+  if (urls.has(name)) return urls.get(name);
+  let source = payload.modules[name];
+  if (source === undefined) throw new Error('Missing embedded module: ' + name);
+  source = source.replace(/(from\s+)(['"])(\.\/[^'"]+)\2/g, (_match, prefix, quote, path) => {
+    const base = name.includes('/') ? name.slice(0, name.lastIndexOf('/') + 1) : '';
+    return prefix + quote + moduleURL(base + path.slice(2)) + quote;
+  });
+  const url = URL.createObjectURL(new Blob([source], {type:'text/javascript'}));
+  urls.set(name, url);
+  return url;
+}
+globalThis.RSXP_BUNDLE = {payload, decode, load: name => import(moduleURL(name))};
+try { await globalThis.RSXP_BUNDLE.load('player-launcher.js'); }
+catch (error) { document.getElementById('launch-status').textContent = String(error); }
+</script>
+</html>

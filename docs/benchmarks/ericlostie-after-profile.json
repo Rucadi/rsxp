@@ -1,0 +1,1800 @@
+{
+  "mode": "cpu",
+  "interval_us": 1000,
+  "samples": 1382,
+  "missed_samples": 2,
+  "gc_samples": 129,
+  "start_update": 150,
+  "end_update": 3150,
+  "elapsed_wall_seconds": 5.540290110046044,
+  "allocated_objects": 3943960,
+  "gc_cycles": 13,
+  "yjit_enabled": true,
+  "methods": [
+    {
+      "name": "Kernel#__mkxp_native",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 286,
+      "total_samples": 286
+    },
+    {
+      "name": "Sprite#__sync",
+      "file": "eval",
+      "line": 765,
+      "self_samples": 170,
+      "total_samples": 239
+    },
+    {
+      "name": "(marking)",
+      "file": "",
+      "line": null,
+      "self_samples": 77,
+      "total_samples": 77
+    },
+    {
+      "name": "TilemapRenderer#update",
+      "file": "TilemapRenderer",
+      "line": 532,
+      "self_samples": 63,
+      "total_samples": 159
+    },
+    {
+      "name": "(sweeping)",
+      "file": "",
+      "line": null,
+      "self_samples": 52,
+      "total_samples": 52
+    },
+    {
+      "name": "NativeResource#disposed?",
+      "file": "eval",
+      "line": 403,
+      "self_samples": 50,
+      "total_samples": 50
+    },
+    {
+      "name": "Game_Character#shows_shadow?",
+      "file": "Overworld Shadows EX",
+      "line": 209,
+      "self_samples": 49,
+      "total_samples": 52
+    },
+    {
+      "name": "Enumerable#each_with_index",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 46,
+      "total_samples": 169
+    },
+    {
+      "name": "Sprite.__sync_all",
+      "file": "eval",
+      "line": 663,
+      "self_samples": 38,
+      "total_samples": 392
+    },
+    {
+      "name": "ObjectSpace::WeakMap#key?",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 34,
+      "total_samples": 34
+    },
+    {
+      "name": "Array#delete_if",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 30,
+      "total_samples": 412
+    },
+    {
+      "name": "Sprite_Character#update",
+      "file": "Sprite_Character",
+      "line": 142,
+      "self_samples": 21,
+      "total_samples": 83
+    },
+    {
+      "name": "Array#each",
+      "file": "<internal:array>",
+      "line": 219,
+      "self_samples": 18,
+      "total_samples": 449
+    },
+    {
+      "name": "Sprite_Character#update_footsteps",
+      "file": "[Marin's Footprints] script.rb",
+      "line": 116,
+      "self_samples": 17,
+      "total_samples": 20
+    },
+    {
+      "name": "Kernel#__rsxp_sprite_sync",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 17,
+      "total_samples": 18
+    },
+    {
+      "name": "Table#__get",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 14,
+      "total_samples": 14
+    },
+    {
+      "name": "Sprite_OWShadow#update",
+      "file": "Overworld Shadows EX",
+      "line": 114,
+      "self_samples": 14,
+      "total_samples": 32
+    },
+    {
+      "name": "String#[]",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 13,
+      "total_samples": 13
+    },
+    {
+      "name": "NativeResource#__check",
+      "file": "eval",
+      "line": 404,
+      "self_samples": 13,
+      "total_samples": 32
+    },
+    {
+      "name": "Float#==",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 12,
+      "total_samples": 12
+    },
+    {
+      "name": "ObjectSpace::WeakMap#[]",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 12,
+      "total_samples": 12
+    },
+    {
+      "name": "Sprite_Character#update",
+      "file": "[Marin's Footprints] script.rb",
+      "line": 64,
+      "self_samples": 11,
+      "total_samples": 149
+    },
+    {
+      "name": "Sprite_Picture#update",
+      "file": "Sprite_Picture",
+      "line": 13,
+      "self_samples": 10,
+      "total_samples": 10
+    },
+    {
+      "name": "Range#each",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 9,
+      "total_samples": 140
+    },
+    {
+      "name": "Game_Event#name",
+      "file": "Game_Event",
+      "line": 32,
+      "self_samples": 8,
+      "total_samples": 8
+    },
+    {
+      "name": "WeakRef#weakref_alive?",
+      "file": "/nix/store/wvg8wpsa52867glcdjrmm3pvaq2mwmvy-ruby-3.4.9/lib/ruby/3.4.0/weakref.rb",
+      "line": 55,
+      "self_samples": 7,
+      "total_samples": 41
+    },
+    {
+      "name": "Array#==",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 7,
+      "total_samples": 7
+    },
+    {
+      "name": "NamedEvent#trigger",
+      "file": "Event_Handlers",
+      "line": 88,
+      "self_samples": 7,
+      "total_samples": 34
+    },
+    {
+      "name": "NativeResource#disposed?",
+      "file": "eval",
+      "line": 403,
+      "self_samples": 7,
+      "total_samples": 7
+    },
+    {
+      "name": "Integer#===",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 5,
+      "total_samples": 5
+    },
+    {
+      "name": "GameData::TerrainTag.try_get",
+      "file": "TerrainTag",
+      "line": 31,
+      "self_samples": 5,
+      "total_samples": 12
+    },
+    {
+      "name": "Enumerable#map",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 5,
+      "total_samples": 11
+    },
+    {
+      "name": "Table#[]",
+      "file": "eval",
+      "line": 383,
+      "self_samples": 5,
+      "total_samples": 22
+    },
+    {
+      "name": "Viewport#__sync",
+      "file": "eval",
+      "line": 583,
+      "self_samples": 5,
+      "total_samples": 13
+    },
+    {
+      "name": "Game_Character#update",
+      "file": "Game_Character",
+      "line": 974,
+      "self_samples": 5,
+      "total_samples": 28
+    },
+    {
+      "name": "Game_Character#screen_z",
+      "file": "Game_Character",
+      "line": 331,
+      "self_samples": 5,
+      "total_samples": 5
+    },
+    {
+      "name": "Sprite_Character#refresh_graphic",
+      "file": "[v21.1 Hotfixes] Misc bug fixes.rb",
+      "line": 431,
+      "self_samples": 5,
+      "total_samples": 7
+    },
+    {
+      "name": "Regexp#match",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 5,
+      "total_samples": 5
+    },
+    {
+      "name": "NativeResource#disposed?",
+      "file": "eval",
+      "line": 403,
+      "self_samples": 4,
+      "total_samples": 4
+    },
+    {
+      "name": "Input.press?",
+      "file": "eval",
+      "line": 1074,
+      "self_samples": 4,
+      "total_samples": 8
+    },
+    {
+      "name": "Game_Event#should_update?",
+      "file": "Game_Event",
+      "line": 244,
+      "self_samples": 4,
+      "total_samples": 4
+    },
+    {
+      "name": "Hash#fetch",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 4,
+      "total_samples": 4
+    },
+    {
+      "name": "Comparable#clamp",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 4,
+      "total_samples": 8
+    },
+    {
+      "name": "Sprite#bitmap=",
+      "file": "eval",
+      "line": 708,
+      "self_samples": 4,
+      "total_samples": 7
+    },
+    {
+      "name": "Plane#__sync",
+      "file": "eval",
+      "line": 639,
+      "self_samples": 4,
+      "total_samples": 5
+    },
+    {
+      "name": "Float#<=>",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 4,
+      "total_samples": 4
+    },
+    {
+      "name": "Game_Character#moving?",
+      "file": "[Marin Side Stairs] Script.rb",
+      "line": 445,
+      "self_samples": 4,
+      "total_samples": 4
+    },
+    {
+      "name": "Hash#each",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 4,
+      "total_samples": 7
+    },
+    {
+      "name": "Game_Event#mss_check_events",
+      "file": "[Marin Side Stairs] Script.rb",
+      "line": 64,
+      "self_samples": 4,
+      "total_samples": 6
+    },
+    {
+      "name": "Interpreter#setup_starting_event",
+      "file": "Interpreter",
+      "line": 54,
+      "self_samples": 4,
+      "total_samples": 4
+    },
+    {
+      "name": "TilemapRenderer::AutotileBitmaps#update",
+      "file": "TilemapRenderer",
+      "line": 224,
+      "self_samples": 4,
+      "total_samples": 8
+    },
+    {
+      "name": "WeakRef#__getobj__",
+      "file": "/nix/store/wvg8wpsa52867glcdjrmm3pvaq2mwmvy-ruby-3.4.9/lib/ruby/3.4.0/weakref.rb",
+      "line": 44,
+      "self_samples": 4,
+      "total_samples": 16
+    },
+    {
+      "name": "RPG::Sprite#x=",
+      "file": "RPG_Sprite",
+      "line": 287,
+      "self_samples": 4,
+      "total_samples": 4
+    },
+    {
+      "name": "Game_Map#passable?",
+      "file": "[Advanced Items - Field Moves] 05_Overworld Animation.rb",
+      "line": 93,
+      "self_samples": 3,
+      "total_samples": 4
+    },
+    {
+      "name": "Sprite_Character#visible=",
+      "file": "Sprite_Character",
+      "line": 83,
+      "self_samples": 3,
+      "total_samples": 3
+    },
+    {
+      "name": "Sprite_Reflection#update",
+      "file": "Sprite_Reflection",
+      "line": 40,
+      "self_samples": 3,
+      "total_samples": 10
+    },
+    {
+      "name": "Sprite#opacity=",
+      "file": "eval",
+      "line": 720,
+      "self_samples": 3,
+      "total_samples": 8
+    },
+    {
+      "name": "Sprite_Character#update",
+      "file": "Overworld Shadows EX",
+      "line": 175,
+      "self_samples": 3,
+      "total_samples": 119
+    },
+    {
+      "name": "Game_Character#update_stop",
+      "file": "Game_Character",
+      "line": 1075,
+      "self_samples": 3,
+      "total_samples": 3
+    },
+    {
+      "name": "Object#update_trainer_bars",
+      "file": "Barras entrenadores",
+      "line": 122,
+      "self_samples": 3,
+      "total_samples": 10
+    },
+    {
+      "name": "Game_Map#passableStrict?",
+      "file": "Game_Map",
+      "line": 252,
+      "self_samples": 3,
+      "total_samples": 7
+    },
+    {
+      "name": "Input.__button",
+      "file": "eval",
+      "line": 1043,
+      "self_samples": 3,
+      "total_samples": 3
+    },
+    {
+      "name": "Game_Picture#update",
+      "file": "Game_Picture",
+      "line": 128,
+      "self_samples": 3,
+      "total_samples": 3
+    },
+    {
+      "name": "Hash#each_value",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 3,
+      "total_samples": 95
+    },
+    {
+      "name": "Class#new",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 3,
+      "total_samples": 6
+    },
+    {
+      "name": "Kernel#Integer",
+      "file": "<internal:kernel>",
+      "line": 287,
+      "self_samples": 3,
+      "total_samples": 3
+    },
+    {
+      "name": "RuntimePatches.sync",
+      "file": "eval",
+      "line": 977,
+      "self_samples": 3,
+      "total_samples": 7
+    },
+    {
+      "name": "MKXP.call",
+      "file": "eval",
+      "line": 42,
+      "self_samples": 3,
+      "total_samples": 293
+    },
+    {
+      "name": "Enumerable#to_h",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 2,
+      "total_samples": 3
+    },
+    {
+      "name": "AnimatedBitmap#update",
+      "file": "AnimatedBitmap",
+      "line": 30,
+      "self_samples": 2,
+      "total_samples": 2
+    },
+    {
+      "name": "System.power_state",
+      "file": "eval",
+      "line": 227,
+      "self_samples": 2,
+      "total_samples": 5
+    },
+    {
+      "name": "Game_Character#screen_y_ground",
+      "file": "[Marin Side Stairs] Script.rb",
+      "line": 477,
+      "self_samples": 2,
+      "total_samples": 2
+    },
+    {
+      "name": "GameData::ClassMethods#get",
+      "file": "GameData",
+      "line": 29,
+      "self_samples": 2,
+      "total_samples": 4
+    },
+    {
+      "name": "Array#any?",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 2,
+      "total_samples": 55
+    },
+    {
+      "name": "Interpreter#update",
+      "file": "Interpreter",
+      "line": 84,
+      "self_samples": 2,
+      "total_samples": 6
+    },
+    {
+      "name": "Rect#set",
+      "file": "eval",
+      "line": 351,
+      "self_samples": 2,
+      "total_samples": 2
+    },
+    {
+      "name": "Game_Character#update_command",
+      "file": "Game_Character",
+      "line": 993,
+      "self_samples": 2,
+      "total_samples": 13
+    },
+    {
+      "name": "GameData::ClassMethods#get",
+      "file": "GameData",
+      "line": 29,
+      "self_samples": 2,
+      "total_samples": 3
+    },
+    {
+      "name": "Game_Map#data",
+      "file": "Game_Map",
+      "line": 100,
+      "self_samples": 2,
+      "total_samples": 2
+    },
+    {
+      "name": "BasicObject#!=",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 2,
+      "total_samples": 2
+    },
+    {
+      "name": "MKXP::Flashable#__flash_color_for_sync",
+      "file": "eval",
+      "line": 309,
+      "self_samples": 2,
+      "total_samples": 2
+    },
+    {
+      "name": "Kernel#Float",
+      "file": "<internal:kernel>",
+      "line": 194,
+      "self_samples": 2,
+      "total_samples": 2
+    },
+    {
+      "name": "Kernel.rand",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 2,
+      "total_samples": 2
+    },
+    {
+      "name": "MKXP.channel",
+      "file": "eval",
+      "line": 65,
+      "self_samples": 2,
+      "total_samples": 5
+    },
+    {
+      "name": "MKXP::Flashable#update",
+      "file": "eval",
+      "line": 293,
+      "self_samples": 2,
+      "total_samples": 5
+    },
+    {
+      "name": "Game_Event#update",
+      "file": "[v21.1 Hotfixes] Misc bug fixes.rb",
+      "line": 578,
+      "self_samples": 2,
+      "total_samples": 43
+    },
+    {
+      "name": "RPG::Sprite#update",
+      "file": "RPG_Sprite",
+      "line": 333,
+      "self_samples": 2,
+      "total_samples": 7
+    },
+    {
+      "name": "Game_Event#is_stair_event?",
+      "file": "[Marin Side Stairs] Script.rb",
+      "line": 92,
+      "self_samples": 2,
+      "total_samples": 2
+    },
+    {
+      "name": "Array#compact!",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 2,
+      "total_samples": 2
+    },
+    {
+      "name": "Array#join",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 2,
+      "total_samples": 2
+    },
+    {
+      "name": "TilemapRenderer::AutotileBitmaps#frame_count",
+      "file": "TilemapRenderer",
+      "line": 170,
+      "self_samples": 2,
+      "total_samples": 2
+    },
+    {
+      "name": "NativeResource#__check",
+      "file": "eval",
+      "line": 404,
+      "self_samples": 2,
+      "total_samples": 2
+    },
+    {
+      "name": "Game_Character#bush_depth",
+      "file": "Game_Character",
+      "line": 198,
+      "self_samples": 2,
+      "total_samples": 2
+    },
+    {
+      "name": "Game_Character#screen_x",
+      "file": "Game_Character",
+      "line": 308,
+      "self_samples": 2,
+      "total_samples": 5
+    },
+    {
+      "name": "TilemapRenderer::AutotileBitmaps#set_current_frame",
+      "file": "TilemapRenderer",
+      "line": 191,
+      "self_samples": 2,
+      "total_samples": 4
+    },
+    {
+      "name": "Array#map",
+      "file": "<internal:array>",
+      "line": 237,
+      "self_samples": 2,
+      "total_samples": 2
+    },
+    {
+      "name": "Integer#times",
+      "file": "<internal:numeric>",
+      "line": 250,
+      "self_samples": 2,
+      "total_samples": 8
+    },
+    {
+      "name": "Scene_Map#update",
+      "file": "Scene_Map",
+      "line": 165,
+      "self_samples": 2,
+      "total_samples": 520
+    },
+    {
+      "name": "Sprite_OWShadow#disposed?",
+      "file": "Overworld Shadows EX",
+      "line": 86,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Game_Player#update_screen_position",
+      "file": "ELNS Fancy Camera",
+      "line": 200,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Game_Character#update_pattern",
+      "file": "Game_Character",
+      "line": 1080,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "block in <main>",
+      "file": "Overworld",
+      "line": 147,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Game_Character#on_middle_of_stair?",
+      "file": "[Marin Side Stairs] Script.rb",
+      "line": 401,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Game_Character#map",
+      "file": "Game_Character",
+      "line": 190,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "PokemonMapFactory#hasMap?",
+      "file": "Game_MapFactory",
+      "line": 40,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "AnimatedBitmap#width",
+      "file": "AnimatedBitmap",
+      "line": 22,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Tone#green=",
+      "file": "eval",
+      "line": 325,
+      "self_samples": 1,
+      "total_samples": 4
+    },
+    {
+      "name": "Hash#each_key",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 1,
+      "total_samples": 15
+    },
+    {
+      "name": "Object#pbDayNightTint",
+      "file": "Overworld_Time",
+      "line": 116,
+      "self_samples": 1,
+      "total_samples": 9
+    },
+    {
+      "name": "Game_Character#screen_y",
+      "file": "Game_Character",
+      "line": 321,
+      "self_samples": 1,
+      "total_samples": 3
+    },
+    {
+      "name": "Game_Event#check_event_trigger_auto",
+      "file": "Game_Event",
+      "line": 170,
+      "self_samples": 1,
+      "total_samples": 6
+    },
+    {
+      "name": "Tone#red=",
+      "file": "eval",
+      "line": 325,
+      "self_samples": 1,
+      "total_samples": 4
+    },
+    {
+      "name": "Color#alpha=",
+      "file": "eval",
+      "line": 257,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Hash#has_key?",
+      "file": "[Luka's Scripting Utilities] Hash.rb",
+      "line": 16,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "String#each_line",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 1,
+      "total_samples": 5
+    },
+    {
+      "name": "Float#round",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Tone#blue=",
+      "file": "eval",
+      "line": 325,
+      "self_samples": 1,
+      "total_samples": 3
+    },
+    {
+      "name": "Regexp#match?",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Input.raw_keys",
+      "file": "eval",
+      "line": 1044,
+      "self_samples": 1,
+      "total_samples": 2
+    },
+    {
+      "name": "String#match",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 1,
+      "total_samples": 6
+    },
+    {
+      "name": "Plane#opacity=",
+      "file": "eval",
+      "line": 630,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Game_Screen#update",
+      "file": "Game_Screen",
+      "line": 72,
+      "self_samples": 1,
+      "total_samples": 6
+    },
+    {
+      "name": "PokemonEncounters#has_cave_encounters?",
+      "file": "Overworld_WildEncounters",
+      "line": 71,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Spriteset_Map#update",
+      "file": "[Marin's Footprints] script.rb",
+      "line": 167,
+      "self_samples": 1,
+      "total_samples": 140
+    },
+    {
+      "name": "Spriteset_Map#update",
+      "file": "Spriteset_Map",
+      "line": 91,
+      "self_samples": 1,
+      "total_samples": 134
+    },
+    {
+      "name": "Object#pxCheckExitArrows",
+      "file": "Exit Arrows",
+      "line": 27,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Input.update",
+      "file": "Turbo",
+      "line": 36,
+      "self_samples": 1,
+      "total_samples": 21
+    },
+    {
+      "name": "Input.update",
+      "file": "eval",
+      "line": 1067,
+      "self_samples": 1,
+      "total_samples": 20
+    },
+    {
+      "name": "Game_Event#update",
+      "file": "[Lens of truth] Script.rb",
+      "line": 38,
+      "self_samples": 1,
+      "total_samples": 51
+    },
+    {
+      "name": "Game_Map#update",
+      "file": "Game_Map",
+      "line": 440,
+      "self_samples": 1,
+      "total_samples": 51
+    },
+    {
+      "name": "FollowingPkmn.can_check?",
+      "file": "[Following Pokemon EX] Internal Commands.rb",
+      "line": 11,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Object#pbSpawnOnStepTaken",
+      "file": "[Visible Overworld Wild Encounters] 001_VOE script.rb",
+      "line": 1444,
+      "self_samples": 1,
+      "total_samples": 18
+    },
+    {
+      "name": "MKXP.flush_sync",
+      "file": "eval",
+      "line": 50,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Object#pbChooseTileOnStepTaken",
+      "file": "[Visible Overworld Wild Encounters] 001_VOE script.rb",
+      "line": 459,
+      "self_samples": 1,
+      "total_samples": 17
+    },
+    {
+      "name": "Integer#floor",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Game_Player#update",
+      "file": "Game_Player",
+      "line": 442,
+      "self_samples": 1,
+      "total_samples": 66
+    },
+    {
+      "name": "FollowingPkmn.get_pokemon",
+      "file": "[Following Pokemon EX] Event_Sprite Commands.rb",
+      "line": 33,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "String#+",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Scene_Map#update",
+      "file": "[Following Pokemon EX] Refresh.rb",
+      "line": 228,
+      "self_samples": 1,
+      "total_samples": 536
+    },
+    {
+      "name": "Pokemon#changeHappiness",
+      "file": "Pokemon",
+      "line": 997,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Object#pbMapInterpreter",
+      "file": "Messages",
+      "line": 4,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Kernel#clone",
+      "file": "<internal:kernel>",
+      "line": 47,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Integer#**",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Array#none?",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Graphics.update",
+      "file": "[Intro Versus] 001_script_principal.rb",
+      "line": 468,
+      "self_samples": 1,
+      "total_samples": 693
+    },
+    {
+      "name": "Rect#to_a",
+      "file": "eval",
+      "line": 373,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "String#split",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "TilemapRenderer#check_if_screen_moved",
+      "file": "TilemapRenderer",
+      "line": 446,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Scene_Map#main",
+      "file": "Debug Passability",
+      "line": 294,
+      "self_samples": 1,
+      "total_samples": 1253
+    },
+    {
+      "name": "TilemapRenderer#refresh_tile_frame",
+      "file": "TilemapRenderer",
+      "line": 415,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Enumerable#each_slice",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Kernel#loop",
+      "file": "<internal:kernel>",
+      "line": 160,
+      "self_samples": 1,
+      "total_samples": 1253
+    },
+    {
+      "name": "AnimatedBitmap#bitmap",
+      "file": "AnimatedBitmap",
+      "line": 26,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Game_Character#update",
+      "file": "[Marin Side Stairs] Script.rb",
+      "line": 468,
+      "self_samples": 1,
+      "total_samples": 29
+    },
+    {
+      "name": "String#to_f",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Integer#to_f",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Float#to_i",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 1,
+      "total_samples": 1
+    },
+    {
+      "name": "Game_Character#triggerLeaveTile",
+      "file": "Game_Character",
+      "line": 387,
+      "self_samples": 1,
+      "total_samples": 2
+    },
+    {
+      "name": "Bitmap#height",
+      "file": "eval",
+      "line": 466,
+      "self_samples": 0,
+      "total_samples": 1
+    },
+    {
+      "name": "FollowerData#following_pkmn?",
+      "file": "[Following Pokemon EX] Following Event.rb",
+      "line": 283,
+      "self_samples": 0,
+      "total_samples": 1
+    },
+    {
+      "name": "Game_Player#update_command_new",
+      "file": "[Advanced Items - Field Moves] 05_Overworld Animation.rb",
+      "line": 236,
+      "self_samples": 0,
+      "total_samples": 3
+    },
+    {
+      "name": "AnimatedBitmap#height",
+      "file": "AnimatedBitmap",
+      "line": 23,
+      "self_samples": 0,
+      "total_samples": 1
+    },
+    {
+      "name": "Game_FollowingPkmn#screen_z",
+      "file": "[Following Pokemon EX] Following Event.rb",
+      "line": 272,
+      "self_samples": 0,
+      "total_samples": 2
+    },
+    {
+      "name": "Enumerable#find",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 0,
+      "total_samples": 3
+    },
+    {
+      "name": "Game_Character#move_speed=",
+      "file": "Game_Character",
+      "line": 110,
+      "self_samples": 0,
+      "total_samples": 1
+    },
+    {
+      "name": "block in <main>",
+      "file": "Overworld",
+      "line": 6,
+      "self_samples": 0,
+      "total_samples": 1
+    },
+    {
+      "name": "Object#pbMapInterpreterRunning?",
+      "file": "Messages",
+      "line": 8,
+      "self_samples": 0,
+      "total_samples": 1
+    },
+    {
+      "name": "FollowingPkmn.increase_time",
+      "file": "[Following Pokemon EX] Internal Commands.rb",
+      "line": 41,
+      "self_samples": 0,
+      "total_samples": 4
+    },
+    {
+      "name": "GameData::ClassMethodsIDNumbers#try_get",
+      "file": "GameData",
+      "line": 180,
+      "self_samples": 0,
+      "total_samples": 3
+    },
+    {
+      "name": "Object#pbBatteryLow?",
+      "file": "Overworld",
+      "line": 35,
+      "self_samples": 0,
+      "total_samples": 5
+    },
+    {
+      "name": "block in <main>",
+      "file": "Overworld",
+      "line": 48,
+      "self_samples": 0,
+      "total_samples": 5
+    },
+    {
+      "name": "Enumerator#each",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 0,
+      "total_samples": 1
+    },
+    {
+      "name": "Viewport#tone=",
+      "file": "eval",
+      "line": 580,
+      "self_samples": 0,
+      "total_samples": 1
+    },
+    {
+      "name": "Game_Player#update_stop",
+      "file": "[Advanced Items - Field Moves] 05_Overworld Animation.rb",
+      "line": 488,
+      "self_samples": 0,
+      "total_samples": 1
+    },
+    {
+      "name": "GameData::ClassMethodsSymbols#each",
+      "file": "GameData",
+      "line": 124,
+      "self_samples": 0,
+      "total_samples": 1
+    },
+    {
+      "name": "PokemonEncounters#encounter_possible_here_on_tile?",
+      "file": "[Visible Overworld Wild Encounters] 001_VOE script.rb",
+      "line": 604,
+      "self_samples": 0,
+      "total_samples": 1
+    },
+    {
+      "name": "Sprite#bmp",
+      "file": "[Marin's Scripting Utilities] script.rb",
+      "line": 645,
+      "self_samples": 0,
+      "total_samples": 3
+    },
+    {
+      "name": "block in <main>",
+      "file": "Exit Arrows",
+      "line": 55,
+      "self_samples": 0,
+      "total_samples": 1
+    },
+    {
+      "name": "Sprite_Reflection#visible=",
+      "file": "Sprite_Reflection",
+      "line": 35,
+      "self_samples": 0,
+      "total_samples": 1
+    },
+    {
+      "name": "Kernel.rand",
+      "file": "RubyUtilities",
+      "line": 372,
+      "self_samples": 0,
+      "total_samples": 2
+    },
+    {
+      "name": "Object#rand",
+      "file": "RubyUtilities",
+      "line": 366,
+      "self_samples": 0,
+      "total_samples": 2
+    },
+    {
+      "name": "Object#rand",
+      "file": "[Marin's Scripting Utilities] script.rb",
+      "line": 1106,
+      "self_samples": 0,
+      "total_samples": 2
+    },
+    {
+      "name": "Bitmap#initialize",
+      "file": "eval",
+      "line": 448,
+      "self_samples": 0,
+      "total_samples": 3
+    },
+    {
+      "name": "Object#pbBattleOrSpawnOnStepTaken",
+      "file": "[Visible Overworld Wild Encounters] 001_VOE script.rb",
+      "line": 356,
+      "self_samples": 0,
+      "total_samples": 1
+    },
+    {
+      "name": "Pokemon#changeHappiness",
+      "file": "Pokemon_ShadowPokemon",
+      "line": 109,
+      "self_samples": 0,
+      "total_samples": 1
+    },
+    {
+      "name": "(garbage collection)",
+      "file": "",
+      "line": null,
+      "self_samples": 0,
+      "total_samples": 129
+    },
+    {
+      "name": "PokemonMapFactory#getTerrainTagFromCoords",
+      "file": "Game_MapFactory",
+      "line": 215,
+      "self_samples": 0,
+      "total_samples": 9
+    },
+    {
+      "name": "Game_Player#pbTerrainTag",
+      "file": "Game_Player",
+      "line": 197,
+      "self_samples": 0,
+      "total_samples": 9
+    },
+    {
+      "name": "Game_Player#update",
+      "file": "Debug Passability",
+      "line": 278,
+      "self_samples": 0,
+      "total_samples": 66
+    },
+    {
+      "name": "Object#pbSpawnOnStepTaken",
+      "file": "[Visible Overworld Wild Encounters] 001_VOE script.rb",
+      "line": 387,
+      "self_samples": 0,
+      "total_samples": 17
+    },
+    {
+      "name": "block in <main>",
+      "file": "[Visible Overworld Wild Encounters] add_on_automatic_spawning.rb",
+      "line": 37,
+      "self_samples": 0,
+      "total_samples": 19
+    },
+    {
+      "name": "EventHandlers.trigger",
+      "file": "Event_HandlerCollections",
+      "line": 75,
+      "self_samples": 0,
+      "total_samples": 34
+    },
+    {
+      "name": "Input.update",
+      "file": "Easy Debug Terminal",
+      "line": 40,
+      "self_samples": 0,
+      "total_samples": 22
+    },
+    {
+      "name": "Sprite_Character#update",
+      "file": "Sprite_DynamicShadows",
+      "line": 157,
+      "self_samples": 0,
+      "total_samples": 84
+    },
+    {
+      "name": "Sprite_Character#update",
+      "file": "[Advanced Items - Field Moves] 05_Overworld Animation.rb",
+      "line": 894,
+      "self_samples": 0,
+      "total_samples": 149
+    },
+    {
+      "name": "Spriteset_Map#update",
+      "file": "Sprite_AnimationSprite",
+      "line": 76,
+      "self_samples": 0,
+      "total_samples": 135
+    },
+    {
+      "name": "Spriteset_Map#update",
+      "file": "[Mover panorama] script.rb",
+      "line": 52,
+      "self_samples": 0,
+      "total_samples": 140
+    },
+    {
+      "name": "Game_Character#increase_steps",
+      "file": "Game_Character",
+      "line": 397,
+      "self_samples": 0,
+      "total_samples": 2
+    },
+    {
+      "name": "Game_Character#move_generic",
+      "file": "[Marin Side Stairs] Script.rb",
+      "line": 372,
+      "self_samples": 0,
+      "total_samples": 7
+    },
+    {
+      "name": "Game_Character#move_down",
+      "file": "[Marin Side Stairs] Script.rb",
+      "line": 388,
+      "self_samples": 0,
+      "total_samples": 2
+    },
+    {
+      "name": "Game_Character#move_random",
+      "file": "Game_Character",
+      "line": 658,
+      "self_samples": 0,
+      "total_samples": 6
+    },
+    {
+      "name": "Game_Character#move_type_random",
+      "file": "Game_Character",
+      "line": 405,
+      "self_samples": 0,
+      "total_samples": 7
+    },
+    {
+      "name": "Game_Character#update_command_new",
+      "file": "Game_Character",
+      "line": 1006,
+      "self_samples": 0,
+      "total_samples": 7
+    },
+    {
+      "name": "Graphics.update",
+      "file": "eval",
+      "line": 952,
+      "self_samples": 0,
+      "total_samples": 692
+    },
+    {
+      "name": "Graphics.update",
+      "file": "[Lens of truth] Script.rb",
+      "line": 88,
+      "self_samples": 0,
+      "total_samples": 693
+    },
+    {
+      "name": "Graphics.update",
+      "file": "[Discord Rich Presence API] script.rb",
+      "line": 116,
+      "self_samples": 0,
+      "total_samples": 693
+    },
+    {
+      "name": "Graphics.update",
+      "file": "/home/rucadi/repo/rsxp/tools/benchmark-anil.rb",
+      "line": 45,
+      "self_samples": 0,
+      "total_samples": 693
+    },
+    {
+      "name": "<top (required)>",
+      "file": "/home/rucadi/repo/rsxp/tools/benchmark-anil.rb",
+      "line": null,
+      "self_samples": 0,
+      "total_samples": 1253
+    },
+    {
+      "name": "Kernel#load",
+      "file": "<cfunc>",
+      "line": null,
+      "self_samples": 0,
+      "total_samples": 1253
+    },
+    {
+      "name": "<compiled>",
+      "file": "eval",
+      "line": 1,
+      "self_samples": 0,
+      "total_samples": 1253
+    },
+    {
+      "name": "Game_Event#check_event_trigger_auto",
+      "file": "[Marin Side Stairs] Script.rb",
+      "line": 58,
+      "self_samples": 0,
+      "total_samples": 12
+    },
+    {
+      "name": "Game_Map#update",
+      "file": "Turbo",
+      "line": 160,
+      "self_samples": 0,
+      "total_samples": 51
+    },
+    {
+      "name": "Game_Map#update",
+      "file": "[Mover panorama] script.rb",
+      "line": 42,
+      "self_samples": 0,
+      "total_samples": 51
+    },
+    {
+      "name": "Game_Map#update",
+      "file": "[Advanced Items - Field Moves] 01_Code.rb",
+      "line": 390,
+      "self_samples": 0,
+      "total_samples": 60
+    },
+    {
+      "name": "Scene_Map#updateMaps",
+      "file": "Scene_Map",
+      "line": 136,
+      "self_samples": 0,
+      "total_samples": 60
+    },
+    {
+      "name": "Scene_Map#update",
+      "file": "Barras entrenadores",
+      "line": 186,
+      "self_samples": 0,
+      "total_samples": 530
+    },
+    {
+      "name": "Scene_Map#updateSpritesets",
+      "file": "Scene_Map",
+      "line": 143,
+      "self_samples": 0,
+      "total_samples": 375
+    },
+    {
+      "name": "Kernel#validate",
+      "file": "Validation",
+      "line": 12,
+      "self_samples": 0,
+      "total_samples": 12
+    },
+    {
+      "name": "Game_Map#terrain_tag",
+      "file": "Game_Map",
+      "line": 303,
+      "self_samples": 0,
+      "total_samples": 16
+    },
+    {
+      "name": "PokemonMapFactory#getTerrainTag",
+      "file": "Game_MapFactory",
+      "line": 203,
+      "self_samples": 0,
+      "total_samples": 9
+    },
+    {
+      "name": "Game_Character#passable?",
+      "file": "Game_Character",
+      "line": 237,
+      "self_samples": 0,
+      "total_samples": 4
+    },
+    {
+      "name": "Plane.__sync_all",
+      "file": "eval",
+      "line": 596,
+      "self_samples": 0,
+      "total_samples": 5
+    },
+    {
+      "name": "Graphics.frame_rate",
+      "file": "eval",
+      "line": 935,
+      "self_samples": 0,
+      "total_samples": 4
+    },
+    {
+      "name": "Game_Character#calculate_bush_depth",
+      "file": "Overworld Shadows EX",
+      "line": 202,
+      "self_samples": 0,
+      "total_samples": 3
+    },
+    {
+      "name": "Game_Character#update_move",
+      "file": "Game_Character",
+      "line": 1016,
+      "self_samples": 0,
+      "total_samples": 4
+    },
+    {
+      "name": "Game_Event#update_move",
+      "file": "Game_Event",
+      "line": 278,
+      "self_samples": 0,
+      "total_samples": 4
+    },
+    {
+      "name": "Viewport.__sync_all",
+      "file": "eval",
+      "line": 551,
+      "self_samples": 0,
+      "total_samples": 16
+    },
+    {
+      "name": "MKXP.sync",
+      "file": "eval",
+      "line": 60,
+      "self_samples": 0,
+      "total_samples": 7
+    },
+    {
+      "name": "Tone#set",
+      "file": "eval",
+      "line": 317,
+      "self_samples": 0,
+      "total_samples": 11
+    },
+    {
+      "name": "Game_Character#move_right",
+      "file": "Game_Character",
+      "line": 574,
+      "self_samples": 0,
+      "total_samples": 1
+    },
+    {
+      "name": "Color#set",
+      "file": "eval",
+      "line": 249,
+      "self_samples": 0,
+      "total_samples": 1
+    },
+    {
+      "name": "Sprite#color=",
+      "file": "eval",
+      "line": 723,
+      "self_samples": 0,
+      "total_samples": 1
+    },
+    {
+      "name": "Input.triggerex?",
+      "file": "eval",
+      "line": 1055,
+      "self_samples": 0,
+      "total_samples": 2
+    },
+    {
+      "name": "Game_Character#update_pattern",
+      "file": "[Marin Side Stairs] Script.rb",
+      "line": 460,
+      "self_samples": 0,
+      "total_samples": 1
+    },
+    {
+      "name": "Game_Character#move_forward",
+      "file": "Game_Character",
+      "line": 827,
+      "self_samples": 0,
+      "total_samples": 1
+    },
+    {
+      "name": "Input.trigger?",
+      "file": "eval",
+      "line": 1075,
+      "self_samples": 0,
+      "total_samples": 3
+    },
+    {
+      "name": "Game_System#update",
+      "file": "Game_System",
+      "line": 279,
+      "self_samples": 0,
+      "total_samples": 2
+    },
+    {
+      "name": "Input.dir4",
+      "file": "eval",
+      "line": 1091,
+      "self_samples": 0,
+      "total_samples": 3
+    },
+    {
+      "name": "Game_Character#passable?",
+      "file": "[Following Pokemon EX] Misc.rb",
+      "line": 72,
+      "self_samples": 0,
+      "total_samples": 4
+    },
+    {
+      "name": "Game_Character#passable?",
+      "file": "[Marin Side Stairs] Script.rb",
+      "line": 360,
+      "self_samples": 0,
+      "total_samples": 5
+    },
+    {
+      "name": "Game_Character#can_move_from_coordinate?",
+      "file": "Game_Character",
+      "line": 260,
+      "self_samples": 0,
+      "total_samples": 5
+    },
+    {
+      "name": "Game_Character#can_move_in_direction?",
+      "file": "Game_Character",
+      "line": 301,
+      "self_samples": 0,
+      "total_samples": 5
+    },
+    {
+      "name": "Game_Character#transparent=",
+      "file": "Overworld Shadows EX",
+      "line": 227,
+      "self_samples": 0,
+      "total_samples": 47
+    },
+    {
+      "name": "Game_FollowerFactory#update",
+      "file": "[Marin Side Stairs] Script.rb",
+      "line": 299,
+      "self_samples": 0,
+      "total_samples": 50
+    },
+    {
+      "name": "Object#pbTileIsPossible",
+      "file": "[Visible Overworld Wild Encounters] 001_VOE script.rb",
+      "line": 482,
+      "self_samples": 0,
+      "total_samples": 14
+    },
+    {
+      "name": "FollowerSprites#update",
+      "file": "Game_FollowerFactory",
+      "line": 329,
+      "self_samples": 0,
+      "total_samples": 15
+    },
+    {
+      "name": "FollowerSprites#update",
+      "file": "[Following Pokemon EX] Event Sprite.rb",
+      "line": 45,
+      "self_samples": 0,
+      "total_samples": 21
+    },
+    {
+      "name": "Spriteset_Global#update",
+      "file": "Spriteset_Global",
+      "line": 33,
+      "self_samples": 0,
+      "total_samples": 42
+    },
+    {
+      "name": "Game_Character#move_left",
+      "file": "Game_Character",
+      "line": 570,
+      "self_samples": 0,
+      "total_samples": 2
+    },
+    {
+      "name": "Game_Character#move_up",
+      "file": "[Marin Side Stairs] Script.rb",
+      "line": 392,
+      "self_samples": 0,
+      "total_samples": 2
+    },
+    {
+      "name": "GameData::Weather#tone",
+      "file": "Weather",
+      "line": 57,
+      "self_samples": 0,
+      "total_samples": 1
+    },
+    {
+      "name": "RPG::Weather#get_weather_tone",
+      "file": "Overworld_Weather",
+      "line": 146,
+      "self_samples": 0,
+      "total_samples": 4
+    },
+    {
+      "name": "RPG::Weather#update_screen_tone",
+      "file": "Overworld_Weather",
+      "line": 361,
+      "self_samples": 0,
+      "total_samples": 5
+    },
+    {
+      "name": "RPG::Weather#update",
+      "file": "Overworld_Weather",
+      "line": 487,
+      "self_samples": 0,
+      "total_samples": 5
+    },
+    {
+      "name": "Interpreter#update",
+      "file": "[Following Pokemon EX] Refresh.rb",
+      "line": 320,
+      "self_samples": 0,
+      "total_samples": 6
+    }
+  ]
+}

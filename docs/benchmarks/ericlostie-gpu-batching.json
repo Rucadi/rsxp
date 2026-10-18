@@ -1,0 +1,282 @@
+{
+  "upstream_commit": "37a04d14413454551a7b6aadbb4e93e67168accb",
+  "date": "2026-10-15",
+  "gpu": "NVIDIA GeForce RTX 2080",
+  "warmup": 150,
+  "measured_updates_per_run": 1500,
+  "rounds": 3,
+  "baseline": "working checkout before this change, rebuilt release with LTO",
+  "batched": "storage command buffer, disjoint adjacent draws execute in the z dispatch dimension",
+  "serial": "new storage shader, grouping disabled using RSXP_GPU_BATCH=0",
+  "method": "Alternate variants, fixed simulation step, uncapped/headless/wgpu, saving disabled, GPU fenced, no sampling or concurrent builds. Walking reaches (10,26) on map 2. Final walking images vary even between baseline runs; only idle captures are bit-identical. See GPU tests for deterministic pixel parity.",
+  "medians": {
+    "idle": {
+      "baseline": {
+        "ms_per_frame": 1.4418,
+        "cpu_ms_per_frame": 1.4417,
+        "allocations_per_frame": 1315.2
+      },
+      "batched": {
+        "ms_per_frame": 1.2932,
+        "cpu_ms_per_frame": 1.2916,
+        "allocations_per_frame": 1313.89
+      },
+      "serial": {
+        "ms_per_frame": 1.4935,
+        "cpu_ms_per_frame": 1.493,
+        "allocations_per_frame": 1315.43
+      }
+    },
+    "walking": {
+      "baseline": {
+        "ms_per_frame": 1.8257,
+        "cpu_ms_per_frame": 1.824,
+        "allocations_per_frame": 1491.6
+      },
+      "batched": {
+        "ms_per_frame": 1.6535,
+        "cpu_ms_per_frame": 1.652,
+        "allocations_per_frame": 1492.52
+      },
+      "serial": {
+        "ms_per_frame": 1.8266,
+        "cpu_ms_per_frame": 1.8252,
+        "allocations_per_frame": 1491.21
+      }
+    }
+  },
+  "runs": [
+    {
+      "frames": 1500.0,
+      "elapsed_s": 2.159,
+      "ms_per_frame": 1.4393,
+      "cpu_ms_per_frame": 1.4392,
+      "allocations_per_frame": 1315.82,
+      "gc_cycles": 6.0,
+      "scene": "idle",
+      "mode": "baseline",
+      "round": 0,
+      "final": "map=2 x=21 y=28"
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 1.9317,
+      "ms_per_frame": 1.2878,
+      "cpu_ms_per_frame": 1.2873,
+      "allocations_per_frame": 1315.75,
+      "gc_cycles": 6.0,
+      "scene": "idle",
+      "mode": "batched",
+      "round": 0,
+      "final": "map=2 x=21 y=28"
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 2.1857,
+      "ms_per_frame": 1.4571,
+      "cpu_ms_per_frame": 1.4568,
+      "allocations_per_frame": 1315.43,
+      "gc_cycles": 6.0,
+      "scene": "idle",
+      "mode": "serial",
+      "round": 0,
+      "final": "map=2 x=21 y=28"
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 2.2403,
+      "ms_per_frame": 1.4935,
+      "cpu_ms_per_frame": 1.493,
+      "allocations_per_frame": 1316.03,
+      "gc_cycles": 6.0,
+      "scene": "idle",
+      "mode": "serial",
+      "round": 1,
+      "final": "map=2 x=21 y=28"
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 1.9608,
+      "ms_per_frame": 1.3072,
+      "cpu_ms_per_frame": 1.3058,
+      "allocations_per_frame": 1313.89,
+      "gc_cycles": 6.0,
+      "scene": "idle",
+      "mode": "batched",
+      "round": 1,
+      "final": "map=2 x=21 y=28"
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 2.1627,
+      "ms_per_frame": 1.4418,
+      "cpu_ms_per_frame": 1.4417,
+      "allocations_per_frame": 1313.37,
+      "gc_cycles": 6.0,
+      "scene": "idle",
+      "mode": "baseline",
+      "round": 1,
+      "final": "map=2 x=21 y=28"
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 2.1699,
+      "ms_per_frame": 1.4466,
+      "cpu_ms_per_frame": 1.4464,
+      "allocations_per_frame": 1315.2,
+      "gc_cycles": 6.0,
+      "scene": "idle",
+      "mode": "baseline",
+      "round": 2,
+      "final": "map=2 x=21 y=28"
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 1.9397,
+      "ms_per_frame": 1.2932,
+      "cpu_ms_per_frame": 1.2916,
+      "allocations_per_frame": 1313.64,
+      "gc_cycles": 6.0,
+      "scene": "idle",
+      "mode": "batched",
+      "round": 2,
+      "final": "map=2 x=21 y=28"
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 2.3537,
+      "ms_per_frame": 1.5691,
+      "cpu_ms_per_frame": 1.5683,
+      "allocations_per_frame": 1315.03,
+      "gc_cycles": 6.0,
+      "scene": "idle",
+      "mode": "serial",
+      "round": 2,
+      "final": "map=2 x=21 y=28"
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 2.6779,
+      "ms_per_frame": 1.7853,
+      "cpu_ms_per_frame": 1.7837,
+      "allocations_per_frame": 1490.54,
+      "gc_cycles": 7.0,
+      "scene": "walking",
+      "mode": "baseline",
+      "round": 0,
+      "final": "map=2 x=10 y=26"
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 2.4219,
+      "ms_per_frame": 1.6146,
+      "cpu_ms_per_frame": 1.6134,
+      "allocations_per_frame": 1492.52,
+      "gc_cycles": 7.0,
+      "scene": "walking",
+      "mode": "batched",
+      "round": 0,
+      "final": "map=2 x=10 y=26"
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 2.6651,
+      "ms_per_frame": 1.7767,
+      "cpu_ms_per_frame": 1.7708,
+      "allocations_per_frame": 1489.79,
+      "gc_cycles": 7.0,
+      "scene": "walking",
+      "mode": "serial",
+      "round": 0,
+      "final": "map=2 x=10 y=26"
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 2.7399,
+      "ms_per_frame": 1.8266,
+      "cpu_ms_per_frame": 1.8252,
+      "allocations_per_frame": 1491.37,
+      "gc_cycles": 7.0,
+      "scene": "walking",
+      "mode": "serial",
+      "round": 1,
+      "final": "map=2 x=10 y=26"
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 2.4802,
+      "ms_per_frame": 1.6535,
+      "cpu_ms_per_frame": 1.652,
+      "allocations_per_frame": 1491.45,
+      "gc_cycles": 7.0,
+      "scene": "walking",
+      "mode": "batched",
+      "round": 1,
+      "final": "map=2 x=10 y=26"
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 2.9418,
+      "ms_per_frame": 1.9612,
+      "cpu_ms_per_frame": 1.9589,
+      "allocations_per_frame": 1492.78,
+      "gc_cycles": 7.0,
+      "scene": "walking",
+      "mode": "baseline",
+      "round": 1,
+      "final": "map=2 x=10 y=26"
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 2.7385,
+      "ms_per_frame": 1.8257,
+      "cpu_ms_per_frame": 1.824,
+      "allocations_per_frame": 1491.6,
+      "gc_cycles": 7.0,
+      "scene": "walking",
+      "mode": "baseline",
+      "round": 2,
+      "final": "map=2 x=10 y=26"
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 2.5745,
+      "ms_per_frame": 1.7164,
+      "cpu_ms_per_frame": 1.7144,
+      "allocations_per_frame": 1493.57,
+      "gc_cycles": 7.0,
+      "scene": "walking",
+      "mode": "batched",
+      "round": 2,
+      "final": "map=2 x=10 y=26"
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 2.9884,
+      "ms_per_frame": 1.9923,
+      "cpu_ms_per_frame": 1.9895,
+      "allocations_per_frame": 1491.21,
+      "gc_cycles": 7.0,
+      "scene": "walking",
+      "mode": "serial",
+      "round": 2,
+      "final": "map=2 x=10 y=26"
+    }
+  ],
+  "seeded_walking_validation": [
+    {
+      "mode": "baseline",
+      "sha256": "b3ce7d5af8ef4a3f734521af58ec9e2846485a82a72b93cf275f09a11da23bce",
+      "final": "map=2 x=10 y=26"
+    },
+    {
+      "mode": "batched",
+      "sha256": "b3ce7d5af8ef4a3f734521af58ec9e2846485a82a72b93cf275f09a11da23bce",
+      "final": "map=2 x=10 y=26"
+    }
+  ],
+  "dispatch_counts": {
+    "serial": 709765,
+    "batched": 274890
+  }
+}

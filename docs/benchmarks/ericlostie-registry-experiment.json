@@ -1,0 +1,66 @@
+{
+  "status": "Exploratory only; high run-to-run variance. Not adopted. This does not establish a reliable speedup.",
+  "design": "Replace WeakRef arrays with ObjectSpace::WeakMap keys and traverse with each_key; delete disposed keys. Otherwise use the same game and batched GPU renderer.",
+  "runs": [
+    {
+      "mode": "current",
+      "round": 0,
+      "frames": 1500.0,
+      "elapsed_s": 2.0677,
+      "ms_per_frame": 1.3785,
+      "cpu_ms_per_frame": 1.3778,
+      "allocations_per_frame": 1313.58,
+      "gc_cycles": 6.0
+    },
+    {
+      "mode": "weakmap",
+      "round": 0,
+      "frames": 1500.0,
+      "elapsed_s": 2.1541,
+      "ms_per_frame": 1.4361,
+      "cpu_ms_per_frame": 1.4345,
+      "allocations_per_frame": 1312.74,
+      "gc_cycles": 6.0
+    },
+    {
+      "mode": "weakmap",
+      "round": 1,
+      "frames": 1500.0,
+      "elapsed_s": 2.1889,
+      "ms_per_frame": 1.4592,
+      "cpu_ms_per_frame": 1.4582,
+      "allocations_per_frame": 1315.43,
+      "gc_cycles": 6.0
+    },
+    {
+      "mode": "current",
+      "round": 1,
+      "frames": 1500.0,
+      "elapsed_s": 2.9088,
+      "ms_per_frame": 1.9392,
+      "cpu_ms_per_frame": 1.9386,
+      "allocations_per_frame": 1312.79,
+      "gc_cycles": 6.0
+    },
+    {
+      "mode": "current",
+      "round": 2,
+      "frames": 1500.0,
+      "elapsed_s": 3.1232,
+      "ms_per_frame": 2.0821,
+      "cpu_ms_per_frame": 2.0814,
+      "allocations_per_frame": 1314.12,
+      "gc_cycles": 6.0
+    },
+    {
+      "mode": "weakmap",
+      "round": 2,
+      "frames": 1500.0,
+      "elapsed_s": 2.6099,
+      "ms_per_frame": 1.7399,
+      "cpu_ms_per_frame": 1.7392,
+      "allocations_per_frame": 1314.46,
+      "gc_cycles": 6.0
+    }
+  ]
+}

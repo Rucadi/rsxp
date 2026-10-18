@@ -1,0 +1,22 @@
+[
+  {
+    "executable": "/tmp/rsxp-native-compact-before-dirty",
+    "executable_sha256": "03512462e22b598043918a747a68e78acc629f9d7a415400da075578c9d01269",
+    "dirty_tracking": false,
+    "benchmark": "frames=1500 elapsed_s=14.4217 ms_per_frame=9.6145 cpu_ms_per_frame=9.6036 allocations_per_frame=4209.49 gc_cycles=12",
+    "render": "width=1536 height=1152 zoom=3.0",
+    "final": "map=2 x=10 y=27",
+    "gpu": "1634 composed frames, 16 reused frames, 13448704 uploaded bytes, 2 explicit readbacks, 53974 dispatches, 21132 native tile batches / 54487 layers / 5198492 quads",
+    "sha256": "e85063ab921e2e1f5001ef0dd4e03a8e07f6c1291e7dc8c4327f3b79c475be65"
+  },
+  {
+    "executable": "/home/rucadi/repo/rsxp/target/release/rsxp",
+    "executable_sha256": "33b96bc2d7b69abd42f3123edf5a151d44d03cf82896e175ff7e0b7cd0350a7a",
+    "dirty_tracking": true,
+    "benchmark": "frames=1500 elapsed_s=15.9862 ms_per_frame=10.6574 cpu_ms_per_frame=10.6402 allocations_per_frame=4209.74 gc_cycles=26",
+    "render": "width=1536 height=1152 zoom=3.0",
+    "final": "map=2 x=10 y=27",
+    "gpu": "1634 composed frames, 16 reused frames, 13448704 uploaded bytes, 2 explicit readbacks, 53974 dispatches, 21132 native tile batches / 54487 layers / 5198492 quads",
+    "sha256": "e85063ab921e2e1f5001ef0dd4e03a8e07f6c1291e7dc8c4327f3b79c475be65"
+  }
+]

@@ -29,10 +29,10 @@ jobs:
         with:
           persist-credentials: false
       - uses: cachix/install-nix-action@v31
-      - uses: nix-community/cache-nix-action@v6
+      - uses: cachix/cachix-action@v17
         with:
-          primary-key: nix-linux-${{ hashFiles('flake.lock', 'Cargo.lock', '**/*.nix') }}
-          restore-prefixes-first-match: nix-linux-
+          name: rsxp
+          authToken: '${{ secrets.CACHIX_KEY }}'
       - name: Build and test desktop with Nix
         run: nix build --print-build-logs .#rsxp
       - name: Build AppImage with its Nix runtime closure
@@ -43,14 +43,9 @@ jobs:
           chmod +x artifacts/rsxp-linux-x86_64.AppImage
       - name: Smoke-test AppImage without a Nix store
         run: |
-          # The nix-appimage AppRun uses an unprivileged user namespace plus
-          # chroot; Docker's default seccomp/AppArmor profiles block that.
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          docker run --rm --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
-            -v "$PWD:/work" -w /work ubuntu:24.04 \
-            bash -ec 'export APPIMAGE_EXTRACT_AND_RUN=1; \
-              artifacts/rsxp-linux-x86_64.AppImage --version; \
-              artifacts/rsxp-linux-x86_64.AppImage run --script tools/package-smoke.rb --headless'
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          artifacts/rsxp-linux-x86_64.AppImage --version
+          artifacts/rsxp-linux-x86_64.AppImage run --script tools/package-smoke.rb --headless
       - uses: actions/upload-artifact@v4
         with:
           name: rsxp-linux-x86_64
@@ -151,6 +146,94 @@ jobs:
           env -u RUBYLIB -u GEM_HOME -u GEM_PATH PATH=/usr/bin:/bin \
             "$install/RSXP.app/Contents/MacOS/rsxp" run --script "$PWD/tools/package-smoke.rb" --headless
           rm -rf "$install" "$mount"
+      - name: Diagnose Windows portable build
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Best-effort diagnostics: this step never fails the job. It reports
+          # what the executable imports, which dependencies are unresolved, any
+          # embedded manifest, how it behaves under a minimal PATH, and the
+          # SideBySide/Application events Windows logged for the failed launch.
+          $ErrorActionPreference = 'Continue'
+          $portable = Join-Path "$env:RUNNER_TEMP" 'RSXP portable test'
+          New-Item -ItemType Directory -Force -Path $portable | Out-Null
+          Copy-Item -Recurse -Force artifacts/windows/* $portable
+
+          Write-Host '=== portable contents ==='
+          Get-ChildItem $portable | Sort-Object Name |
+            Format-Table Name, Length -AutoSize | Out-String | Write-Host
+
+          $objdump = (Get-Command x86_64-w64-mingw32-objdump -ErrorAction SilentlyContinue).Source
+          if (-not $objdump) { $objdump = (Get-Command objdump -ErrorAction SilentlyContinue).Source }
+          function Get-Imports([string]$path) {
+            if (-not $objdump) { return @() }
+            (& $objdump -p $path) | Select-String 'DLL Name:\s*(\S+)' |
+              ForEach-Object { $_.Matches[0].Groups[1].Value }
+          }
+          if ($objdump) {
+            Write-Host "=== rsxp.exe imports (via $objdump) ==="
+            Get-Imports "$portable\rsxp.exe" | ForEach-Object { Write-Host "  $_" }
+            Write-Host '=== unresolved dependencies across the portable set ==='
+            $local = @{}
+            Get-ChildItem $portable -Filter *.dll | ForEach-Object { $local[$_.Name.ToLowerInvariant()] = $true }
+            $missing = 0
+            foreach ($bin in @(Get-Item "$portable\rsxp.exe") + @(Get-ChildItem $portable -Filter *.dll)) {
+              foreach ($dep in Get-Imports $bin.FullName) {
+                if (-not $local.ContainsKey($dep.ToLowerInvariant()) -and
+                    -not (Test-Path (Join-Path "$env:SystemRoot\System32" $dep))) {
+                  Write-Host "  MISSING: $($bin.Name) -> $dep"
+                  $missing++
+                }
+              }
+            }
+            Write-Host "  (missing count: $missing)"
+          } else {
+            Write-Host 'objdump not found; skipping import analysis'
+          }
+
+          $manifest = Join-Path "$env:TEMP" 'rsxp.manifest'
+          Remove-Item $manifest -ErrorAction SilentlyContinue
+          $mt = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\mt.exe' -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if ($mt) { & $mt.FullName "-inputresource:$portable\rsxp.exe;#1" "-out:$manifest" | Out-Null }
+          if (Test-Path $manifest) {
+            Write-Host '=== rsxp.exe embedded manifest ==='
+            Get-Content $manifest | Write-Host
+          } else {
+            Write-Host '=== no manifest extracted; scanning exe bytes for <assembly> ==='
+            $text = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes("$portable\rsxp.exe"))
+            $index = $text.IndexOf('<assembly')
+            if ($index -ge 0) { Write-Host $text.Substring($index, [Math]::Min(1600, $text.Length - $index)) }
+            else { Write-Host 'no <assembly> block found in exe' }
+          }
+
+          function Invoke-Probe([string]$label) {
+            Write-Host "=== run: $label ==="
+            $out = Join-Path "$env:TEMP" 'rsxp-probe.out'
+            $err = Join-Path "$env:TEMP" 'rsxp-probe.err'
+            Remove-Item $out, $err -ErrorAction SilentlyContinue
+            try {
+              $proc = Start-Process -FilePath "$portable\rsxp.exe" -ArgumentList '--version' -Wait -PassThru -NoNewWindow -RedirectStandardOutput $out -RedirectStandardError $err
+              Write-Host ("  exit=0x{0:X8}" -f $proc.ExitCode)
+            } catch {
+              Write-Host "  launch exception: $($_.Exception.Message)"
+            }
+            if (Test-Path $out) { Get-Content $out | Write-Host }
+            if (Test-Path $err) { Get-Content $err | Write-Host }
+          }
+
+          Invoke-Probe 'full development PATH'
+          $env:PATH = "$portable;$env:SystemRoot\System32;$env:SystemRoot"
+          Remove-Item Env:RUBYLIB,Env:GEM_HOME,Env:GEM_PATH -ErrorAction SilentlyContinue
+          Invoke-Probe 'minimal PATH (portable + System32)'
+
+          Write-Host '=== recent SideBySide / Application Error events ==='
+          Get-WinEvent -LogName Application -MaxEvents 100 -ErrorAction SilentlyContinue |
+            Where-Object { $_.ProviderName -match 'SideBySide|Application Error|Windows Error Reporting' } |
+            Select-Object -First 8 TimeCreated, Id, ProviderName, Message |
+            Format-List | Out-String | Write-Host
+          exit 0
+
       - name: Test and package Windows portable build
         if: runner.os == 'Windows'
         shell: pwsh
@@ -174,6 +257,15 @@ jobs:
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
           Copy-Item -Recurse -Force artifacts/windows/* $stage
           Compress-Archive -Path $stage -DestinationPath artifacts/rsxp-windows-x86_64.zip -Force
+      - name: Upload Windows portable debug files
+        if: failure() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rsxp-windows-portable-debug
+          path: |
+            ${{ runner.temp }}/RSXP portable test/rsxp.exe
+            ${{ runner.temp }}/RSXP portable test/*.dll
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: rsxp-${{ matrix.platform }}
@@ -191,10 +283,10 @@ jobs:
         with:
           persist-credentials: false
       - uses: cachix/install-nix-action@v31
-      - uses: nix-community/cache-nix-action@v6
+      - uses: cachix/cachix-action@v17
         with:
-          primary-key: nix-browser-${{ hashFiles('flake.lock', 'Cargo.lock', 'web/**/Cargo.lock', '**/*.nix') }}
-          restore-prefixes-first-match: nix-browser-
+          name: rsxp
+          authToken: '${{ secrets.CACHIX_KEY }}'
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
@@ -243,6 +335,11 @@ jobs:
           persist-credentials: false
       - uses: cachix/install-nix-action@v31
         if: runner.os == 'Linux'
+      - uses: cachix/cachix-action@v17
+        if: runner.os == 'Linux'
+        with:
+          name: rsxp
+          authToken: '${{ secrets.CACHIX_KEY }}'
       - uses: dtolnay/rust-toolchain@stable
         if: runner.os != 'Linux'
       - uses: actions/download-artifact@v4

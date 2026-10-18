@@ -27,7 +27,7 @@ gif = "0.14"
 # Pure-Rust Theora/Ogg movie decoding for Graphics.play_movie on every frontend.
 ogg = "0.9"
 theora-rs = "0.1"
-gilrs = { version = "0.11.2", optional = true }
+gilrs = { version = "0.11.2", optional = true, default-features = false }
 
 [features]
 default = ["desktop", "gpu"]

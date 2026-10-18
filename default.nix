@@ -1,4 +1,13 @@
-{ pkgs ? import <nixpkgs> { } }:
+{ pkgs ? import <nixpkgs> { }, doCheck ? true }:
+
+let
+  isLinux = pkgs.stdenv.hostPlatform.isLinux;
+  isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
+  runtimeLibraries = pkgs.lib.optionals isLinux (with pkgs; [
+    udev alsa-lib libx11 libxkbcommon vulkan-loader wayland
+  ]);
+  rubyPath = "${pkgs.ruby}/${pkgs.ruby.gemPath}/gems/stackprof-0.2.28/lib";
+in
 
 pkgs.rustPlatform.buildRustPackage {
   pname = "rsxp";
@@ -11,6 +20,7 @@ pkgs.rustPlatform.buildRustPackage {
       in
       relative == "rust" || pkgs.lib.hasPrefix "rust/" relative
       || relative == "assets" || relative == "assets/liberation.ttf"
+      || relative == "api" || builtins.elem relative [ "api/game_bridge.rb" "api/openapi.json" ]
       || relative == "binding" || builtins.elem relative [
         "binding/module_rpg1.rb.xxd" "binding/module_rpg2.rb.xxd" "binding/module_rpg3.rb.xxd"
       ]
@@ -20,27 +30,14 @@ pkgs.rustPlatform.buildRustPackage {
   cargoLock.lockFile = ./Cargo.lock;
   # Cargo emits release debuginfo for perf; preserve it during Nix fixup too.
   dontStrip = true;
-  buildInputs = [
-    pkgs.udev
-    pkgs.alsa-lib
-    pkgs.libx11
-    pkgs.libxkbcommon
-    pkgs.ruby
-    pkgs.vulkan-loader
-    pkgs.wayland
-  ];
-  nativeBuildInputs = [ pkgs.pkg-config pkgs.ruby pkgs.rustPlatform.bindgenHook pkgs.makeWrapper ];
-  postFixup = ''
-    wrapProgram $out/bin/rsxp --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath [
-      pkgs.udev
-      pkgs.alsa-lib
-      pkgs.libx11
-      pkgs.libxkbcommon
-      pkgs.vulkan-loader
-      pkgs.wayland
-    ]} --prefix RUBYLIB : ${import ./ruby-profiler.nix { inherit pkgs; }}/${pkgs.ruby.gemPath}/gems/stackprof-0.2.28/lib
+  buildInputs = runtimeLibraries ++ [ pkgs.ruby ];
+  nativeBuildInputs = [ pkgs.pkg-config pkgs.ruby pkgs.rustPlatform.bindgenHook ]
+    ++ pkgs.lib.optionals isLinux [ pkgs.makeWrapper ];
+  postFixup = pkgs.lib.optionalString isLinux ''
+    wrapProgram $out/bin/rsxp --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath runtimeLibraries} \
+      --prefix RUBYLIB : ${rubyPath}
   '';
-  doCheck = true;
+  doCheck = doCheck;
 
   postInstall = ''
     install -Dm644 ${./COPYING} $out/share/licenses/rsxp/COPYING
@@ -68,6 +65,6 @@ pkgs.rustPlatform.buildRustPackage {
     description = "Native Rust engine for RPG Maker RGSS games";
     license = pkgs.lib.licenses.gpl2Plus;
     mainProgram = "rsxp";
-    platforms = pkgs.lib.platforms.linux;
+    platforms = with pkgs.lib.platforms; linux ++ darwin ++ windows;
   };
 }

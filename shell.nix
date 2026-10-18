@@ -1,5 +1,20 @@
 { pkgs ? import <nixpkgs> { } }:
 
+let
+  linuxLibraries = pkgs.lib.optionals pkgs.stdenv.isLinux (with pkgs; [
+    udev alsa-lib libx11 libxkbcommon vulkan-loader wayland
+  ]);
+  platformLibraries = pkgs.lib.optionals pkgs.stdenv.isDarwin (with pkgs; [
+    darwin.apple_sdk.frameworks.AppKit
+    darwin.apple_sdk.frameworks.CoreAudio
+    darwin.apple_sdk.frameworks.CoreFoundation
+    darwin.apple_sdk.frameworks.CoreVideo
+    darwin.apple_sdk.frameworks.IoKit
+    darwin.apple_sdk.frameworks.Metal
+    darwin.apple_sdk.frameworks.QuartzCore
+  ]);
+in
+
 pkgs.mkShell {
   inputsFrom = [ (import ./default.nix { inherit pkgs; }) ];
   packages = [
@@ -14,15 +29,9 @@ pkgs.mkShell {
     pkgs.mold
   ];
   # Keep dynamically linked cargo binaries runnable outside the build phase.
-  LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
-    pkgs.udev
-    pkgs.alsa-lib
-    pkgs.libx11
-    pkgs.libxkbcommon
-    pkgs.ruby
-    pkgs.vulkan-loader
-    pkgs.wayland
-  ];
+  buildInputs = linuxLibraries ++ platformLibraries;
+  LD_LIBRARY_PATH = pkgs.lib.optionalString pkgs.stdenv.isLinux
+    (pkgs.lib.makeLibraryPath (linuxLibraries ++ [ pkgs.ruby ]));
   # WebAssembly builds need a wasm-capable linker (rust-lld is not shipped here).
   CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_LINKER = "${pkgs.lld}/bin/wasm-ld";
   RUBYLIB = "${import ./ruby-profiler.nix { inherit pkgs; }}/${pkgs.ruby.gemPath}/gems/stackprof-0.2.28/lib";

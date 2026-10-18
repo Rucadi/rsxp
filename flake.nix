@@ -6,60 +6,14 @@
   outputs = { self, nixpkgs }:
     let
       linuxSystems = [ "x86_64-linux" "aarch64-linux" ];
-      windowsSystems = [ "x86_64-windows" ];
+      darwinSystems = [ "x86_64-darwin" "aarch64-darwin" ];
+      windowsSystem = "x86_64-windows";
       eachSystem = systems: nixpkgs.lib.genAttrs systems;
 
       mkLinux = system:
         let pkgs = import nixpkgs { inherit system; };
-        in pkgs.rustPlatform.buildRustPackage {
-          pname = "rsxp";
-          version = "0.1.0";
-          src = self;
-          cargoLock.lockFile = ./Cargo.lock;
-          dontStrip = true;
+        in import ./default.nix { inherit pkgs; };
 
-          nativeBuildInputs = with pkgs; [ pkg-config rustPlatform.bindgenHook makeWrapper ];
-          buildInputs = with pkgs; [ udev alsa-lib libx11 libxkbcommon ruby vulkan-loader wayland ];
-
-          postFixup = ''
-            wrapProgram $out/bin/rsxp --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath [
-              pkgs.udev pkgs.alsa-lib pkgs.libx11 pkgs.libxkbcommon
-              pkgs.vulkan-loader pkgs.wayland
-            ]}
-          '';
-
-          meta = {
-            description = "Native Rust engine for RPG Maker RGSS games";
-            license = pkgs.lib.licenses.gpl2Plus;
-            mainProgram = "rsxp";
-            platforms = linuxSystems;
-          };
-        };
-
-      mkWindows = system:
-        let
-          pkgs = import nixpkgs { localSystem = "x86_64-linux"; crossSystem = system; };
-        in pkgs.rustPlatform.buildRustPackage {
-          pname = "rsxp";
-          version = "0.1.0";
-          src = self;
-          cargoLock.lockFile = ./Cargo.lock;
-          cargoBuildFlags = [ "--target" "x86_64-pc-windows-gnu" ];
-          cargoCheckFlags = [ "--target" "x86_64-pc-windows-gnu" ];
-          doCheck = false;
-          nativeBuildInputs = with pkgs.buildPackages; [ pkg-config rustPlatform.bindgenHook ];
-          buildInputs = with pkgs; [ windows.pthreads ];
-          CARGO_BUILD_TARGET = "x86_64-pc-windows-gnu";
-          postInstall = ''
-            mkdir -p $out/bin
-            cp target/x86_64-pc-windows-gnu/release/rsxp.exe $out/bin/
-          '';
-          meta = {
-            description = "Native Rust engine for RPG Maker RGSS games";
-            license = pkgs.lib.licenses.gpl2Plus;
-            platforms = [ "x86_64-windows" ];
-          };
-        };
     in {
       packages = eachSystem linuxSystems (system:
         let
@@ -71,7 +25,9 @@
           appimage = pkgs.appimageTools.wrapType2 {
             pname = "rsxp";
             version = "0.1.0";
-            src = app;
+            pkgs = pkgs;
+            contents = [ app ];
+            extraPkgs = _: [ pkgs.ruby ];
             extraInstallCommands = ''
               mkdir -p $out/share/applications
               cat > $out/share/applications/rsxp.desktop <<'EOF'
@@ -84,17 +40,55 @@
               EOF
             '';
           };
-        }) // {
-          x86_64-windows = {
-            default = mkWindows "x86_64-windows";
-            rsxp = mkWindows "x86_64-windows";
+        }) // eachSystem darwinSystems (system:
+          let
+            pkgs = import nixpkgs { inherit system; };
+            app = import ./default.nix { inherit pkgs; doCheck = false; };
+          in {
+            default = app;
+            rsxp = app;
+          }) // {
+          ${windowsSystem} = let
+              pkgs = import nixpkgs { system = "x86_64-linux"; };
+              app = pkgs.pkgsCross.mingwW64.rustPlatform.buildRustPackage {
+                pname = "rsxp";
+                version = "0.1.0";
+                src = pkgs.lib.cleanSourceWith {
+                  src = ./.;
+                  filter = path: type:
+                    let relative = pkgs.lib.removePrefix (toString ./. + "/") (toString path);
+                    in relative == "rust" || pkgs.lib.hasPrefix "rust/" relative
+                      || relative == "assets" || relative == "assets/liberation.ttf"
+                      || relative == "api" || builtins.elem relative [ "api/game_bridge.rb" "api/openapi.json" ]
+                      || relative == "binding" || builtins.elem relative [
+                        "binding/module_rpg1.rb.xxd" "binding/module_rpg2.rb.xxd" "binding/module_rpg3.rb.xxd"
+                      ] || builtins.elem relative [ "Cargo.toml" "Cargo.lock" "build.rs" "COPYING" ];
+                };
+                cargoLock.lockFile = ./Cargo.lock;
+                cargoBuildFlags = [ "--target" "x86_64-pc-windows-gnu" ];
+                doCheck = false;
+                CARGO_BUILD_TARGET = "x86_64-pc-windows-gnu";
+                buildInputs = with pkgs.pkgsCross.mingwW64; [ windows.pthreads ];
+                nativeBuildInputs = with pkgs.buildPackages; [ pkg-config rustPlatform.bindgenHook ];
+                postInstall = ''
+                  mkdir -p $out/bin
+                  cp target/x86_64-pc-windows-gnu/release/rsxp.exe $out/bin/
+                '';
+                meta.platforms = [ "x86_64-windows" ];
+              };
+            in { default = app; rsxp = app; };
           };
-        };
 
-      devShells = eachSystem linuxSystems (system: {
-        default = import ./shell.nix { pkgs = import nixpkgs { inherit system; }; };
-      });
+      devShells = eachSystem (linuxSystems ++ darwinSystems) (system:
+        let pkgs = import nixpkgs { inherit system; };
+        in {
+          default = if pkgs.stdenv.isLinux
+            then import ./shell.nix { inherit pkgs; }
+            else pkgs.mkShell {
+              packages = with pkgs; [ cargo rustc rustfmt clippy pkg-config ruby nodejs ];
+            };
+        });
 
-      formatter = eachSystem linuxSystems (system: nixpkgs.legacyPackages.${system}.nixfmt);
+      formatter = eachSystem (linuxSystems ++ darwinSystems) (system: nixpkgs.legacyPackages.${system}.nixfmt);
     };
 }

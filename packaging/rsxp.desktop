@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=RSXP
+GenericName=RPG Maker player
+Comment=Native engine for RPG Maker RGSS games
+Exec=rsxp
+Icon=rsxp
+Terminal=false
+Categories=Game;Emulator;
+Keywords=RPG;RGSS;RPG Maker;

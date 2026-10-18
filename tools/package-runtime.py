@@ -31,7 +31,7 @@ def relative(target, base):
     return os.path.relpath(target, base).replace(os.sep, "/")
 
 
-def ruby_runtime(binaries, root):
+def ruby_runtime(binaries, root, manifest_dir=None):
     config = json.loads(output("ruby", "-rjson", "-rrbconfig", "-rrubygems", "-e", """
       puts JSON.generate({lib: RbConfig::CONFIG.fetch('rubylibprefix'),
         bin: RbConfig::CONFIG.fetch('bindir'), load: $LOAD_PATH,
@@ -65,8 +65,11 @@ def ruby_runtime(binaries, root):
     if not gems:
         gems = [relative(root / "ruby/gems", binaries)]
     # Keep the manifest out of MacOS: codesign requires that code location to
-    # contain only signed Mach-O files.
-    (root / "ruby-runtime.json").write_text(json.dumps({
+    # contain only signed Mach-O files. On Linux the manifest ships beside the
+    # executable (the loader looks for it there), so `manifest_dir` overrides
+    # the default location while the relative paths stay anchored on `binaries`.
+    manifest_dir = manifest_dir or root
+    (manifest_dir / "ruby-runtime.json").write_text(json.dumps({
         "load_paths": loads, "gem_paths": gems, "gem_home": gems[0],
     }, indent=2))
     return config
@@ -193,6 +196,70 @@ def windows_dependencies(executable, ruby):
             queue.append(existing)
 
 
+# glibc libraries and the dynamic loader must come from the running system:
+# bundling them would tie the AppImage to this build machine's libc and break on
+# older hosts (which is exactly what the old Nix build did).
+GLIBC_LIBRARIES = re.compile(
+    r"^(ld-linux.*|libc|libm|libdl|libpthread|librt|libutil|libresolv|libnsl|libmvec)\.so")
+# GPU and display-driver libraries are provided by the host's kernel driver and
+# must not be shipped, otherwise the AppImage would override the local driver.
+GPU_LIBRARIES = re.compile(
+    r"^(libGL|libEGL|libGLX|libGLdispatch|libOpenGL|libdrm|libgbm|libvulkan"
+    r"|libnvidia|libcuda|libvdpau)")
+
+
+def linux_needed(path):
+    """(soname, resolved path or None) for each shared library `path` needs."""
+    # `ldd` exits non-zero when a dependency is missing; parse its output anyway
+    # so the caller can report the unresolved name instead of failing opaquely.
+    result = subprocess.run(("ldd", str(path)), text=True, capture_output=True,
+                            env={**os.environ, "LC_ALL": "C"})
+    needed = []
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if "=>" in line:
+            name, rest = (part.strip() for part in line.split("=>", 1))
+            rest = rest.split(" (")[0]
+            needed.append((name, None if rest.startswith("not found") else Path(rest)))
+        elif line.startswith("/"):
+            # The loader itself, printed as an absolute path without "=>".
+            location = Path(line.split(" (")[0])
+            needed.append((location.name, location))
+    return needed
+
+
+def linux_dependencies(executable, library_dir):
+    """Copy the relocatable shared-library closure next to `executable`.
+
+    Every bundled library is patched to `$ORIGIN`, and the executable to
+    `$ORIGIN/../lib`, so the AppImage resolves its own libraries regardless of
+    where it is mounted and irrespective of the host's library versions.
+    """
+    library_dir.mkdir(parents=True, exist_ok=True)
+    copied = {}
+    processed = set()
+    queue = [executable]
+    while queue:
+        original = queue.pop()
+        if original in processed:
+            continue
+        processed.add(original)
+        for name, resolved in linux_needed(original):
+            if GLIBC_LIBRARIES.match(name) or GPU_LIBRARIES.match(name):
+                continue
+            if resolved is None:
+                raise RuntimeError(f"Unresolved dependency {name} in {original}")
+            if name in copied and copied[name] != resolved:
+                raise RuntimeError(f"Conflicting libraries named {name}")
+            if name not in copied:
+                copied[name] = resolved
+                copy(resolved, library_dir / name)
+                queue.append(resolved)
+    run("patchelf", "--set-rpath", "$ORIGIN/../lib", str(executable))
+    for name in copied:
+        run("patchelf", "--set-rpath", "$ORIGIN", str(library_dir / name))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("binary", type=Path)
@@ -214,13 +281,20 @@ def main():
         binaries = destination
         runtime = destination
     else:
-        raise RuntimeError("Use the Nix AppImage target for Linux")
+        # An AppDir for `appimagetool` (see tools/build-appimage.sh). Ruby's
+        # standard library lives under usr/lib/rsxp while the executable and its
+        # manifest sit in usr/bin, which is where the runtime looks for them.
+        binaries = destination / "usr/bin"
+        runtime = destination / "usr/lib/rsxp"
     binaries.mkdir(parents=True)
     executable = binaries / args.binary.name
     copy(args.binary, executable)
     for name in ("COPYING", "README.md"):
         copy(root / name, runtime / name)
-    config = ruby_runtime(binaries, runtime)
+    # macOS keeps the manifest in Resources (see `ruby_runtime`); every other
+    # layout reads it from beside the executable.
+    manifest_dir = binaries if not (sys.platform == "darwin" or sys.platform == "win32") else None
+    config = ruby_runtime(binaries, runtime, manifest_dir=manifest_dir)
     if sys.platform == "darwin":
         with (contents / "Info.plist").open("wb") as handle:
             plistlib.dump({"CFBundleExecutable": executable.name, "CFBundleName": "RSXP",
@@ -230,8 +304,10 @@ def main():
         mac_dependencies(executable, config, contents)
         run("codesign", "--force", "--sign", "-", str(app))
         run("codesign", "--verify", "--deep", "--strict", str(app))
-    else:
+    elif sys.platform == "win32":
         windows_dependencies(executable, config)
+    else:
+        linux_dependencies(executable, destination / "usr/lib")
     print(f"Staged standalone desktop at {destination}")
 
 

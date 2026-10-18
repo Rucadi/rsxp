@@ -16,6 +16,7 @@ xxd+
 /result
 /result-*
 /artifacts/
+/.appimage-cache/
 /ccache
 
 # VS Code

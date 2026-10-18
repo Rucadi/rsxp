@@ -121,8 +121,22 @@ single self-contained static page ready to host. Download them from the workflow
 run's Artifacts section; pushes to the default branch also publish `rsxp.html` to
 GitHub Pages.
 The desktop builds bundle MRI Ruby 3.4 and their native libraries: Linux ships
-a Nix AppImage, Windows a portable `.zip` (executable plus DLLs, no installer),
-and macOS a drag-to-Applications `.dmg`. macOS builds are only ad-hoc signed, so
-Gatekeeper requires a right-click → Open (or clearing the quarantine attribute)
-on first launch. The web executables include the browser runtime and require no
-Ruby installation. Games are not included in any CI artifact.
+a self-contained AppImage built against Debian 11's glibc (2.31) so it runs on
+Ubuntu 20.04+, Debian 11+, and every newer distribution, Windows a portable
+`.zip` (executable plus DLLs, no installer), and macOS a drag-to-Applications
+`.dmg`. The Linux AppImage is intentionally produced in a plain Debian 11
+container rather than with Nix (see `packaging/appimage/Dockerfile` and
+`tools/build-appimage.sh`); Nix still builds and tests the desktop package.
+macOS builds are only ad-hoc signed, so Gatekeeper requires a right-click → Open
+(or clearing the quarantine attribute) on first launch. The web executables
+include the browser runtime and require no Ruby installation. Games are not
+included in any CI artifact.
+
+To build the AppImage locally:
+
+```sh
+docker build -t rsxp-appimage packaging/appimage
+docker run --rm --user "$(id -u):$(id -g)" --env HOME=/tmp \
+  --volume "$PWD":/src --workdir /src \
+  rsxp-appimage bash tools/build-appimage.sh /src/artifacts
+```

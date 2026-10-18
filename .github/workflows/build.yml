@@ -211,10 +211,12 @@ jobs:
           nix develop --command cargo test --locked --manifest-path web/Cargo.toml
           nix develop --command npm --prefix web test
           nix develop --command npm --prefix web run test:cli
+      - name: Export the standalone player page
+        run: nix develop --command web/target/release/rsxp-web export web/dist/rsxp.html
       - uses: actions/upload-artifact@v4
         with:
-          name: player-html
-          path: web/dist/player.html
+          name: rsxp.html
+          path: web/dist/rsxp.html
           if-no-files-found: error
 
   web-player:
@@ -245,8 +247,10 @@ jobs:
         if: runner.os != 'Linux'
       - uses: actions/download-artifact@v4
         with:
-          name: player-html
+          name: rsxp.html
           path: web/dist
+      - name: Stage the exported page as the compile-time embed
+        run: cp web/dist/rsxp.html web/dist/player.html
       - name: Build native web player
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
@@ -275,3 +279,32 @@ jobs:
           name: rsxp-web-${{ matrix.platform }}
           path: artifacts/rsxp-web-${{ matrix.platform }}.tar.gz
           if-no-files-found: error
+
+  pages:
+    name: Publish GitHub Pages
+    needs: browser
+    # Only the default branch publishes; pull requests just build.
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: rsxp.html
+          path: site
+      - name: Serve the player as the site index
+        run: cp site/rsxp.html site/index.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

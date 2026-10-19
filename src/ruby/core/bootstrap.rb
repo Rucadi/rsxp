@@ -213,6 +213,13 @@ module RSXP
   # Repair obsolete syntax only on lines rejected by the compiler. Preserve
   # line counts and valid rescue/retry clauses for accurate game backtraces.
   def self.eval_script(source,name)
+    # RPG Maker script sections are normally UTF-8, but Marshal/Zlib data may
+    # arrive as ASCII-8BIT. Ruby's parser then treats UTF-8 continuation bytes
+    # as invalid source bytes unless the encoding tag is corrected first.
+    source=source.dup unless source.is_a?(String)
+    source=source.dup unless source.encoding==Encoding::UTF_8
+    source.force_encoding(Encoding::UTF_8)
+    source=source.encode(Encoding::UTF_8,invalid: :replace,undef: :replace) unless source.valid_encoding?
     source.replace(prepare_script(source))
     begin
       eval(source,TOPLEVEL_BINDING,name,1)

@@ -9,6 +9,3 @@ publish = false
 serde_json = "1"
 rsxp = { path = "../..", default-features = false }
 
-# Keep the build tool's lockfile and target directory independent from the
-# engine workspace that it orchestrates.
-[workspace]

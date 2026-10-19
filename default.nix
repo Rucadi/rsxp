@@ -16,7 +16,7 @@ pkgs.rustPlatform.buildRustPackage {
       let
         relative = pkgs.lib.removePrefix (toString ./. + "/") (toString path);
       in
-      relative == "rust" || pkgs.lib.hasPrefix "rust/" relative
+      relative == "src" || pkgs.lib.hasPrefix "src/" relative
       || relative == "assets" || relative == "assets/liberation.ttf"
       || relative == "api" || pkgs.lib.hasPrefix "api/game_bridge/" relative
       || relative == "desktop" || pkgs.lib.hasPrefix "desktop/" relative
@@ -46,7 +46,7 @@ pkgs.rustPlatform.buildRustPackage {
     $out/bin/rsxp --version
     $out/bin/rsxp --headless --frames 2 --output smoke.ppm
     test -s smoke.ppm
-    $out/bin/rsxp run --script ${./rust/testdata}/rgss_smoke.rb --headless
+    $out/bin/rsxp run --script ${./src/testdata}/rgss_smoke.rb --headless
     runHook postInstallCheck
   '';
 

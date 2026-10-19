@@ -1,5 +1,5 @@
 [package]
-name = "rsxp-web"
+name = "rsxp-web-engine"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
@@ -7,6 +7,7 @@ license = "GPL-2.0-or-later"
 description = "Browser (WebAssembly) frontend for the rsxp engine"
 
 [lib]
+name = "rsxp_web"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
@@ -44,10 +45,3 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 fontdue = "0.9.5"
 console_error_panic_hook = "0.1"
 
-[profile.release]
-lto = true
-opt-level = 3
-codegen-units = 1
-
-# This WASM frontend is built independently from the native engine workspace.
-[workspace]

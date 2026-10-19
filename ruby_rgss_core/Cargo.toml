@@ -10,7 +10,3 @@ description = "Embedded Ruby VM and RGSS-native bindings for rsxp"
 magnus = { version = "0.9.2", default-features = false, features = ["embed"] }
 rsxp = { path = "..", default-features = false, features = ["game-api"] }
 
-[profile.release]
-# Keep source locations and symbols for perf while retaining release optimization.
-lto = true
-codegen-units = 1

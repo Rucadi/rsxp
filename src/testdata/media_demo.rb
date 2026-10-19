@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Visual smoke test for the media decoders (rust/media).
+# Visual smoke test for the media decoders (src/media).
 #
 # Animated GIF in a window (press B or C to stop):
-#   RSXP_GIF=/path/to/animated.gif cargo run --release -- run --script rust/testdata/media_demo.rb
+#   RSXP_GIF=/path/to/animated.gif cargo run --release -- run --script src/testdata/media_demo.rb
 #
 # Theora movie in a window (any .ogv path, absolute or relative to the cwd):
-#   RSXP_MOVIE=/path/to/intro.ogv cargo run --release -- run --script rust/testdata/media_demo.rb
+#   RSXP_MOVIE=/path/to/intro.ogv cargo run --release -- run --script src/testdata/media_demo.rb
 #
 # Headless snapshot of the last displayed frame (.ppm):
-#   cargo run --release -- run --script rust/testdata/media_demo.rb \
+#   cargo run --release -- run --script src/testdata/media_demo.rb \
 #     --headless --frames 30 --output /tmp/media.ppm
 movie = ENV['RSXP_MOVIE'].to_s
 

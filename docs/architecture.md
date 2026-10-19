@@ -19,7 +19,7 @@ flowchart TD
     Engine --> Host[Host: files, text, audio, input, presentation, clock]
 ```
 
-`rust/desktop/main.rs` selects the path:
+`src/desktop/main.rs` selects the path:
 
 | Invocation | Execution |
 | --- | --- |
@@ -45,8 +45,8 @@ See [workspace](dashboard.md) and [transport measurements](session-performance.m
 
 ## Shared library and Cargo features
 
-The root `rsxp` package points the library at `rust/lib.rs`; `desktop/` is the
-desktop application package and points its binary at `rust/desktop/main.rs`.
+The root `rsxp` package points the library at `src/lib.rs`; `desktop/` is the
+desktop application package and points its binary at `src/desktop/main.rs`.
 `ruby_rgss_core/` owns MRI and all Magnus bindings. The MCP binary remains in
 the root package at `api/main.rs`. The browser crate
 has its own manifest in `web/engine/`.
@@ -107,7 +107,7 @@ Startup environment changes precede the host's thread-creating subsystems.
 `runtime::run` creates `DesktopHost` and `engine::Runtime`, installs the active
 runtime, initializes API/bridge state, resets live settings and applies startup
 patch selections. It initializes MRI once, attempts to enable YJIT, registers
-Magnus bindings and evaluates the compile-time Ruby bundle from `rust/ruby/`. That shim supplies
+Magnus bindings and evaluates the compile-time Ruby bundle from `src/ruby/`. That shim supplies
 RGSS classes, compatibility behavior and game script loading.
 
 On completion Ruby is dropped while the native registries still exist, so
@@ -272,13 +272,13 @@ composition. See [browser setup and limitations](../web/README.md).
 
 ## Workspace and inspection
 
-Shared panels live in `rust/ui/`, with a `ui::backend::Backend` service contract.
+Shared panels live in `src/ui/`, with a `ui::backend::Backend` service contract.
 `workspace_services::LocalServices` adapts local settings, patches, API requests,
 assets and native cable services. The dashboard also routes remote session
 controls and replies. Session/library/save actions are frontend intents; the
 shared panel code does not own a Ruby VM.
 
-`rust/api_bridge.rs` queues requests for Ruby to service on the game thread.
+`src/api_bridge.rs` queues requests for Ruby to service on the game thread.
 `api/game_bridge/` reads game state and applies input/transfer operations.
 HTTP and `rsxp-mcp` are external interfaces to this mechanism; inspector panels
 do not require an HTTP listener. Pokémon Essentials introspection is
@@ -289,24 +289,24 @@ separate relay services, not a general HTTP implementation for game scripts.
 
 | Area | Source |
 | --- | --- |
-| Public modules and compatibility re-exports | `rust/lib.rs` |
-| Runtime registries and bridge entry points | `rust/engine/mod.rs` |
-| Protocol, assets, input, frame and scene order | `rust/engine/{commands,assets,input,frame,scene}.rs` |
-| Composition | `rust/engine/render_software.rs`, `render_gpu.rs` |
-| CPU types, pixels and effects | `rust/graphics/` |
-| GPU setup, resources, commands, batching, submission and transport | `rust/gpu/` |
-| Archive decryption and Table storage | `rust/data/` |
-| Ruby compatibility classes and game loader | `rust/ruby/`; `rpg1.rb`, `rpg2.rb`, and `rpg3.rb` are taken from mkxp-z |
-| Desktop entry and runtime lifecycle | `rust/desktop/main.rs`, `rust/desktop/runtime/` |
-| Dashboard, transport, library and save backups | `rust/desktop/{dashboard,session,library,saves}.rs` |
-| Platform services | `rust/desktop/{host,window,gpu_present,media,audio}.rs` |
+| Public modules and compatibility re-exports | `src/lib.rs` |
+| Runtime registries and bridge entry points | `src/engine/mod.rs` |
+| Protocol, assets, input, frame and scene order | `src/engine/{commands,assets,input,frame,scene}.rs` |
+| Composition | `src/engine/render_software.rs`, `render_gpu.rs` |
+| CPU types, pixels and effects | `src/graphics/` |
+| GPU setup, resources, commands, batching, submission and transport | `src/gpu/` |
+| Archive decryption and Table storage | `src/data/` |
+| Ruby compatibility classes and game loader | `src/ruby/`; `rpg1.rb`, `rpg2.rb`, and `rpg3.rb` are taken from mkxp-z |
+| Desktop entry and runtime lifecycle | `src/desktop/main.rs`, `src/desktop/runtime/` |
+| Dashboard, transport, library and save backups | `src/desktop/{dashboard,session,library,saves}.rs` |
+| Platform services | `src/desktop/{host,window,gpu_present,media,audio}.rs` |
 | Ruby VM, Magnus and Win32 adapters | `ruby_rgss_core/src/` |
-| Workspace panels and services | `rust/ui/`, `rust/workspace_services/`, `rust/workspace_services.rs` |
-| Runtime patch catalog and Ruby patch bodies | `rust/patches/` |
+| Workspace panels and services | `src/ui/`, `src/workspace_services/`, `src/workspace_services.rs` |
+| Runtime patch catalog and Ruby patch bodies | `src/patches/` |
 | Browser scheduling and Ruby adaptations | `web/browser/app.js` |
 | Browser exports, services and presentation | `web/engine/src/` |
-| HTTP/MCP and game-thread adapter | `api/`, `rust/api_bridge.rs` |
-| Tests and benchmark workloads | `rust/engine/tests.rs`, `rust/graphics/tests.rs`, `rust/gpu/tests.rs`, `rust/tests/cli.rs`, `rust/testdata/`, `rust/examples/` |
+| HTTP/MCP and game-thread adapter | `api/`, `src/api_bridge.rs` |
+| Tests and benchmark workloads | `src/engine/tests.rs`, `src/graphics/tests.rs`, `src/gpu/tests.rs`, `src/tests/cli.rs`, `src/testdata/`, `src/examples/` |
 
 Paths are relative to the repository root. Start a new RGSS operation in the
 Ruby shim and command dispatcher, keeping typed desktop paths consistent.
@@ -317,9 +317,9 @@ See the [README](../README.md#development-checks) for validation commands and
 ## Shared workspace services
 
 Both frontends enable `ui` and `game-api`: the browser no longer excludes the
-inspector, map previews or Pokémon tools. `rust/api_bridge.rs` is the shared
+inspector, map previews or Pokémon tools. `src/api_bridge.rs` is the shared
 nonblocking game-thread queue and operation routing; only
-`rust/api_bridge/transport.rs` owns the desktop HTTP listener.
+`src/api_bridge/transport.rs` owns the desktop HTTP listener.
 `api/game_bridge/` is compiled into the same game operations for both interpreters.
 The browser does not need network access to inspect the running game.
 

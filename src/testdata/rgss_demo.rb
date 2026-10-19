@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Run with: nix run path:. -- run --script rust/testdata/rgss_demo.rb
+# Run with: nix run path:. -- run --script src/testdata/rgss_demo.rb
 tile=Bitmap.new(48,48)
 tile.fill_rect(tile.rect,Color.new(64,208,160))
 tile.fill_rect(8,8,32,32,Color.new(210,255,230))

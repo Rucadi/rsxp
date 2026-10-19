@@ -4,7 +4,7 @@
 //!
 //! This module is compiled into the `rsxp-mcp` binary from `api/main.rs` (via
 //! `#[path = "openapi.rs"]`) and describes the REST handlers implemented in
-//! `rust/api_bridge.rs`. `ApiDoc` aggregates the operation metadata and schemas:
+//! `src/api_bridge.rs`. `ApiDoc` aggregates the operation metadata and schemas:
 //! the `#[utoipa::path]` stub functions below give each route its method, tag,
 //! query/path parameters and response bodies, while the `ToSchema` structs
 //! define the shared JSON shapes (game state, maps/tiles, Pokémon Essentials

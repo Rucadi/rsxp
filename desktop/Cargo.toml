@@ -33,19 +33,19 @@ game-tests = []
 
 [[bin]]
 name = "rsxp"
-path = "../rust/desktop/main.rs"
+path = "../src/desktop/main.rs"
 
 [[test]]
 name = "cli"
-path = "../rust/tests/cli.rs"
+path = "../src/tests/cli.rs"
 
 # Manual tests requiring local game trees (`ericlostie/`, `pokemonz/`).
 [[test]]
 name = "game-tests"
-path = "../rust/tests/game-tests.rs"
+path = "../src/tests/game-tests.rs"
 required-features = ["game-tests"]
 
 [[example]]
 name = "session-bench"
-path = "../rust/examples/session_bench.rs"
+path = "../src/examples/session_bench.rs"
 

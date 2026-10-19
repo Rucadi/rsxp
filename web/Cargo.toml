@@ -8,5 +8,11 @@ license = "GPL-2.0-or-later"
 name = "rsxp-web"
 path = "src/main.rs"
 
-# The web executable has its own lockfile and build target.
 [workspace]
+members = ["engine", "xtask"]
+resolver = "3"
+
+[profile.release]
+lto = true
+opt-level = 3
+codegen-units = 1

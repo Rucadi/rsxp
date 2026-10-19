@@ -2,9 +2,9 @@
 # Visual demo for the KGL2 compatibility layer (light blending).
 #
 # Window (press B or C to stop):
-#   cargo run --release -- run --script rust/testdata/kgl2_demo.rb
+#   cargo run --release -- run --script src/testdata/kgl2_demo.rb
 # Headless snapshot (.ppm):
-#   RSXP_DEMO_FRAMES=1 cargo run --release -- run --script rust/testdata/kgl2_demo.rb \
+#   RSXP_DEMO_FRAMES=1 cargo run --release -- run --script src/testdata/kgl2_demo.rb \
 #     --headless --frames 2 --output /tmp/kgl2.ppm
 Graphics.resize_screen(512, 384)
 

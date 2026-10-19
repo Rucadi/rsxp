@@ -79,7 +79,7 @@ The current Android configuration supports ARM64 devices, not x86 emulators.
 | `build.py` | Asset preparation and platform build commands |
 | `demo.rb` | Small built-in RGSS game for end-to-end checks |
 
-Image/font services live in `rust/portable_media.rs`, shared with the browser.
+Image/font services live in `src/portable_media.rs`, shared with the browser.
 The core uses the existing runtime, archives, patches, graphics, and input modules.
 Only the OS shells differ. Touch UI changes need no platform-specific layout work.
 
@@ -90,7 +90,7 @@ interpreter, static extensions, and standard library target macOS, iOS device,
 and iOS Simulator separately. JIT compilation is disabled. The C adapter keeps
 Ruby exception unwinding inside C, then returns errors to Rust. Game fibers
 yield after Graphics.update so the shell stays responsive between frames.
-The same compile-time RGSS bundle from `rust/ruby/` calls the native Rust renderer and
+The same compile-time RGSS bundle from `src/ruby/` calls the native Rust renderer and
 input engine directly, without JSON/base64 pixel transport through JavaScript.
 Platform-specific Ruby plugins still require a compatible native mobile port.
 

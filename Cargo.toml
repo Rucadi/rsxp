@@ -41,7 +41,7 @@ game-api = ["dep:serde_json", "dep:image"]
 api-docs = ["dep:utoipa"]
 
 [lib]
-path = "rust/lib.rs"
+path = "src/lib.rs"
 
 [[bin]]
 name = "rsxp-mcp"
@@ -50,7 +50,7 @@ required-features = ["api-docs"]
 
 [[example]]
 name = "render-bench"
-path = "rust/examples/render_bench.rs"
+path = "src/examples/render_bench.rs"
 
 [profile.release]
 # Keep source locations and symbols for perf while retaining release optimization.

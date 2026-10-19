@@ -6,7 +6,7 @@
 //! the `initialize`, `ping`, `tools/list` and `tools/call` methods. Request
 //! parsing (`Parser`, `Json`) and response encoding are implemented here so the
 //! server needs no serialization dependency. `tools/call` maps each advertised
-//! tool (see `tools`) to a REST request handled by `rust/api_bridge.rs`;
+//! tool (see `tools`) to a REST request handled by `src/api_bridge.rs`;
 //! `call_game` opens a short-lived loopback connection, picks the HTTP method
 //! from the path, and unwraps the JSON body (or its `error` field) into the MCP
 //! text result. Tool arguments are validated in Rust before any request is sent

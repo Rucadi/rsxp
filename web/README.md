@@ -164,11 +164,11 @@ linear memory.
 - `socket`, `io/wait` and `openssl` are marked as loaded if absent, so plugins
   that only `require` them (multiplayer features) load.
 - `Thread.new` runs its block synchronously (ruby.wasm has no threads).
-- The shared `rust/ruby/` bundle supplies a portable `Table` fallback when native bindings are absent.
+- The shared `src/ruby/` bundle supplies a portable `Table` fallback when native bindings are absent.
 - `System.data_directory` tolerates a read-only filesystem.
 
 The page and headless runner import the same VM setup from `browser/ruby-host.js`.
-`rust/ruby/`, the game adapter, engine and tool panels remain authoritative
+`src/ruby/`, the game adapter, engine and tool panels remain authoritative
 shared sources. Only interpreter embedding, frame scheduling, files, media,
 presentation and external transport need platform adapters. Desktop Magnus
 bindings and retained/GPU fast paths are still platform-specific optimizations;

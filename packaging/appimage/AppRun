@@ -2,7 +2,7 @@
 # AppImage entry point: expose the bundled libraries and Ruby, then run rsxp.
 #
 # The executable itself relocates Ruby through the ruby-runtime.json manifest
-# beside it (see rust/desktop/bundled_runtime.rs); LD_LIBRARY_PATH covers the
+# beside it (see src/desktop/bundled_runtime.rs); LD_LIBRARY_PATH covers the
 # native library closure staged in usr/lib.
 set -e
 

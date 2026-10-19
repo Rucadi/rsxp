@@ -39,7 +39,7 @@
                   src = ./.;
                   filter = path: type:
                     let relative = pkgs.lib.removePrefix (toString ./. + "/") (toString path);
-                    in relative == "rust" || pkgs.lib.hasPrefix "rust/" relative
+                    in relative == "src" || pkgs.lib.hasPrefix "src/" relative
                       || relative == "assets" || relative == "assets/liberation.ttf"
                       || relative == "api" || pkgs.lib.hasPrefix "api/game_bridge/" relative
                       || relative == "desktop" || pkgs.lib.hasPrefix "desktop/" relative

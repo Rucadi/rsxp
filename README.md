@@ -36,7 +36,7 @@ Interactive `run` starts a dashboard and an isolated game process. Headless
 execution runs the Ruby runtime directly and uses silent audio:
 
 ```sh
-cargo run --release -p rsxp-desktop --bin rsxp -- run --script rust/testdata/rgss_demo.rb \
+cargo run --release -p rsxp-desktop --bin rsxp -- run --script src/testdata/rgss_demo.rb \
   --headless --frames 60 --output /tmp/rgss.ppm
 ```
 

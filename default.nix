@@ -18,13 +18,11 @@ pkgs.rustPlatform.buildRustPackage {
       let
         relative = pkgs.lib.removePrefix (toString ./. + "/") (toString path);
       in
-      relative == "rust" || pkgs.lib.hasPrefix "rust/" relative
+      relative == "core" || pkgs.lib.hasPrefix "core/" relative
+      || relative == "desktop" || pkgs.lib.hasPrefix "desktop/" relative
       || relative == "assets" || relative == "assets/liberation.ttf"
       || relative == "api" || builtins.elem relative [ "api/game_bridge.rb" "api/openapi.json" ]
-      || relative == "binding" || builtins.elem relative [
-        "binding/module_rpg1.rb.xxd" "binding/module_rpg2.rb.xxd" "binding/module_rpg3.rb.xxd"
-      ]
-      || builtins.elem relative [ "Cargo.toml" "Cargo.lock" "build.rs" "COPYING" ];
+      || builtins.elem relative [ "Cargo.toml" "Cargo.lock" "COPYING" ];
   };
 
   cargoLock.lockFile = ./Cargo.lock;
@@ -47,8 +45,8 @@ pkgs.rustPlatform.buildRustPackage {
     $out/bin/rsxp --version
     $out/bin/rsxp --headless --frames 2 --output smoke.ppm
     test -s smoke.ppm
-    $out/bin/rsxp run --script ${./rust/testdata}/rgss_smoke.rb --headless
-    $out/bin/rsxp run --script ${./rust/testdata}/rgss_smoke.rb --headless \
+    $out/bin/rsxp run --script ${./core/testdata}/rgss_smoke.rb --headless
+    $out/bin/rsxp run --script ${./core/testdata}/rgss_smoke.rb --headless \
       --ruby-profile "$PWD/ruby-smoke.dump" --ruby-profile-start-frame 1 --ruby-profile-frames 2
     test -s ruby-smoke.dump
     test -s ruby-smoke.dump.txt

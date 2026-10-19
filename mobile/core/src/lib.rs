@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Native mobile ABI. The same engine library is linked by iOS and Android.
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
-use rsxp::{
+use rsxp_core::{
     engine::{self, Runtime, RuntimeOptions},
     graphics::{Bitmap, Color},
     host::{Host, InputEvent},
@@ -87,14 +87,14 @@ fn safe_dir(root: &Path, name: &str) -> Option<PathBuf> {
 struct MobileHost {
     root: PathBuf,
     /// Compositor owned by this host; `None` keeps the software renderer.
-    gpu: Option<rsxp::gpu::GpuRenderer>,
+    gpu: Option<rsxp_core::gpu::GpuRenderer>,
     presenter: Option<present::Presenter>,
 }
 impl Host for MobileHost {
     fn read_file(&self, path: &str) -> Option<Vec<u8>> {
         fs::read(safe_file(&self.root, path)?).ok()
     }
-    fn gpu(&mut self) -> Option<&mut rsxp::gpu::GpuRenderer> {
+    fn gpu(&mut self) -> Option<&mut rsxp_core::gpu::GpuRenderer> {
         if std::env::var_os("RSXP_FORCE_SOFTWARE").is_some() {
             return None;
         }
@@ -119,7 +119,7 @@ impl Host for MobileHost {
         presenter.present_bitmap(gpu, frame)
     }
     fn image(&self, bytes: &[u8]) -> Result<Bitmap, String> {
-        rsxp::portable_media::image(bytes)
+        rsxp_core::portable_media::image(bytes)
     }
     fn text(
         &self,
@@ -131,7 +131,7 @@ impl Host for MobileHost {
         color: Color,
         render: bool,
     ) -> Result<(u32, u32, Option<Bitmap>), String> {
-        rsxp::portable_media::text(font, size, bold, italic, text, color, render)
+        rsxp_core::portable_media::text(font, size, bold, italic, text, color, render)
     }
 }
 
@@ -233,8 +233,8 @@ fn prepare(id: &str) -> Result<Value, String> {
             presenter,
         }),
     })?);
-    rsxp::runtime_settings::reset();
-    rsxp::runtime_settings::set_fast_forward(true); // The shared UI paces Ruby fibers.
+    rsxp_core::runtime_settings::reset();
+    rsxp_core::runtime_settings::set_fast_forward(true); // The shared UI paces Ruby fibers.
     Ok(
         json!({"title":field("Title").unwrap_or_else(|| id.into()), "version":version,
         "width":width,"height":height,"rate":rate,"scripts":scripts,

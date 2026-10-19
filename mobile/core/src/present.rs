@@ -5,7 +5,7 @@
 //! module owns the platform surface (a `CAMetalLayer` on iOS) and blits the
 //! composited packed-pixel buffer to it, letterboxed and nearest-neighbour
 //! scaled, so no RGBA readback or per-frame image conversion is needed.
-use rsxp::gpu::GpuRenderer;
+use rsxp_core::gpu::GpuRenderer;
 use std::ffi::c_void;
 
 #[cfg(not(target_os = "android"))]
@@ -203,7 +203,7 @@ impl Presenter {
     pub fn present_bitmap(
         &mut self,
         gpu: &mut GpuRenderer,
-        bitmap: &rsxp::graphics::Bitmap,
+        bitmap: &rsxp_core::graphics::Bitmap,
     ) -> Result<(), String> {
         let bytes = bitmap.pixels().len() as u64 * 4;
         if bytes > self.cpu_capacity {

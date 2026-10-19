@@ -40,7 +40,7 @@ const [width, height] = version === 1 ? [640, 480] : [544, 416];
 engine.web_init(width, height, version, version === 1 ? 40 : 60, null);
 
 globalThis.RSXP = {
-  source: readFileSync(resolve(import.meta.dirname, '../../rust/rgss.rb'), 'utf8'),
+  source: readFileSync(resolve(import.meta.dirname, '../../core/src/rgss.rb'), 'utf8'),
   manifestText: manifest.join('\n'),
   // Saves are kept in memory for the run (the page uses localStorage instead).
   savedSavesJson: '{}',

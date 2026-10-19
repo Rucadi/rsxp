@@ -5,7 +5,7 @@
 //! the browser's codec stack. This is a better fit for the web build than
 //! decoding entire BGM files to PCM in WASM.
 //!
-//! `BrowserAudio` implements `rsxp::host::AudioBackend`. Each play creates an
+//! `BrowserAudio` implements `rsxp_core::host::AudioBackend`. Each play creates an
 //! `HtmlAudioElement` routed through a Web Audio `GainNode` (when an
 //! `AudioContext` is available) so per-channel master volume and fades can be
 //! applied without touching the element's own volume. BGM/BGS loop and are
@@ -15,7 +15,7 @@
 //! advances fades even while the game frame pump is idle, and `Drop` removes the
 //! listeners, clears the timer and revokes the object URLs.
 use js_sys::{Array, Date, Uint8Array};
-use rsxp::host::{AudioBackend, AudioChannel};
+use rsxp_core::host::{AudioBackend, AudioChannel};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};

@@ -27,7 +27,7 @@ const { vm } = await captureRubyOutput(async () => DefaultRubyVM(await WebAssemb
   readFileSync(new URL('../dist/ruby/ruby+stdlib.wasm', import.meta.url)),
 ), { env: { HOME: '/', LANG: 'en_US.UTF-8' } }), text => output.push(text));
 vm.eval(PRELUDE);
-const shim = readFileSync(new URL('../../rust/rgss.rb', import.meta.url), 'utf8');
+const shim = readFileSync(new URL('../../core/src/rgss.rb', import.meta.url), 'utf8');
 vm.eval(shim.slice(0, shim.lastIndexOf('\nbegin\n')));
 // The real Ruby setter chooses native_text for this UTF-8 command.
 vm.eval('Input.text_input = true');

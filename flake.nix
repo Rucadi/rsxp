@@ -39,12 +39,11 @@
                   src = ./.;
                   filter = path: type:
                     let relative = pkgs.lib.removePrefix (toString ./. + "/") (toString path);
-                    in relative == "rust" || pkgs.lib.hasPrefix "rust/" relative
+                    in relative == "core" || pkgs.lib.hasPrefix "core/" relative
+                      || relative == "desktop" || pkgs.lib.hasPrefix "desktop/" relative
                       || relative == "assets" || relative == "assets/liberation.ttf"
                       || relative == "api" || builtins.elem relative [ "api/game_bridge.rb" "api/openapi.json" ]
-                      || relative == "binding" || builtins.elem relative [
-                        "binding/module_rpg1.rb.xxd" "binding/module_rpg2.rb.xxd" "binding/module_rpg3.rb.xxd"
-                      ] || builtins.elem relative [ "Cargo.toml" "Cargo.lock" "build.rs" "COPYING" ];
+                      || builtins.elem relative [ "Cargo.toml" "Cargo.lock" "COPYING" ];
                 };
                 cargoLock.lockFile = ./Cargo.lock;
                 cargoBuildFlags = [ "--target" "x86_64-pc-windows-gnu" ];

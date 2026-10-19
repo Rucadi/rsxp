@@ -1,0 +1,79 @@
+[package]
+name = "rsxp-desktop"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "GPL-2.0-or-later"
+description = "Native desktop frontend and egui workspace for the rsxp engine"
+
+[lib]
+name = "rsxp_desktop"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rsxp"
+path = "src/main.rs"
+required-features = ["app"]
+
+[[test]]
+name = "cli"
+path = "tests/cli.rs"
+required-features = ["app"]
+
+# Game-asset tests, run manually only (see the `game-tests` feature).
+[[test]]
+name = "game-tests"
+path = "tests/game-tests.rs"
+required-features = ["game-tests"]
+
+[[example]]
+name = "session-bench"
+path = "examples/session_bench.rs"
+required-features = ["app"]
+
+[dependencies]
+rsxp-core = { path = "../core", default-features = false }
+egui = { version = "0.37.0", features = ["default_fonts"], optional = true }
+web-time = { version = "1.1", optional = true }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp"], optional = true }
+serde_json = { version = "1", optional = true }
+magnus = { version = "0.9.2", default-features = false, features = ["embed"], optional = true }
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "vulkan", "gles", "metal", "wgsl"], optional = true }
+pollster = { version = "1.0.1", optional = true }
+bytemuck = { version = "1", features = ["derive"], optional = true }
+fontdue = { version = "0.9", optional = true }
+kira = { version = "0.12.5", default-features = false, features = ["cpal", "flac", "mp3", "ogg", "pcm", "vorbis", "wav"], optional = true }
+winit = { version = "0.30.13", features = ["rwh_06", "wayland", "x11"], optional = true }
+egui-wgpu = { version = "0.37.0", default-features = false, optional = true }
+egui-winit = { version = "0.37.0", default-features = false, features = ["wayland", "x11", "clipboard"], optional = true }
+gilrs = { version = "0.11.2", optional = true }
+getrandom = { version = "0.4.3", optional = true }
+
+[dev-dependencies]
+# GIF fixtures for the end-to-end CLI media tests.
+gif = "0.14"
+
+[features]
+default = ["app"]
+# Local game-command queue shared with the engine core.
+game-api = ["rsxp-core/game-api"]
+# Shared egui workspace, also rendered by the browser frontend.
+ui = ["game-api", "dep:egui", "dep:web-time", "dep:image", "dep:serde_json"]
+# Native GPU composition used by the desktop window and presentation.
+gpu = ["rsxp-core/gpu", "dep:wgpu", "dep:pollster", "dep:bytemuck"]
+# Desktop binary: MRI Ruby, windowing, audio, controllers and GPU presentation.
+app = [
+  "ui",
+  "gpu",
+  "rsxp-core/ruby",
+  "dep:getrandom",
+  "dep:fontdue",
+  "dep:magnus",
+  "dep:kira",
+  "dep:winit",
+  "dep:gilrs",
+  "dep:egui-wgpu",
+  "dep:egui-winit",
+]
+# Manual integration tests that need local game trees. Off by default.
+game-tests = ["app"]

@@ -28,8 +28,8 @@ mod present;
 // Keep the Rust and JavaScript API names stable while isolating platform services.
 pub use files::{web_add_archive, web_add_file, web_file_count, web_read_file, web_set_reader};
 use host::WebHost;
-use rsxp::engine::{self, Runtime, RuntimeOptions, ScriptedKey};
-use rsxp::host::InputEvent;
+use rsxp_core::engine::{self, Runtime, RuntimeOptions, ScriptedKey};
+use rsxp_core::host::InputEvent;
 use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
@@ -298,13 +298,13 @@ pub fn web_ui_game_rect() -> Vec<u32> {
 /// Uses the same nonblocking command queue as the desktop workspace.
 #[wasm_bindgen]
 pub fn web_game_request(operation: &str, args: Vec<String>) -> Result<u64, JsValue> {
-    rsxp::api_bridge::send_from_ui(operation, args).map_err(|error| JsValue::from_str(&error))
+    rsxp_core::api_bridge::send_from_ui(operation, args).map_err(|error| JsValue::from_str(&error))
 }
 
 /// Takes a completed JSON reply; absent while the game has not processed it.
 #[wasm_bindgen]
 pub fn web_game_response(id: u64) -> Result<Option<String>, JsValue> {
-    rsxp::api_bridge::take_ui_response(id)
+    rsxp_core::api_bridge::take_ui_response(id)
         .transpose()
         .map_err(|error| JsValue::from_str(&error))
 }
@@ -321,24 +321,24 @@ pub fn web_ui_log(text: &str) {
 /// A stopped game cannot service its Input.update reset hook; let the page restart it.
 #[wasm_bindgen]
 pub fn web_ui_take_reset() -> bool {
-    let requested = rsxp::runtime_settings::reset_requested();
-    if requested { rsxp::runtime_settings::clear_reset(); }
+    let requested = rsxp_core::runtime_settings::reset_requested();
+    if requested { rsxp_core::runtime_settings::clear_reset(); }
     requested
 }
 
 /// Import a game-folder patch using the same catalog as the desktop loader.
 #[wasm_bindgen]
 pub fn web_register_user_patch(name: &str, source: &str) -> bool {
-    rsxp::runtime_patch::register_user_patch(name, source.into())
+    rsxp_core::runtime_patch::register_user_patch(name, source.into())
 }
 
 #[wasm_bindgen]
-pub fn web_controls() -> String { rsxp::controls::encode() }
+pub fn web_controls() -> String { rsxp_core::controls::encode() }
 #[wasm_bindgen]
-pub fn web_controls_load(value: &str) { rsxp::controls::decode(value); }
+pub fn web_controls_load(value: &str) { rsxp_core::controls::decode(value); }
 #[wasm_bindgen]
 pub fn web_controllers_connected(count: usize) {
-    let mut mapping = rsxp::controls::get();
+    let mut mapping = rsxp_core::controls::get();
     mapping.connected = count;
-    rsxp::controls::set(mapping);
+    rsxp_core::controls::set(mapping);
 }

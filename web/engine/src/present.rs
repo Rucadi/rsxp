@@ -8,14 +8,14 @@
 //! so no GPU is required (exactly like the egui.rs demo).
 //!
 //! `Presenter` owns the wgpu surface, the frame texture and the egui renderer,
-//! and reuses the shared `rsxp::ui::Workspace` from the desktop app. This module
+//! and reuses the shared `rsxp_desktop::ui::Workspace` from the desktop app. This module
 //! drains queued pointer/keyboard events into egui, tracks FPS, letterboxes the
 //! game frame into the workspace's game rect, and exposes that rect so the page
 //! routes pointer input to the game only when it is over the game view.
 //! `upload_frame` pads rows to 256 bytes as the WebGPU backend requires for
 //! `Queue::write_texture`.
 
-use rsxp::graphics::{Bitmap, Rect};
+use rsxp_core::graphics::{Bitmap, Rect};
 use std::cell::RefCell;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
@@ -67,7 +67,7 @@ pub struct Presenter {
     frame_bytes: Vec<u8>,
     context: egui::Context,
     renderer: egui_wgpu::Renderer,
-    workspace: rsxp::ui::Workspace,
+    workspace: rsxp_desktop::ui::Workspace,
     input: InputState,
     size: (u32, u32),
     pixels_per_point: f32,
@@ -262,10 +262,10 @@ impl Presenter {
             context: egui::Context::default(),
             renderer,
             workspace: {
-                let mut workspace = rsxp::ui::Workspace::new();
-                let mut services = rsxp::workspace_services::LocalServices::default();
+                let mut workspace = rsxp_desktop::ui::Workspace::new();
+                let mut services = rsxp_desktop::workspace_services::LocalServices::default();
                 services.image_reader = Some(|path| {
-                    rsxp::engine::with_runtime(|runtime| runtime.asset(path).ok()).flatten()
+                    rsxp_core::engine::with_runtime(|runtime| runtime.asset(path).ok()).flatten()
                 });
                 workspace.backend = Box::new(services);
                 workspace
@@ -477,7 +477,7 @@ impl Presenter {
     fn run_ui(
         &mut self,
         logical_size: (u32, u32),
-    ) -> (egui::FullOutput, rsxp::ui::WorkspaceOutput) {
+    ) -> (egui::FullOutput, rsxp_desktop::ui::WorkspaceOutput) {
         let pixels_per_point = self.pixels_per_point;
         let logical = egui::vec2(
             self.size.0 as f32 / pixels_per_point,
@@ -496,7 +496,7 @@ impl Presenter {
         raw_input
             .viewports
             .insert(egui::ViewportId::ROOT, viewport);
-        let info = rsxp::ui::WorkspaceInfo {
+        let info = rsxp_desktop::ui::WorkspaceInfo {
             logical_size,
             fps: self.fps,
             frames: self.frames,

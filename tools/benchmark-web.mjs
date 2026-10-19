@@ -10,7 +10,7 @@ import { DefaultRubyVM } from '../web/node_modules/@ruby/wasm-wasi/dist/esm/brow
 
 const root = resolve(import.meta.dirname, '..');
 const pkg = resolve(process.argv[2] || `${root}/web/dist/pkg`);
-const shim = readFileSync(process.argv[3] || `${root}/rust/rgss.rb`, 'utf8');
+const shim = readFileSync(process.argv[3] || `${root}/core/src/rgss.rb`, 'utf8');
 const engine = await import(pathToFileURL(`${pkg}/rsxp_web.js`));
 await engine.default({ module_or_path: readFileSync(`${pkg}/rsxp_web_bg.wasm`) });
 engine.web_init(160, 120, 1, 40, undefined);

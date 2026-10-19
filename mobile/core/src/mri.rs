@@ -36,7 +36,7 @@ pub fn start(
     let c = |value: &str| CString::new(value).map_err(|e| e.to_string());
     let runtime = c(&runtime.to_string_lossy())?;
     let root = c(&root.to_string_lossy())?;
-    let source = c(include_str!("../../../rust/rgss.rb"))?;
+    let source = c(include_str!("../../../core/src/rgss.rb"))?;
     let scripts = c(scripts)?;
     let script = script.map(c).transpose()?;
     let title = c(title)?;

@@ -555,6 +555,33 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
             fullscreen = value;
         }
         let actions = std::mem::take(&mut display.workspace_mut().session_actions);
+        if actions.browse {
+            if let Some(path) = rfd::FileDialog::new().set_title("Choose an RPG Maker game folder").pick_folder() {
+                let panel = display.workspace_mut().session.as_mut().unwrap();
+                panel.source = path.to_string_lossy().into_owned();
+                if let Ok(root) = super::library::discover(&panel.source) {
+                    panel.source = root.to_string_lossy().into_owned();
+                    launch = Some(vec!["--game".into(), panel.source.clone()]);
+                    panel.open = false;
+                } else {
+                    panel.error = Some("That folder does not contain a supported RPG Maker game.".into());
+                }
+            }
+        }
+        if actions.browse_game_file {
+            if let Some(path) = rfd::FileDialog::new().set_title("Choose Game.ini").add_filter("RPG Maker project", &["ini"]).pick_file() {
+                let panel = display.workspace_mut().session.as_mut().unwrap();
+                panel.source = path.to_string_lossy().into_owned();
+                match super::library::discover(&panel.source) {
+                    Ok(root) => {
+                        panel.source = root.to_string_lossy().into_owned();
+                        launch = Some(vec!["--game".into(), panel.source.clone()]);
+                        panel.open = false;
+                    }
+                    Err(error) => panel.error = Some(error),
+                }
+            }
+        }
         if actions.stop {
             session.take();
             rsxp::api_bridge::end_session();

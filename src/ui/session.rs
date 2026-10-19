@@ -33,6 +33,8 @@ pub struct SessionPanel {
 #[derive(Default)]
 pub struct SessionActions {
     pub open: Option<String>,
+    pub browse: bool,
+    pub browse_game_file: bool,
     pub stop: bool,
     pub restart: bool,
     pub backup: Option<(String, String)>,
@@ -96,13 +98,7 @@ impl SessionPanel {
             context.root_ui(|root_ui| {
                 egui::CentralPanel::default().show(root_ui, |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| {
-                        ui.add_space(28.0);
-                        ui.set_max_width(960.0);
-                        ui.horizontal_wrapped(|ui| {
-                            ui.selectable_value(&mut self.show_saves, false, "Library");
-                            ui.selectable_value(&mut self.show_saves, true, "Save files");
-                        });
-                        ui.separator();
+                        ui.add_space(20.0);
                         if self.show_saves {
                             self.draw_saves(ui, &mut actions);
                         } else {

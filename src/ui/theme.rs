@@ -13,11 +13,21 @@ pub(super) fn apply(context: &egui::Context) {
         return;
     }
     let mut visuals = egui::Visuals::dark();
-    visuals.panel_fill = egui::Color32::from_rgb(24, 28, 35);
-    visuals.window_fill = egui::Color32::from_rgb(30, 35, 43);
-    visuals.selection.bg_fill = egui::Color32::from_rgb(39, 99, 88);
-    visuals.widgets.active.bg_fill = egui::Color32::from_rgb(47, 112, 99);
-    visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(49, 59, 70);
+    visuals.panel_fill = egui::Color32::from_rgb(25, 22, 33);
+    visuals.window_fill = egui::Color32::from_rgb(34, 29, 43);
+    visuals.extreme_bg_color = egui::Color32::from_rgb(18, 16, 25);
+    visuals.faint_bg_color = egui::Color32::from_rgb(39, 34, 49);
+    visuals.selection.bg_fill = egui::Color32::from_rgb(115, 82, 143);
+    visuals.widgets.active.bg_fill = egui::Color32::from_rgb(128, 91, 155);
+    visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(65, 54, 78);
+    visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(47, 40, 57);
+    visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(30, 26, 39);
+    visuals.widgets.active.corner_radius = egui::CornerRadius::same(10);
+    visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(10);
+    visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(10);
+    visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::same(10);
+    visuals.window_corner_radius = egui::CornerRadius::same(16);
+    visuals.menu_corner_radius = egui::CornerRadius::same(12);
     context.set_visuals(visuals);
     context.global_style_mut(|style| {
         style.interaction.selectable_labels = true;

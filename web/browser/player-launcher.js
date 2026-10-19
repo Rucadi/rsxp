@@ -9,6 +9,7 @@ const message = document.getElementById('launch-status');
 const bundle = globalThis.RSXP_BUNDLE;
 const supplied = globalThis.RSXP_GAME;
 const zipPicker = document.getElementById('game-zip');
+const zipButton = document.getElementById('choose-zip');
 const torrentInput = document.getElementById('torrent-url');
 const downloadButton = document.getElementById('download-torrent');
 const cancelButton = document.getElementById('cancel-download');
@@ -57,6 +58,8 @@ function chooseZip(file) {
   return prepare(async signal => openZip(file, { zip: await zipLibrary(), signal }));
 }
 zipPicker.addEventListener('change', () => chooseZip(zipPicker.files[0]));
+zipButton.addEventListener('click', () => zipPicker.click());
+dropZone.addEventListener('click', () => zipPicker.click());
 for (const event of ['dragenter', 'dragover']) dropZone.addEventListener(event, e => {
   e.preventDefault(); dropZone.classList.add('dragover');
 });

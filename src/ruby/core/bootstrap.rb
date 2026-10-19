@@ -4,6 +4,17 @@ require 'zlib'
 require 'weakref'
 require 'fileutils'
 require 'json'
+# Older Essentials bitmap caches call disposed? on cached WeakRef wrappers and
+# expect a dead reference to count as disposed. Ruby's Delegator raises instead
+# when forwarding to a collected object, so provide that RGSS-compatible query.
+class WeakRef
+  def disposed?
+    object=__getobj__
+    object.respond_to?(:disposed?) ? object.disposed? : false
+  rescue WeakRef::RefError
+    true
+  end
+end
 $RSXP = true
 $MKXP = $RSXP # Compatibility flag used by older game scripts.
 # Older RGSS libraries still use Thread.critical around shared caches. Retain
@@ -166,6 +177,20 @@ module RSXP
   def self.channel(value) = [[Float(value).to_i, 0].max, 255].min
   def self.volume(value) = [[Integer(value), 0].max, 100].min
 
+  # RPG Maker projects may store script source as UTF-8, Windows-1252, or
+  # ISO-8859-1. Prefer valid UTF-8 so multibyte text is never mojibaked, then
+  # decode legacy Western encodings into UTF-8 for Ruby's parser.
+  def self.decode_script_source(source)
+    bytes=source.to_s.dup.force_encoding(Encoding::BINARY)
+    utf8=bytes.dup.force_encoding(Encoding::UTF_8)
+    return utf8 if utf8.valid_encoding?
+    begin
+      bytes.force_encoding(Encoding::Windows_1252).encode(Encoding::UTF_8)
+    rescue EncodingError
+      bytes.force_encoding(Encoding::ISO_8859_1).encode(Encoding::UTF_8)
+    end
+  end
+
   # RGSS strings are byte strings; text from Marshal-loaded data is often tagged
   # ASCII-8BIT while holding UTF-8 bytes. Reinterpret, replacing invalid bytes.
   def self.utf8(value)
@@ -181,6 +206,12 @@ module RSXP
   # has not already provided one.
   def self.before_scripts; end unless singleton_class.method_defined?(:before_scripts)
   def self.prepare_script(source)
+    # Essentials' Main loader evaluates each archived script section itself.
+    # Route only those calls through the decoder; leave event/plugin evals on
+    # Ruby's native Kernel.eval so their caller binding and self are preserved.
+    if source.include?('load_scripts_from_folder')
+      source=source.gsub(/(?<![.\w:])eval(?=[ \t]*\()/,'RSXP.eval_game_script')
+    end
     if RGSS_VERSION==1
       # Binary readers written for Ruby 1.8 expect String#[0] to return a byte.
       source=source.gsub(/\.read\(1\)\[0\]/,'.read(1).getbyte(0)')
@@ -213,13 +244,9 @@ module RSXP
   # Repair obsolete syntax only on lines rejected by the compiler. Preserve
   # line counts and valid rescue/retry clauses for accurate game backtraces.
   def self.eval_script(source,name)
-    # RPG Maker script sections are normally UTF-8, but Marshal/Zlib data may
-    # arrive as ASCII-8BIT. Ruby's parser then treats UTF-8 continuation bytes
-    # as invalid source bytes unless the encoding tag is corrected first.
-    source=source.dup unless source.is_a?(String)
-    source=source.dup unless source.encoding==Encoding::UTF_8
-    source.force_encoding(Encoding::UTF_8)
-    source=source.encode(Encoding::UTF_8,invalid: :replace,undef: :replace) unless source.valid_encoding?
+    # eval strings from Marshal/Zlib are UTF-8; keep an owned copy so the
+    # encoding adapter below can safely prepare it.
+    source=decode_script_source(source)
     source.replace(prepare_script(source))
     begin
       eval(source,TOPLEVEL_BINDING,name,1)
@@ -248,6 +275,9 @@ module RSXP
       source.replace(lines.join)
       retry
     end
+  end
+  def self.eval_game_script(source,binding=TOPLEVEL_BINDING,filename='(eval)',lineno=1)
+    eval(decode_script_source(source),binding || TOPLEVEL_BINDING,filename || '(eval)',lineno || 1)
   end
   # Browser hosts use this hook to cooperatively yield during large startup
   # workloads. Desktop execution leaves it as a no-op.

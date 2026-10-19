@@ -11,7 +11,7 @@
 //! `RSXP::Retained.rewire` when the bitmap identity changed, and builds a
 //! `NativeTileUpdate`. Sprites beyond the plan are hidden. One
 //! `engine::with_runtime_mut` call applies the updates; the whole call runs under
-//! `runtime::direct_call("tilemap_sync_native", ..)` for profiling. Returns
+//! the native `tilemap_sync_native` bridge. Returns
 //! `false` (game fallback) on any unsupported sprite.
 use magnus::{function, prelude::*, Error, RArray, RModule, RObject, Ruby, TryConvert, Value};
 use rsxp::{
@@ -28,7 +28,7 @@ fn apply(
     viewport: Value,
     clip: RArray,
 ) -> Result<bool, Error> {
-    crate::runtime::direct_call("tilemap_sync_native", || {
+    {
         for index in 0..sprites.len() {
             let tile: RObject = sprites.entry(index as isize)?;
             if !tile.ivar_get::<_, Value>("@__rsxp_retained")?.to_bool() || tile.is_frozen() {
@@ -133,7 +133,7 @@ fn apply(
         // borrowing the runtime; finalizers may safely reenter the engine.
         engine::with_runtime_mut(|runtime| runtime.update_native_tiles(&updates, &hidden));
         Ok(true)
-    })
+    }
 }
 pub(super) fn bind(ruby: &Ruby) -> Result<(), Error> {
     ruby.define_global_function("__rsxp_apply_rgss_tiles", function!(apply, 6))?;

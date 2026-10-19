@@ -7,6 +7,7 @@ import { PRELUDE } from '../browser/ruby-host.js';
 import { DefaultRubyVM } from '../node_modules/@ruby/wasm-wasi/dist/esm/browser.js';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { rubySource } from '../../tools/ruby-sources.mjs';
 
 const gameRoot = resolve(import.meta.dirname, '..', '..', 'ericlostie');
 const manifest = JSON.parse(readFileSync(resolve(import.meta.dirname, '../browser/assets.json'), 'utf8'));
@@ -40,7 +41,7 @@ const [width, height] = version === 1 ? [640, 480] : [544, 416];
 engine.web_init(width, height, version, version === 1 ? 40 : 60, null);
 
 globalThis.RSXP = {
-  source: readFileSync(resolve(import.meta.dirname, '../../rust/rgss.rb'), 'utf8'),
+  source: rubySource('RGSS_SOURCE'),
   manifestText: manifest.join('\n'),
   // Saves are kept in memory for the run (the page uses localStorage instead).
   savedSavesJson: '{}',

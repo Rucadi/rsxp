@@ -9,7 +9,7 @@
 //! `Ok(None)` and no runner is used.
 //!
 //! Frames are sent one-way: a JSON header from [`Runner::frame_header`] (fps/frame
-//! counters, optional [`rsxp::host::ProfileStats`], input/rate state and relay
+//! counters, input/rate state and relay
 //! replies) followed by the pixel payload. [`Runner::frame`] writes little-endian
 //! pixel bytes (zero-copy `bytemuck` cast when the `gpu` feature is on and the target
 //! is little-endian); with the `gpu` feature, [`Runner::gpu_frame`] instead writes an
@@ -53,7 +53,7 @@ pub struct Runner {
     controls: std::sync::mpsc::Receiver<Result<Value, String>>,
     first_control: bool,
     pub paused: bool,
-    pub profiler: bool,
+    pub performance: bool,
     pub text_input: bool,
     pub cursor: bool,
     frames: u64,
@@ -90,7 +90,7 @@ impl Runner {
             controls,
             first_control: true,
             paused: false,
-            profiler: false,
+            performance: false,
             text_input: false,
             cursor: true,
             frames: 0,
@@ -99,12 +99,7 @@ impl Runner {
             fps_start: std::time::Instant::now(),
         }))
     }
-    fn frame_header(
-        &mut self,
-        width: u32,
-        height: u32,
-        profile: Option<rsxp::host::ProfileStats>,
-    ) -> Value {
+    fn frame_header(&mut self, width: u32, height: u32) -> Value {
         self.frames += 1;
         self.fps_frames += 1;
         if self.fps_start.elapsed().as_millis() >= 500 {
@@ -112,15 +107,10 @@ impl Runner {
             self.fps_frames = 0;
             self.fps_start = std::time::Instant::now();
         }
-        let profile=profile.map(|p|json!({"ruby_ms":p.ruby_ms,"bridge_ms":p.bridge_ms,"native_ms":p.native_ms,"render_ms":p.render_ms,"present_ms":p.present_ms,"calls":p.calls,"hotspot_age_secs":p.hotspot_age_secs,"hotspots":p.hotspots.iter().map(|h|json!({"operation":h.operation,"calls":h.calls,"total_ms":h.total_ms})).collect::<Vec<_>>()}));
-        json!({"fps":self.fps,"frames":self.frames,"profile":profile,"text_input":self.text_input,"cursor":self.cursor,"width":width,"height":height,"rate":rsxp::runtime_settings::current_rate(),"replies":rsxp::api_bridge::relay_replies()})
+        json!({"fps":self.fps,"frames":self.frames,"text_input":self.text_input,"cursor":self.cursor,"width":width,"height":height,"rate":rsxp::runtime_settings::current_rate(),"replies":rsxp::api_bridge::relay_replies()})
     }
-    pub fn frame(
-        &mut self,
-        frame: &Bitmap,
-        profile: Option<rsxp::host::ProfileStats>,
-    ) -> Result<(), String> {
-        let header = self.frame_header(frame.width(), frame.height(), profile);
+    pub fn frame(&mut self, frame: &Bitmap) -> Result<(), String> {
+        let header = self.frame_header(frame.width(), frame.height());
         write_message(&mut self.stream, &header)?;
         #[cfg(all(feature = "gpu", target_endian = "little"))]
         self.stream
@@ -138,14 +128,10 @@ impl Runner {
         Ok(())
     }
     #[cfg(feature = "gpu")]
-    pub fn gpu_frame(
-        &mut self,
-        frame: rsxp::gpu::GpuFrame,
-        profile: Option<rsxp::host::ProfileStats>,
-    ) -> Result<(), String> {
+    pub fn gpu_frame(&mut self, frame: rsxp::gpu::GpuFrame) -> Result<(), String> {
         let (width, height) = frame.size();
         let bytes = frame.encode();
-        let mut header = self.frame_header(width, height, profile);
+        let mut header = self.frame_header(width, height);
         header["gpu_bytes"] = json!(bytes.len());
         write_message(&mut self.stream, &header)?;
         self.stream.write_all(&bytes).map_err(|e| e.to_string())
@@ -185,7 +171,7 @@ impl Runner {
     }
     fn apply_control(&mut self, input: &mut Input, value: Value) -> bool {
         self.paused = value["paused"].as_bool().unwrap_or(false);
-        self.profiler = value["profiler"].as_bool().unwrap_or(false);
+        self.performance = value["performance"].as_bool().unwrap_or(false);
         if value["stop"].as_bool() == Some(true) {
             return false;
         }
@@ -257,7 +243,7 @@ mod tests {
             controls,
             first_control: true,
             paused: false,
-            profiler: false,
+            performance: false,
             text_input: false,
             cursor: true,
             frames: 0,

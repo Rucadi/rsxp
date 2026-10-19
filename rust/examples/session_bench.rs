@@ -2,7 +2,7 @@
 //! `session-bench`: compares the isolated runner transport with an identical
 //! scene, GPU workload and control stream.
 //!
-//! Usage: `cargo run --release --example session-bench -- /path/to/rsxp
+//! Usage: `cargo run --release -p rsxp-desktop --example session-bench -- /path/to/rsxp
 //! [SCRIPT] [FRAME_LIMIT]`. The example spawns the given `rsxp` binary with
 //! `run --script ... --renderer wgpu --frames N` and `RSXP_SESSION_ADDR`/
 //! `RSXP_SESSION_TOKEN` pointing at a local listener (`RSXP_API=0`), then drives
@@ -83,10 +83,6 @@ end
         .env("RSXP_SESSION_ADDR", listener.local_addr()?.to_string())
         .env("RSXP_SESSION_TOKEN", "local-benchmark")
         .env("RSXP_API", "0")
-        .env(
-            "RSXP_PROFILE",
-            std::env::var("RSXP_PROFILE").unwrap_or_else(|_| "0".into()),
-        )
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;

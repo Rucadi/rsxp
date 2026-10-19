@@ -10,7 +10,7 @@
 //! and submits. Sprites use the tiled path only when flagged `native_tile`.
 use super::{Runtime, RuntimePlane, RuntimeSprite, SceneDraw};
 use crate::graphics::{Bitmap, SpriteFx, SpriteTransform};
-use std::{collections::HashMap, time::Instant};
+use std::collections::HashMap;
 
 impl Runtime {
     pub(super) fn render_gpu(&mut self) -> Result<bool, String> {
@@ -33,7 +33,7 @@ impl Runtime {
         {
             return Ok(false);
         }
-        let counter = if self.show_counter && !self.host.has_profiler_ui() {
+        let counter = if self.show_counter && !self.host.has_performance_ui() {
             self.counter_bitmap()
         } else {
             None
@@ -129,11 +129,7 @@ impl Runtime {
         gpu.submit()?;
         self.gpu_frame = true;
         if !self.headless {
-            let present_start = self.show_counter.then(Instant::now);
             self.host.present_gpu()?;
-            if let Some(start) = present_start {
-                self.profile_present_ms = start.elapsed().as_secs_f64() * 1000.0;
-            }
         }
         Ok(true)
     }

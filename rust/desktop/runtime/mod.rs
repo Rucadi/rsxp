@@ -3,11 +3,10 @@
 //!
 //! [`run`] parses [`options::RunOptions`], remembers the launch directory, prepares
 //! the game working directory and archives ([`game::GameConfig`]), builds the
-//! [`DesktopHost`] and engine `Runtime`, then embeds Ruby with `magnus`, binds the host,
-//! registers the `__rsxp_native`/`__mkxp_native` bridge callbacks and the optional Ruby
-//! profiler, and evaluates the bundled `rgss.rb` shim. It then drops Ruby (running
+//! [`DesktopHost`] and engine `Runtime`, then creates a configured
+//! [`ruby_rgss_core::RubyCore`] that starts the RGSS game. It then drops Ruby (running
 //! finalizers while the Rust resource registry is still available), prints the native
-//! profile, optionally captures a PPM frame, and returns the game status as a `u8`.
+//! optionally captures a PPM frame, and returns the game status as a `u8`.
 //!
 //! Environment and lifecycle details:
 //! - [`set_startup_env`]/[`remove_startup_env`] must run on the single-threaded main
@@ -22,7 +21,6 @@
 //! Argument validation, game discovery and bridge callbacks live in the `options`,
 //! `game` and `bridge` submodules.
 use crate::host::DesktopHost;
-use magnus::function;
 use rsxp::engine::{self, RuntimeOptions};
 use std::{
     error::Error,
@@ -30,15 +28,10 @@ use std::{
     fs,
     io::{BufWriter, Write},
     path::Path,
-    time::Instant,
 };
 
-mod bridge;
 mod game;
 mod options;
-
-// Preserve the frontend API used by DesktopHost and typed Ruby bindings.
-pub use bridge::{direct_call, profile_stats};
 
 // CLI configuration is applied on the main thread before Winit, CPAL, Ruby,
 // or any other subsystem that might create threads is initialized.
@@ -65,7 +58,6 @@ pub fn run(args: &[String]) -> Result<u8, Box<dyn Error>> {
         frames,
         output,
         version,
-        ruby_profile,
     } = options::RunOptions::parse(args)?;
     // Remember where the command was launched so a reset can restart from there
     // (the game directory becomes the working directory below).
@@ -91,7 +83,6 @@ pub fn run(args: &[String]) -> Result<u8, Box<dyn Error>> {
     })?;
     engine::set_runtime(runtime);
     rsxp::api_bridge::start_from_env().map_err(std::io::Error::other)?;
-    bridge::start();
     // Live frame-rate/fast-forward/reset controls start from their defaults;
     // the workspace UI drives them from here.
     rsxp::runtime_settings::reset();
@@ -104,47 +95,21 @@ pub fn run(args: &[String]) -> Result<u8, Box<dyn Error>> {
             eprintln!("Runtime patch enabled: {id}");
         }
     }
-    let execution_start = Instant::now();
-    // SAFETY: called once on the main thread. All Ruby values stay on the stack
-    // and are consumed before Cleanup is dropped. Runtime contains no Ruby values.
-    let ruby = unsafe { magnus::embed::init() };
-    // Enable the Ruby JIT when the interpreter supports it (opt out with
-    // RSXP_YJIT=0). YJIT is not available in the browser build.
-    let _ = ruby.eval::<magnus::Value>(
-        "RubyVM::YJIT.enable if defined?(RubyVM::YJIT) && ENV.fetch('RSXP_YJIT', '1') != '0'",
-    );
-    crate::bindings::bind(&ruby).map_err(|error| error.to_string())?;
-    ruby.define_global_function("__rsxp_native", function!(bridge::native_call, 1))
-        .map_err(|error| error.to_string())?;
-    // Older game scripts may call the compatibility bridge directly.
-    ruby.define_global_function("__mkxp_native", function!(bridge::native_call, 1))
-        .map_err(|error| error.to_string())?;
-    crate::profiling::install(&ruby, &ruby_profile).map_err(|error| error.to_string())?;
-    let status = ruby
-        .eval::<i64>(include_str!("../../rgss.rb"))
-        .map_err(|error| error.to_string());
-    let profile_status = crate::profiling::finish(&ruby).map_err(|error| error.to_string());
+    let ruby = ruby_rgss_core::RubyCore::new().map_err(std::io::Error::other)?;
+    let status = ruby.startup_status();
     // Run Ruby finalizers while the Rust resource registry is still available.
     drop(ruby);
-    bridge::report(execution_start.elapsed());
     // The workspace "Reset game" button stops the game here so everything is
     // recreated from the beginning.
     if rsxp::runtime_settings::reset_requested() {
         return restart(launch_dir.as_path());
     }
     let mut runtime = engine::take_runtime().ok_or("runtime closed unexpectedly")?;
-    #[cfg(feature = "gpu")]
-    if bridge::enabled()
-        && let Some(stats) = runtime.gpu_diagnostics()
-    {
-        eprintln!("{stats}");
-    }
     if let Some(path) = output {
         let mut writer = BufWriter::new(fs::File::create(path)?);
         runtime.capture()?.write_ppm(&mut writer)?;
         writer.flush()?;
     }
-    profile_status?;
     Ok(u8::try_from(status?).unwrap_or(1))
 }
 

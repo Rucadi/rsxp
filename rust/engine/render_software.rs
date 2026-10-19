@@ -10,7 +10,7 @@
 //! `snapshot` recomposes and clones for `Graphics.snap_to_bitmap`.
 use super::{DrawItem, Element, Runtime, RuntimePlane, RuntimeSprite};
 use crate::graphics::{Bitmap, Color, Rect, SpriteFx, SpriteTransform};
-use std::{collections::HashMap, time::Instant};
+use std::collections::HashMap;
 
 impl Runtime {
     /// Compose and present one frame using the CPU reference renderer.
@@ -37,7 +37,7 @@ impl Runtime {
             self.target.brightness(self.brightness);
         }
         if self.show_counter
-            && !self.host.has_profiler_ui()
+            && !self.host.has_performance_ui()
             && let Some(overlay) = self.counter_bitmap()
         {
             self.target.draw_sprite(
@@ -49,11 +49,7 @@ impl Runtime {
             );
         }
         if !self.headless {
-            let present_start = self.show_counter.then(Instant::now);
             self.host.present(&self.target)?;
-            if let Some(start) = present_start {
-                self.profile_present_ms = start.elapsed().as_secs_f64() * 1000.0;
-            }
         }
         Ok(())
     }

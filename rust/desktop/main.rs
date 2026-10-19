@@ -2,11 +2,11 @@
 //! `rsxp` desktop binary: the entry point, CLI dispatch, archive tooling, and
 //! the standalone demo scene.
 //!
-//! Submodules wire the frontend together: [`audio`] (Kira audio), [`bindings`]
-//! (the Ruby/Magnus RGSS bindings, shared via `../bindings/mod.rs`),
+//! Submodules wire the frontend together: [`audio`] (Kira audio),
+//! [`ruby_core`] (the RGSS MRI VM and Magnus bindings),
 //! [`bundled_runtime`] (packaged-Ruby relocation), [`controller`] (gamepads),
 //! [`dashboard`], [`gpu_present`], [`host`], [`library`], [`media`],
-//! [`profiling`], [`runtime`] (the actual MRI runner), [`saves`], [`session`]
+//! [`runtime`] (the actual MRI runner), [`saves`], [`session`]
 //! (dashboard↔runner transport), and [`window`]. Several are gated on the
 //! `gpu` feature.
 //!
@@ -26,11 +26,9 @@
 //!
 //! `RSXP_RENDERER`, `RSXP_INPUT`, `RSXP_PATCH`, `RSXP_RECORD`, and
 //! `RSXP_SESSION_ADDR` are the relevant environment variables; [`HELP`]
-//! documents the full CLI, frame pacing, and profiling. `main` maps the
+//! documents the full CLI and frame pacing. `main` maps the
 //! returned status (or an error) to the process exit code.
 mod audio;
-#[path = "../bindings/mod.rs"]
-mod bindings;
 mod bundled_runtime;
 mod controller;
 #[cfg(feature = "gpu")]
@@ -41,7 +39,6 @@ mod host;
 #[cfg(feature = "gpu")]
 mod library;
 mod media;
-mod profiling;
 mod runtime;
 #[cfg(feature = "gpu")]
 mod saves;
@@ -84,12 +81,6 @@ and 60 otherwise) and a full game reset are configured at runtime from the
 workspace toolbar. Gameplay starts with the UI hidden. F1 toggles the workspace, F2 tools,
 F3 output, F4 fullscreen, F10 performance and F11 uncapped mode. Fullscreen
 entry hides the UI; F1 can reveal it again.
---profile NAME is accepted for compatibility.
---ruby-profile FILE records sampled Ruby stacks and writes FILE, FILE.txt and
-FILE.json. --ruby-profile-start-frame N skips N Graphics updates;
---ruby-profile-frames N records N updates, then saves while the game continues.
---ruby-profile-mode cpu|wall defaults to cpu; --ruby-profile-interval US
-defaults to 1000 microseconds. The development shell includes StackProf.
 --renderer auto|wgpu|software selects the desktop compositor (default auto).
 Auto uses the wgpu compositor; software keeps RGSS composition on the CPU while
 still presenting through wgpu. Headless runs use software unless wgpu is
@@ -253,7 +244,6 @@ fn demo(args: &[String]) -> Result<(), Box<dyn Error>> {
                     context: &context,
                     input,
                     global_fullscreen,
-                    profile: None,
                 },
             )?;
             window.set_game_pointer_rect(display.game_pointer_rect());

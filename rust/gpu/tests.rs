@@ -4,7 +4,7 @@
 //!
 //! Most tests construct a real `GpuRenderer`, so they are `#[ignore = "requires
 //! a wgpu adapter"]` and run with
-//! `cargo test --lib gpu::tests -- --ignored --nocapture`. The pure-CPU
+//! `cargo test -p rsxp --lib gpu::tests -- --ignored --nocapture`. The pure-CPU
 //! `batches_preserve_overlaps_and_viewport_dependencies` exercises `draw_batches`
 //! directly. `compare` asserts per-channel ARGB equality within a tolerance.
 //!
@@ -338,7 +338,7 @@ fn compare(cpu: &Bitmap, gpu: &Bitmap, tolerance: i32) {
     }
 }
 #[test]
-#[ignore = "requires a wgpu adapter; run cargo test --lib gpu::tests -- --ignored --nocapture"]
+#[ignore = "requires a wgpu adapter; run cargo test -p rsxp --lib gpu::tests -- --ignored --nocapture"]
 fn compositor_matches_software_and_tracks_dirty_sources() {
     let mut gpu = GpuRenderer::new(64, 48).expect("wgpu test adapter");
     eprintln!("GPU test adapter: {}", gpu.adapter_name);

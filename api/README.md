@@ -14,7 +14,7 @@ interactive session. For headless runs, the environment
 variable can still start it automatically:
 
 ```sh
-RSXP_API=1 RSXP_API_PORT=47821 cargo run --release --bin rsxp -- run --game /path/to/game --headless
+RSXP_API=1 RSXP_API_PORT=47821 cargo run --release -p rsxp-desktop --bin rsxp -- run --game /path/to/game --headless
 ```
 
 The egui inspector sends requests through the in-process game-thread queue and

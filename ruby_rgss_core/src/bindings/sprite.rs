@@ -13,7 +13,7 @@
 //! for sprites that are not world-bound; no Ruby call happens while that borrow
 //! is held. Arguments are read straight off the Ruby stack, and `int`/`channel`
 //! are shared with the tilemap binding. The whole conversion runs inside
-//! `runtime::direct_call` so it is attributed to the native sprite category.
+//! the RGSS native bridge.
 use magnus::{
     function, prelude::*, value::LazyId, Error, ExceptionClass, RArray, RString, Ruby, TryConvert,
     Value,
@@ -107,7 +107,7 @@ fn sync(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
             "invalid sprite snapshot",
         ));
     }
-    crate::runtime::direct_call("sprite_sync_native", || {
+    {
         let id: u64 = argument(args, 1)?;
         let blend: Value = argument(args, 2)?;
         let blend = if blend.is_nil() {
@@ -238,7 +238,7 @@ fn sync(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
         })
         .unwrap_or_else(|| Err("runtime is closed".into()))
         .map_err(|message| Error::new(ruby.exception_runtime_error(), message))
-    })
+    }
 }
 pub(super) fn bind(ruby: &Ruby) -> Result<(), Error> {
     if std::env::var("RSXP_SPRITE_SYNC").as_deref() != Ok("ruby") {

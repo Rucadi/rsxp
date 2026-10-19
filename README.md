@@ -19,24 +19,24 @@ provides the native build tools and dependencies.
 
 ```sh
 nix develop path:.
-cargo build --release
-cargo run --release --bin rsxp
+cargo build --release -p rsxp-desktop
+cargo run --release -p rsxp-desktop --bin rsxp
 ```
 
 With default features, no arguments opens a persistent game dashboard. Load a
 game directory or Game.ini there, or select a game at launch:
 
 ```sh
-cargo run --release --bin rsxp -- run --game /path/to/game
-cargo run --release --bin rsxp -- run --script /path/to/scene.rb --rgss 3
-cargo run --release --bin rsxp -- demo
+cargo run --release -p rsxp-desktop --bin rsxp -- run --game /path/to/game
+cargo run --release -p rsxp-desktop --bin rsxp -- run --script /path/to/scene.rb --rgss 3
+cargo run --release -p rsxp-desktop --bin rsxp -- demo
 ```
 
 Interactive `run` starts a dashboard and an isolated game process. Headless
 execution runs the Ruby runtime directly and uses silent audio:
 
 ```sh
-cargo run --release --bin rsxp -- run --script rust/testdata/rgss_demo.rb \
+cargo run --release -p rsxp-desktop --bin rsxp -- run --script rust/testdata/rgss_demo.rb \
   --headless --frames 60 --output /tmp/rgss.ppm
 ```
 
@@ -93,14 +93,14 @@ The performance documents describe particular workloads and measurements,
 not expected FPS for every game: [renderer](docs/rsxp-performance.md),
 [native tilemaps](docs/native-tilemap-performance.md),
 [session transport](docs/session-performance.md),
-[browser](docs/web-performance.md), and [Ruby profiling](docs/ruby-profiling.md).
+[browser](docs/web-performance.md).
 
 ## Development checks
 
 ```sh
-cargo test --lib --no-default-features
-cargo test --lib
-cargo test --test cli
+cargo test -p rsxp --lib --no-default-features
+cargo test -p rsxp --lib
+cargo test -p rsxp-desktop --test cli
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 npm --prefix web test
@@ -114,8 +114,8 @@ checks are also ignored. Build the browser with `cargo xtask web`.
 Archive commands read encrypted game archives without executing Ruby:
 
 ```sh
-cargo run --release --bin rsxp -- archive-list Game.rgssad
-cargo run --release --bin rsxp -- archive-cat Game.rgss3a Data/Scripts.rvdata2 > /tmp/Scripts.rvdata2
+cargo run --release -p rsxp-desktop --bin rsxp -- archive-list Game.rgssad
+cargo run --release -p rsxp-desktop --bin rsxp -- archive-cat Game.rgss3a Data/Scripts.rvdata2 > /tmp/Scripts.rvdata2
 ```
 
 The project is licensed GPL-2.0-or-later; see [COPYING](COPYING).

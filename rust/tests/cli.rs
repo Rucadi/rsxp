@@ -16,9 +16,8 @@
 //! - the isolated runner session protocol (`RSXP_SESSION_ADDR`/`TOKEN`);
 //! - retained/native state equivalence under `RSXP_*` feature flags.
 //!
-//! Run with `cargo test --test cli` (default features). Tests marked `#[ignore]`
-//! need a wgpu adapter or StackProf; run them with `-- --ignored`, the latter
-//! inside nix-shell.
+//! Run with `cargo test -p rsxp-desktop --test cli`. Tests marked `#[ignore]`
+//! need a wgpu adapter; run them with `-- --ignored`.
 use std::{
     fs,
     path::PathBuf,
@@ -112,15 +111,6 @@ fn invalid_arguments_fail_without_starting_a_window() {
         vec!["--output"],
         vec!["--unknown"],
         vec!["archive-list"],
-        vec!["run", "--ruby-profile"],
-        vec!["run", "--ruby-profile-mode", "invalid"],
-        vec![
-            "run",
-            "--ruby-profile",
-            "unused.dump",
-            "--ruby-profile-frames",
-            "0",
-        ],
         // Frame pacing moved to the workspace toolbar; the flags are gone.
         vec!["run", "--fps", "60"],
         vec!["run", "--fast-forward"],
@@ -297,7 +287,7 @@ fn runtime_patch_panoramic_hooks_centre_the_enlarged_map() {
         "runtime_patch_legacy_camera.rb",
     ] {
         let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("rust/testdata")
+            .join("../rust/testdata")
             .join(fixture);
         let result = Command::new(env!("CARGO_BIN_EXE_rsxp"))
             .args(["run", "--script", script.to_str().unwrap(), "--headless"])
@@ -317,7 +307,7 @@ fn runtime_patch_panoramic_hooks_centre_the_enlarged_map() {
 fn native_tiles_match_sprite_path_with_animation_priorities_and_plugins() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/rust/testdata/rgss_native_tiles.rb"
+        "/../rust/testdata/rgss_native_tiles.rb"
     );
     let mut outputs = Vec::new();
     for mode in ["0", "1"] {
@@ -331,7 +321,6 @@ fn native_tiles_match_sprite_path_with_animation_priorities_and_plugins() {
                 "wgpu",
             ])
             .env("RSXP_NATIVE_TILEMAP", mode)
-            .env("RSXP_PROFILE", "1")
             .output()
             .unwrap();
         assert!(
@@ -368,7 +357,7 @@ fn native_tiles_match_sprite_path_with_animation_priorities_and_plugins() {
 fn retained_scene_matches_rebuilt_scene_across_resource_changes() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/rust/testdata/rgss_scene_cache.rb"
+        "/../rust/testdata/rgss_scene_cache.rb"
     );
     let mut outputs = Vec::new();
     for mode in ["0", "1"] {
@@ -398,7 +387,7 @@ fn retained_scene_matches_rebuilt_scene_across_resource_changes() {
 fn typed_sprite_sync_matches_ruby_with_effects_and_getter_overrides() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/rust/testdata/rgss_sprite_sync.rb"
+        "/../rust/testdata/rgss_sprite_sync.rb"
     );
     let dir = TempDir::new();
     let mut results = Vec::new();
@@ -432,7 +421,7 @@ fn typed_sprite_sync_matches_ruby_with_effects_and_getter_overrides() {
 fn sprite_cache_preserves_lifecycle_and_pixels() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/rust/testdata/rgss_sync_lifecycle.rb"
+        "/../rust/testdata/rgss_sync_lifecycle.rb"
     );
     let mut results = Vec::new();
     for (binding, cache) in [("native", "1"), ("ruby", "1"), ("ruby", "0")] {
@@ -460,52 +449,11 @@ fn sprite_cache_preserves_lifecycle_and_pixels() {
 }
 
 #[test]
-#[ignore = "requires StackProf; run inside nix-shell with --ignored"]
-fn ruby_sampler_records_delayed_windows_and_flushes_on_exception() {
-    let dir = TempDir::new();
-    let script = dir.0.join("profile.rb");
-    fs::write(&script,"def profile_work; finish=Process.clock_gettime(Process::CLOCK_MONOTONIC)+0.02; while Process.clock_gettime(Process::CLOCK_MONOTONIC)<finish; 200.times { |n| n*n }; end; end; 8.times { profile_work; Graphics.update; Graphics.frame_count=0 }; raise 'profile exception marker'\n").unwrap();
-    for bounded in [true, false] {
-        let output = dir.0.join(if bounded {
-            "bounded.dump"
-        } else {
-            "exception.dump"
-        });
-        let mut command = Command::new(env!("CARGO_BIN_EXE_rsxp"));
-        command.args([
-            "run",
-            "--script",
-            script.to_str().unwrap(),
-            "--headless",
-            "--ruby-profile",
-            output.to_str().unwrap(),
-            "--ruby-profile-start-frame",
-            "2",
-        ]);
-        if bounded {
-            command.args(["--ruby-profile-frames", "3"]);
-        }
-        let result = command.output().unwrap();
-        assert_eq!(result.status.code(), Some(1));
-        assert!(String::from_utf8_lossy(&result.stderr).contains("profile exception marker"));
-        assert!(fs::read(&output).unwrap().starts_with(&[4, 8]));
-        let json = fs::read_to_string(output.with_extension("dump.json")).unwrap();
-        assert!(json.contains("\"start_update\": 2"));
-        assert!(json.contains(if bounded {
-            "\"end_update\": 5"
-        } else {
-            "\"end_update\": 8"
-        }));
-        assert!(json.contains("profile_work"));
-        assert!(fs::read_to_string(output.with_extension("dump.txt"))
-            .unwrap()
-            .contains("Source locations:"));
-    }
-}
-
-#[test]
 fn ruby_rgss_values_gc_and_rendering_all_versions() {
-    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/rust/testdata/rgss_smoke.rb");
+    let script = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../rust/testdata/rgss_smoke.rb"
+    );
     let dir = TempDir::new();
     for version in ["1", "2", "3"] {
         let output = dir.0.join(format!("ruby-{version}.ppm"));
@@ -593,7 +541,7 @@ fn controller_actions_coexist_with_keyboard_input() {
 fn ruby_images_fonts_and_viewports() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/rust/testdata/rgss_media_smoke.rb"
+        "/../rust/testdata/rgss_media_smoke.rb"
     );
     let result = run(&["run", "--script", script, "--headless"]);
     assert!(
@@ -630,7 +578,10 @@ fn media_demo_reports_animated_gif_metadata() {
         }
     }
     fs::write(&gif, bytes).unwrap();
-    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/rust/testdata/media_demo.rb");
+    let script = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../rust/testdata/media_demo.rb"
+    );
     let result = Command::new(env!("CARGO_BIN_EXE_rsxp"))
         .args(["run", "--script", script, "--headless", "--frames", "5"])
         .env("RSXP_GIF", &gif)
@@ -650,7 +601,10 @@ fn media_demo_reports_animated_gif_metadata() {
 
 #[test]
 fn kgl2_compatibility_functions_run_headless() {
-    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/rust/testdata/kgl2_smoke.rb");
+    let script = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../rust/testdata/kgl2_smoke.rb"
+    );
     let result = run(&["run", "--script", script, "--headless"]);
     assert!(
         result.status.success(),
@@ -666,7 +620,10 @@ fn kgl2_compatibility_functions_run_headless() {
 
 #[test]
 fn mkxp_compatibility_methods_run_headless() {
-    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/rust/testdata/mkxp_compat.rb");
+    let script = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../rust/testdata/mkxp_compat.rb"
+    );
     let result = run(&["run", "--script", script, "--headless"]);
     assert!(
         result.status.success(),
@@ -684,7 +641,7 @@ fn mkxp_compatibility_methods_run_headless() {
 fn legacy_rgss_win32_tilemap_and_bush_rendering() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/rust/testdata/rgss_legacy_compat.rb"
+        "/../rust/testdata/rgss_legacy_compat.rb"
     );
     for cache in ["0", "1"] {
         let result = Command::new(env!("CARGO_BIN_EXE_rsxp"))
@@ -902,7 +859,6 @@ fn isolated_runner_transport(renderer: &str) {
             )
             .env("RSXP_SESSION_TOKEN", "session-test-token")
             .env("RSXP_API", "0")
-            .env("RSXP_PROFILE", if renderer == "wgpu" { "1" } else { "0" })
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
@@ -990,7 +946,7 @@ fn isolated_runner_transport(renderer: &str) {
 
 fn retained_frames_match(fixture: &str) {
     let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("rust/testdata")
+        .join("../rust/testdata")
         .join(fixture);
     let mut results = Vec::new();
     for (state, map, scroll, world, chunks) in [
@@ -1040,7 +996,7 @@ fn retained_native_state_matches_legacy_frames() {
 fn retained_legacy_tilemap_matches_rebuilt_pixels_and_coordinates() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/rust/testdata/rgss_legacy_retained.rb"
+        "/../rust/testdata/rgss_legacy_retained.rb"
     );
     let mut results = Vec::new();
     for (retained, batch, compact) in [
@@ -1118,7 +1074,7 @@ puts 'CASE_INDEX_OK'
 fn retained_legacy_tilemap_gpu_matches_rebuilt_software() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/rust/testdata/rgss_legacy_retained.rb"
+        "/../rust/testdata/rgss_legacy_retained.rb"
     );
     let dir = TempDir::new();
     for (capture, frame) in [
@@ -1165,7 +1121,7 @@ fn legacy_kernel_helpers_remain_callable_after_runtime_definition_or_privatizati
         "--script",
         concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/rust/testdata/rgss_kernel_helpers.rb"
+            "/../rust/testdata/rgss_kernel_helpers.rb"
         ),
         "--headless",
     ]);

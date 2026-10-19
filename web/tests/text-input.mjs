@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { rubySource } from '../../tools/ruby-sources.mjs';
 import init, * as engine from '../dist/pkg/rsxp_web.js';
 import { DefaultRubyVM } from '../node_modules/@ruby/wasm-wasi/dist/esm/browser.js';
 import { PRELUDE } from '../browser/ruby-host.js';
@@ -27,7 +28,7 @@ const { vm } = await captureRubyOutput(async () => DefaultRubyVM(await WebAssemb
   readFileSync(new URL('../dist/ruby/ruby+stdlib.wasm', import.meta.url)),
 ), { env: { HOME: '/', LANG: 'en_US.UTF-8' } }), text => output.push(text));
 vm.eval(PRELUDE);
-const shim = readFileSync(new URL('../../rust/rgss.rb', import.meta.url), 'utf8');
+const shim = rubySource('RGSS_SOURCE');
 vm.eval(shim.slice(0, shim.lastIndexOf('\nbegin\n')));
 // The real Ruby setter chooses native_text for this UTF-8 command.
 vm.eval('Input.text_input = true');

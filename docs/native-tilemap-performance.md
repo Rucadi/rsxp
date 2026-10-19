@@ -116,7 +116,7 @@ wall-clock time; these measurements are not capped-play FPS promises.
 GPU tests require an adapter:
 
 ```sh
-cargo test --lib gpu::tests -- --ignored --nocapture
-cargo test --test cli native_tiles_match -- --ignored --nocapture
-cargo test --test cli retained_scene_matches -- --ignored --nocapture
+cargo test -p rsxp --lib gpu::tests -- --ignored --nocapture
+cargo test -p rsxp-desktop --test cli native_tiles_match -- --ignored --nocapture
+cargo test -p rsxp-desktop --test cli retained_scene_matches -- --ignored --nocapture
 ```

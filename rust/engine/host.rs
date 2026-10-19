@@ -4,36 +4,13 @@
 //!
 //! [`Host`] is the object-safe backend trait: loose-file reads, image/font
 //! decoding and text, input polling, presentation, window state and optional
-//! audio/profiler/GPU hooks, most with no-op defaults for headless or WASM.
+//! audio/performance/GPU hooks, most with no-op defaults for headless or WASM.
 //! [`AudioBackend`] is reached through `Host::audio` and plays the BGM/BGS/ME/SE
 //! channels. [`InputEvent`] carries browser-side events into the runtime, and
-//! [`ProfileStats`]/[`ProfileHotspot`] expose bridge timings for the overlay.
+//! `Host` exposes FPS display visibility hooks for the optional performance panel.
 use crate::graphics::{Bitmap, Color};
 use crate::input::Input;
 use std::time::Duration;
-
-/// Per-frame desktop-side VM/bridge measurements shown by the FPS overlay.
-#[derive(Clone, Debug, Default)]
-pub struct ProfileStats {
-    pub ruby_ms: f64,
-    pub bridge_ms: f64,
-    /// Native command time excluding `graphics_update` (render/pacing is shown separately).
-    pub native_ms: f64,
-    pub render_ms: f64,
-    pub present_ms: f64,
-    pub calls: u32,
-    /// Highest-time native operations in the latest five-second window.
-    pub hotspots: Vec<ProfileHotspot>,
-    /// Seconds since the hotspot window was last published.
-    pub hotspot_age_secs: f64,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct ProfileHotspot {
-    pub operation: String,
-    pub calls: u64,
-    pub total_ms: f64,
-}
 
 /// An input event queued from a host (used by the browser frontend).
 #[derive(Clone, Debug)]
@@ -84,18 +61,12 @@ pub trait Host {
     fn audio(&mut self) -> Option<&mut dyn AudioBackend> {
         None
     }
-    /// Optional profiling data from a host language/runtime bridge.
-    fn profile_stats(&self) -> Option<ProfileStats> {
-        None
-    }
-    /// Whether the host renders profiler UI itself (e.g. via egui).
-    fn has_profiler_ui(&self) -> bool {
+    /// Whether the host renders the FPS/performance panel itself (e.g. via egui).
+    fn has_performance_ui(&self) -> bool {
         false
     }
-    /// Latest engine rendering/presentation timings, reported for the next UI frame.
-    fn set_frame_profile(&mut self, _render_ms: f64, _present_ms: f64) {}
-    /// Optional profiler activation state controlled by a host UI.
-    fn profiler_enabled(&self) -> Option<bool> {
+    /// Whether the FPS/performance panel is currently visible in the host UI.
+    fn performance_enabled(&self) -> Option<bool> {
         None
     }
     /// Optional native compositor. Software-only and browser hosts return None.

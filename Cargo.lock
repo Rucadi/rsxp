@@ -2446,6 +2446,24 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "egui",
+ "fontdue",
+ "gif",
+ "image",
+ "ogg",
+ "pollster",
+ "serde_json",
+ "theora-rs",
+ "utoipa",
+ "web-time",
+ "wgpu",
+]
+
+[[package]]
+name = "rsxp-desktop"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "egui",
  "egui-wgpu",
  "egui-winit",
  "fontdue",
@@ -2454,13 +2472,10 @@ dependencies = [
  "gilrs",
  "image",
  "kira",
- "magnus",
- "ogg",
  "pollster",
+ "rsxp",
+ "ruby_rgss_core",
  "serde_json",
- "theora-rs",
- "utoipa",
- "web-time",
  "wgpu",
  "winit",
 ]
@@ -2470,6 +2485,14 @@ name = "rtrb"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9278fb35b3e730abe136e9b395b5b81b96d06b9f5478a50f0c8430a2237b22de"
+
+[[package]]
+name = "ruby_rgss_core"
+version = "0.1.0"
+dependencies = [
+ "magnus",
+ "rsxp",
+]
 
 [[package]]
 name = "rustc-hash"

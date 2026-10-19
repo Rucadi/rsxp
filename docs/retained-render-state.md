@@ -14,7 +14,7 @@ their existing Ruby validation/copy behavior. Desktop observers notify a native
 dirty-resource registry when those
 properties change; only dirty objects resolve and submit a new snapshot.
 
-`rust/bindings/retained.rs` stores IDs, dirty sets, and resource dependencies. It
+`rust/ruby/desktop/bindings/retained.rs` stores IDs, dirty sets, and resource dependencies. It
 stores no Ruby `Value`s or strong Ruby object references. A mutex shares change
 notifications across Ruby threads. Ruby conversions and property access happen
 outside its lock and outside engine borrows. `retained.rb` supplies the API
@@ -116,7 +116,7 @@ algorithm is portable, but its new Ruby binding is desktop-only.
 
 ## Verification
 
-`cargo test --test cli retained_native_state_and_map_match_legacy_frames` compares
+`cargo test -p rsxp-desktop --test cli retained_native_state_and_map_match_legacy_frames` compares
 per-frame pixel and public-coordinate digests across eight combinations of
 state, map, native scrolling, world camera and chunk caching. The map
 fixture loads the actual, unmodified game renderer and covers animation,
@@ -126,7 +126,7 @@ skip resource submissions and cell refreshes. Lifecycle coverage includes weak
 references, nested values, Marshal/copy, Ruby-thread mutation, allocation followed
 by initialization, late overrides and alias-based plugin wrappers.
 
-`cargo test --lib --no-default-features` exercises the portable map cache without
+`cargo test -p rsxp --lib --no-default-features` exercises the portable map cache without
 Ruby or GPU dependencies. Existing sprite/lifecycle and native-tile integration
 tests continue to cover the original synchronization and rendering paths.
 

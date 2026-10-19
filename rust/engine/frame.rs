@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Frame lifecycle: input, composition, presentation, profiling and pacing.
+//! Frame lifecycle: input, composition, presentation, FPS display and pacing.
 //!
 //! `update_frame` is one RGSS `Graphics.update`. In order it: stops when the
 //! frame limit is reached, applies live rate/fast-forward settings from the
@@ -7,16 +7,15 @@
 //! animated GIF bitmaps (`advance_animations`, host-clock driven), polls the
 //! host (unless headless), injects scripted headless input, handles the F10
 //! frame-counter and F11 fast-forward keys (scancodes 67/68, unmapped by RGSS),
-//! renders via GPU when available and otherwise software, syncs profiler state,
+//! renders via GPU when available and otherwise software, syncs FPS display state,
 //! then sleeps until the next deadline.
 //!
 //! Pacing budgets time from the previous frame start so Ruby work between
 //! updates counts; an overloaded frame reschedules instead of accumulating lag.
-//! `counter_bitmap` builds the optional FPS/profile overlay.
-use super::{Runtime, PROFILE_COUNTER_ACTIVE, PROFILE_COUNTER_GENERATION};
+//! `counter_bitmap` builds the optional FPS overlay.
+use super::Runtime;
 use crate::graphics::{Bitmap, Color, Rect, SpriteFx};
-use std::sync::atomic::Ordering;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 impl Runtime {
     /// Advances animated GIF bitmaps using the host clock. Static bitmaps and
@@ -44,10 +43,6 @@ impl Runtime {
         if self.frame_limit.is_some_and(|n| self.updates >= n) {
             return Err("__RSXP_STOP__".into());
         }
-        let profile_start = self.show_counter.then(Instant::now);
-        if profile_start.is_some() {
-            self.profile_present_ms = 0.0;
-        }
         // Apply live settings from the workspace UI. The rate override is
         // optional (the game keeps its own rate until the UI changes it), while
         // fast-forward is authoritative here so the UI and F11 stay in sync.
@@ -66,14 +61,12 @@ impl Runtime {
             return Err("__RSXP_STOP__".into());
         }
         self.inject_scripted();
-        // F10 toggles the on-screen frame counter; F11 toggles fast-forward
+        // F10 toggles the FPS/frame counter; F11 toggles fast-forward
         // (disables the RGSS frame-rate cap). Neither key is mapped by RGSS.
         const COUNTER_KEY: i32 = 67;
         const FAST_FORWARD_KEY: i32 = 68;
         if self.pending.triggered(COUNTER_KEY) {
             self.show_counter = !self.show_counter;
-            PROFILE_COUNTER_ACTIVE.store(self.show_counter, Ordering::Relaxed);
-            PROFILE_COUNTER_GENERATION.fetch_add(1, Ordering::Relaxed);
         }
         if self.pending.triggered(FAST_FORWARD_KEY) {
             self.fast_forward = crate::runtime_settings::toggle_fast_forward();
@@ -85,18 +78,10 @@ impl Runtime {
         if !gpu_drawn {
             self.render_software()?;
         }
-        if let Some(start) = profile_start {
-            self.profile_render_ms =
-                (start.elapsed().as_secs_f64() * 1000.0 - self.profile_present_ms).max(0.0);
-            self.host
-                .set_frame_profile(self.profile_render_ms, self.profile_present_ms);
-        }
-        if let Some(enabled) = self.host.profiler_enabled()
+        if let Some(enabled) = self.host.performance_enabled()
             && enabled != self.show_counter
         {
             self.show_counter = enabled;
-            PROFILE_COUNTER_ACTIVE.store(enabled, Ordering::Relaxed);
-            PROFILE_COUNTER_GENERATION.fetch_add(1, Ordering::Relaxed);
         }
         self.frame += 1;
         self.updates += 1;
@@ -130,20 +115,7 @@ impl Runtime {
                 self.fps_window_frames = 0;
             }
         }
-        let profile = self.host.profile_stats();
-        let label = if let Some(profile) = profile {
-            format!(
-                "{:.0}fps Ruby {:.1}ms Bridge {:.1}ms API {:.1}ms Render {:.1}ms Present {:.1}ms Calls {}{}",
-                self.fps,
-                profile.ruby_ms,
-                profile.bridge_ms,
-                profile.native_ms,
-                self.profile_render_ms,
-                self.profile_present_ms,
-                profile.calls,
-                if self.fast_forward { " FAST" } else { "" }
-            )
-        } else if now > 0.0 {
+        let label = if now > 0.0 {
             format!(
                 "{:.0} fps   frame {}{}",
                 self.fps,

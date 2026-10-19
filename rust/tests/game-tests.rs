@@ -4,7 +4,7 @@
 //! in the default `cargo test`/CI suite. Run them explicitly:
 //!
 //! ```text
-//! cargo test --features game-tests --test game-tests
+//! cargo test -p rsxp-desktop --features game-tests --test game-tests
 //! ```
 //!
 //! The `pokemonz` cases accept `RSXP_POKEMONZ_ROOT`/`RSXP_POKEMONZ_SAVE`; the
@@ -55,7 +55,7 @@ fn run(args: &[&str]) -> Output {
 fn pokemonz_starter_event_reads_binary_data_and_stores_fennekin() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/rust/testdata/pokemonz_starter.rb"
+        "/../rust/testdata/pokemonz_starter.rb"
     );
     let result = run(&["run", "--script", script, "--headless"]);
     assert!(
@@ -81,7 +81,7 @@ fn pokemonz_starter_event_reads_binary_data_and_stores_fennekin() {
 fn pokemonz_pokedex_movedex_itemdex_and_encounters_use_legacy_pbs_data() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/rust/testdata/pokemonz_game_api.rb"
+        "/../rust/testdata/pokemonz_game_api.rb"
     );
     let result = run(&["run", "--script", script, "--headless"]);
     assert!(
@@ -109,7 +109,7 @@ fn pokemonz_pokedex_movedex_itemdex_and_encounters_use_legacy_pbs_data() {
 fn pokemonz_continue_loads_a_temporary_save_copy() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/rust/testdata/pokemonz_save_load.rb"
+        "/../rust/testdata/pokemonz_save_load.rb"
     );
     // The debug native dispatcher needs more machine stack than Ruby's
     // default Fiber stack; the game itself runs on the main Ruby stack.
@@ -135,7 +135,7 @@ fn retained_map_matches_legacy_frames() {
 
 fn retained_frames_match(fixture: &str) {
     let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("rust/testdata")
+        .join("../rust/testdata")
         .join(fixture);
     let mut results = Vec::new();
     for (state, map, scroll, world, chunks) in [
@@ -181,7 +181,7 @@ fn retained_frames_match(fixture: &str) {
 fn world_camera_gpu_frames_match_software_during_scrolling() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/rust/testdata/rgss_retained_map.rb"
+        "/../rust/testdata/rgss_retained_map.rb"
     );
     let dir = TempDir::new();
     for frame in [3, 4, 10, 14] {

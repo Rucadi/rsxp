@@ -7,7 +7,7 @@
 //! pass per frame: first the game image, then the egui overlay on top.
 //!
 //! Two presentation entry points implement the same [`Presentation`] contract
-//! (window size, egui context/input, fullscreen state, profiling stats):
+//! (window size, egui context/input, fullscreen state, performance visibility):
 //! - [`GpuDisplay::present`] draws the GPU-composited framebuffer produced by
 //!   [`rsxp::gpu::GpuRenderer`]; used for local GPU composition and for
 //!   forwarding a remote runner's frames.
@@ -27,7 +27,6 @@
 //! request, which `run` forwards to the window.
 use rsxp::gpu::GpuRenderer;
 use rsxp::graphics::Bitmap;
-use rsxp::host::ProfileStats;
 use std::time::{Duration, Instant};
 
 /// Window and workspace state supplied for one presentation. Both software
@@ -37,7 +36,6 @@ pub struct Presentation<'a> {
     pub context: &'a egui::Context,
     pub input: egui::RawInput,
     pub global_fullscreen: bool,
-    pub profile: Option<ProfileStats>,
 }
 
 pub struct GpuDisplay {
@@ -70,8 +68,8 @@ impl GpuDisplay {
     pub fn workspace_mut(&mut self) -> &mut rsxp::ui::Workspace {
         &mut self.workspace
     }
-    pub fn profiler_visible(&self) -> bool {
-        self.workspace.profiler_visible()
+    pub fn performance_visible(&self) -> bool {
+        self.workspace.performance_visible()
     }
 
     pub fn take_global_fullscreen_request(&mut self) -> Option<bool> {
@@ -272,7 +270,6 @@ impl GpuDisplay {
             context,
             input,
             global_fullscreen,
-            profile,
         } = presentation;
         if size.0 == 0 || size.1 == 0 {
             return Ok(Default::default());
@@ -312,8 +309,6 @@ impl GpuDisplay {
             global_fullscreen,
             show_fullscreen: true,
             show_save_buttons: false,
-            show_profile_details: true,
-            profile: profile.as_ref(),
         };
         let mut game_rect = egui::Rect::ZERO;
         let mut fullscreen_request = None;

@@ -13,7 +13,7 @@
 //! write only bumps the revision when the stored `i16` actually changes.
 //! `_dump`/`_load` provide Marshal serialization, and `initialize_copy` deep
 //! copies the table and bumps the revision.
-use magnus::{function, method, prelude::*, Error, RString, Ruby};
+use magnus::{function, method, prelude::*, Error, RString, Ruby, TryConvert, Value};
 use rsxp::table::Table;
 use std::cell::{Cell, RefCell};
 
@@ -22,6 +22,72 @@ use std::cell::{Cell, RefCell};
 pub(super) struct RubyTable(pub(super) RefCell<Option<Table>>, Cell<u64>);
 
 impl RubyTable {
+    fn initialize_api(ruby: &Ruby, this: &Self, args: &[Value]) -> Result<(), Error> {
+        check_arity(ruby, args, 1, 3, "Table#initialize")?;
+        let x = dimension(ruby, args[0])?;
+        let y = if args.len() > 1 {
+            dimension(ruby, args[1])?
+        } else {
+            1
+        };
+        let z = if args.len() > 2 {
+            dimension(ruby, args[2])?
+        } else {
+            1
+        };
+        Self::initialize(ruby, this, x, y, z)
+    }
+
+    fn get_item(ruby: &Ruby, this: &Self, args: &[Value]) -> Result<Option<i16>, Error> {
+        check_arity(ruby, args, 1, 3, "Table#[]")?;
+        let x = coordinate(ruby, args[0])?;
+        let y = if args.len() > 1 {
+            coordinate(ruby, args[1])?
+        } else {
+            0
+        };
+        let z = if args.len() > 2 {
+            coordinate(ruby, args[2])?
+        } else {
+            0
+        };
+        Ok(this.get(x, y, z))
+    }
+
+    fn set_item(ruby: &Ruby, this: &Self, args: &[Value]) -> Result<i16, Error> {
+        check_arity(ruby, args, 2, 4, "Table#[]=")?;
+        let count = args.len();
+        let value = integer(ruby, args[count - 1])?;
+        let x = coordinate(ruby, args[0])?;
+        let y = if count > 2 {
+            coordinate(ruby, args[1])?
+        } else {
+            0
+        };
+        let z = if count > 3 {
+            coordinate(ruby, args[2])?
+        } else {
+            0
+        };
+        Ok(this.set(x, y, z, value))
+    }
+
+    fn resize_api(ruby: &Ruby, this: &Self, args: &[Value]) -> Result<(), Error> {
+        check_arity(ruby, args, 1, 3, "Table#resize")?;
+        let x = dimension(ruby, args[0])?;
+        let y = if args.len() > 1 {
+            dimension(ruby, args[1])?
+        } else {
+            1
+        };
+        let z = if args.len() > 2 {
+            dimension(ruby, args[2])?
+        } else {
+            1
+        };
+        Self::resize(ruby, this, x, y, z)
+    }
+
     fn initialize(ruby: &Ruby, this: &Self, x: usize, y: usize, z: usize) -> Result<(), Error> {
         Self::check_size(ruby, x, y, z)?;
         let table = Table::new(x, y, z)
@@ -113,6 +179,13 @@ impl RubyTable {
 pub(super) fn bind(ruby: &Ruby) -> Result<(), Error> {
     let class = ruby.define_class("Table", ruby.class_object())?;
     class.define_alloc_func::<RubyTable>();
+    class.define_method("initialize", method!(RubyTable::initialize_api, -1))?;
+    class.define_method("[]", method!(RubyTable::get_item, -1))?;
+    class.define_method("[]=", method!(RubyTable::set_item, -1))?;
+    class.define_method("resize", method!(RubyTable::resize_api, -1))?;
+    class.define_method("xsize", method!(RubyTable::xsize, 0))?;
+    class.define_method("ysize", method!(RubyTable::ysize, 0))?;
+    class.define_method("zsize", method!(RubyTable::zsize, 0))?;
     class.define_method("__initialize", method!(RubyTable::initialize, 3))?;
     class.define_method("__get", method!(RubyTable::get, 3))?;
     class.define_method("__set", method!(RubyTable::set, 4))?;
@@ -123,4 +196,49 @@ pub(super) fn bind(ruby: &Ruby) -> Result<(), Error> {
     class.define_singleton_method("_load", function!(RubyTable::load, 1))?;
     class.define_method("initialize_copy", method!(RubyTable::initialize_copy, 1))?;
     Ok(())
+}
+
+impl RubyTable {
+    fn xsize(&self) -> usize {
+        self.dimensions().0
+    }
+    fn ysize(&self) -> usize {
+        self.dimensions().1
+    }
+    fn zsize(&self) -> usize {
+        self.dimensions().2
+    }
+}
+
+fn check_arity(
+    ruby: &Ruby,
+    args: &[Value],
+    min: usize,
+    max: usize,
+    method: &str,
+) -> Result<(), Error> {
+    if (min..=max).contains(&args.len()) {
+        return Ok(());
+    }
+    Err(Error::new(
+        ruby.exception_arg_error(),
+        format!(
+            "wrong number of arguments for {method} (given {}, expected {min}..{max})",
+            args.len()
+        ),
+    ))
+}
+
+fn integer(ruby: &Ruby, value: Value) -> Result<i64, Error> {
+    let kernel: magnus::RModule = ruby.eval("Kernel")?;
+    let integer: Value = kernel.funcall("Integer", (value,))?;
+    i64::try_convert(integer)
+}
+
+fn dimension(ruby: &Ruby, value: Value) -> Result<usize, Error> {
+    Ok(integer(ruby, value)?.max(0) as usize)
+}
+
+fn coordinate(ruby: &Ruby, value: Value) -> Result<i64, Error> {
+    integer(ruby, value)
 }

@@ -71,8 +71,8 @@ RSXP_SPRITE_CACHE=0 npm --prefix web run benchmark
 # Compare saved before/after artifacts, including CPU renderer changes:
 node tools/benchmark-web.mjs /path/to/before/pkg /path/to/before/rgss.rb
 
-cargo test --lib --no-default-features
-cargo test --test cli
+cargo test -p rsxp --lib --no-default-features
+cargo test -p rsxp-desktop --test cli
 RSXP_WEB_FIXTURE=rust/testdata/rgss_sync_lifecycle.rb node tools/benchmark-web.mjs
 npm --prefix web test
 ```

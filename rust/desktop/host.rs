@@ -21,9 +21,8 @@
 //! Windows-authored game data loads on case-sensitive filesystems; when
 //! `RSXP_RECORD` is set, every file read is appended (slash-normalized) to a
 //! process-global log via a thread-local writer; a paused remote runner mutes
-//! all four audio channels and restores their volumes on resume; and
-//! [`DesktopHost`] merges its render/present timings into
-//! [`rsxp::host::ProfileStats`]. The GPU surface is declared before the window
+//! all four audio channels and restores their volumes on resume. The GPU
+//! surface is declared before the window
 //! and device so it is dropped first.
 use crate::media;
 use crate::window::Window;
@@ -78,8 +77,6 @@ pub struct DesktopHost {
     window: Option<Window>,
     #[cfg(feature = "gpu")]
     gpu_composition: bool,
-    profile_render_ms: f64,
-    profile_present_ms: f64,
     global_fullscreen: bool,
     start: std::time::Instant,
     audio: crate::audio::DesktopAudio,
@@ -144,8 +141,6 @@ impl DesktopHost {
                 gpu,
                 window,
                 gpu_composition: renderer != "software",
-                profile_render_ms: 0.0,
-                profile_present_ms: 0.0,
                 global_fullscreen: false,
                 start: std::time::Instant::now(),
                 audio,
@@ -162,8 +157,6 @@ impl DesktopHost {
                 runner,
                 paused_volumes: None,
                 window: None,
-                profile_render_ms: 0.0,
-                profile_present_ms: 0.0,
                 global_fullscreen: false,
                 start: std::time::Instant::now(),
                 audio,
@@ -173,7 +166,6 @@ impl DesktopHost {
 
     #[cfg(feature = "gpu")]
     fn present_egui(&mut self, bitmap: Option<&Bitmap>) -> Result<(), String> {
-        let profile = crate::runtime::profile_stats();
         let global_fullscreen = self.global_fullscreen;
         let Some(window) = self.window.as_mut() else {
             return Ok(());
@@ -189,7 +181,6 @@ impl DesktopHost {
                 context: &context,
                 input,
                 global_fullscreen,
-                profile,
             };
             let output = if let Some(bitmap) = bitmap {
                 display.present_bitmap(gpu, bitmap, presentation)?
@@ -217,31 +208,19 @@ impl Host for DesktopHost {
         Some(&mut self.audio)
     }
 
-    fn profile_stats(&self) -> Option<rsxp::host::ProfileStats> {
-        let mut profile = crate::runtime::profile_stats()?;
-        profile.render_ms = self.profile_render_ms;
-        profile.present_ms = self.profile_present_ms;
-        Some(profile)
-    }
-
-    fn has_profiler_ui(&self) -> bool {
+    fn has_performance_ui(&self) -> bool {
         self.window.is_some() || self.runner.is_some()
     }
 
-    fn set_frame_profile(&mut self, render_ms: f64, present_ms: f64) {
-        self.profile_render_ms = render_ms;
-        self.profile_present_ms = present_ms;
-    }
-
-    fn profiler_enabled(&self) -> Option<bool> {
+    fn performance_enabled(&self) -> Option<bool> {
         if let Some(runner) = &self.runner {
-            return Some(runner.profiler);
+            return Some(runner.performance);
         }
         #[cfg(feature = "gpu")]
         {
             self.display
                 .as_ref()
-                .map(crate::gpu_present::GpuDisplay::profiler_visible)
+                .map(crate::gpu_present::GpuDisplay::performance_visible)
         }
         #[cfg(not(feature = "gpu"))]
         {
@@ -260,14 +239,13 @@ impl Host for DesktopHost {
 
     #[cfg(feature = "gpu")]
     fn present_gpu(&mut self) -> Result<(), String> {
-        let profile = self.profile_stats();
         if let Some(runner) = &mut self.runner {
             let frame = self
                 .gpu
                 .as_mut()
                 .ok_or("missing runner GPU")?
                 .take_remote_frame()?;
-            return runner.gpu_frame(frame, profile);
+            return runner.gpu_frame(frame);
         }
         self.present_egui(None)
     }
@@ -339,9 +317,8 @@ impl Host for DesktopHost {
     }
 
     fn present(&mut self, frame: &Bitmap) -> Result<(), String> {
-        let profile = self.profile_stats();
         if let Some(runner) = &mut self.runner {
-            return runner.frame(frame, profile);
+            return runner.frame(frame);
         }
         #[cfg(feature = "gpu")]
         if !self.gpu_composition {

@@ -12,7 +12,7 @@
 //! 3. runs wasm-bindgen into `web/dist/pkg` and optimizes the wasm with
 //!    `wasm-opt -O3` (`WASM_OPT` overrides the binary);
 //! 4. packages `web/dist/player.html` by inlining the JS modules in `MODULES`,
-//!    the engine and Ruby wasm (base64), `rust/rgss.rb`, license texts and the
+//!    the engine and Ruby wasm (base64), the compile-time RGSS bundle, license texts and the
 //!    `web/browser/assets.json` manifest into the `__RSXP_PAYLOAD__`
 //!    placeholder; and
 //! 5. builds `web/target/release/rsxp-web`.
@@ -205,7 +205,7 @@ fn package(root: &Path, dist: &Path) -> io::Result<()> {
         },
         "engine": base64(&fs::read(dist.join("pkg/rsxp_web_bg.wasm"))?),
         "ruby": base64(&fs::read(dist.join("ruby/ruby+stdlib.wasm"))?),
-        "rgss": fs::read_to_string(root.join("rust/rgss.rb"))?,
+        "rgss": rsxp::ruby::RGSS_SOURCE,
         "manifest": serde_json::from_str::<Value>(&fs::read_to_string(www.join("assets.json"))?)?,
     });
     let html = render(&fs::read_to_string(www.join("player.html"))?, &payload)?;

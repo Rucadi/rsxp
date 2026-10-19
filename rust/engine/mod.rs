@@ -14,17 +14,13 @@
 //! under `catch_unwind` and maps the `__RSXP_STOP__` error to `Ok(None)` (clean
 //! stop). Ruby wrappers hold numeric IDs into the runtime's resource maps,
 //! never references. `RSXP_INPUT` feeds deterministic headless key presses via
-//! [`parse_scripted`]; the `PROFILE_COUNTER_*` atomics expose the frame-profiler
-//! toggle to the host.
+//! [`parse_scripted`].
 use crate::graphics::{Bitmap, Color, Rect, Tone};
 use crate::host::{Host, InputEvent};
 use crate::input::Input;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc,
-};
+use std::sync::Arc;
 
 mod assets;
 mod commands;
@@ -42,17 +38,6 @@ mod tests;
 pub mod world_map;
 
 thread_local! { static ENGINE: RefCell<Option<Runtime>> = const { RefCell::new(None) }; }
-static PROFILE_COUNTER_ACTIVE: AtomicBool = AtomicBool::new(false);
-static PROFILE_COUNTER_GENERATION: AtomicU64 = AtomicU64::new(0);
-
-/// Whether the desktop frame profiler is currently visible, plus a generation
-/// that lets the Ruby host reset its timing window when the toggle changes.
-pub fn profile_counter_state() -> (bool, u64) {
-    (
-        PROFILE_COUNTER_ACTIVE.load(Ordering::Relaxed),
-        PROFILE_COUNTER_GENERATION.load(Ordering::Relaxed),
-    )
-}
 
 /// Runs the native command dispatcher against the active runtime. `Ok(None)`
 /// signals a clean stop (`__RSXP_STOP__`).
@@ -283,15 +268,13 @@ pub struct Runtime {
     text_buffer: String,
     text_input: bool,
 
-    // RGSS frame counters, pacing and profiler display state.
+    // RGSS frame counters, pacing and FPS display state.
     frame: u64,
     updates: u64,
     frame_limit: Option<u64>,
     rate: u32,
     fast_forward: bool,
     show_counter: bool,
-    profile_render_ms: f64,
-    profile_present_ms: f64,
     fps: f64,
     fps_window_start: f64,
     fps_window_frames: u32,
@@ -414,8 +397,6 @@ impl Runtime {
     }
     pub fn new(options: RuntimeOptions) -> Result<Self, String> {
         let target = Bitmap::new(options.width, options.height).map_err(|e| e.to_string())?;
-        PROFILE_COUNTER_ACTIVE.store(false, Ordering::Relaxed);
-        PROFILE_COUNTER_GENERATION.fetch_add(1, Ordering::Relaxed);
         Ok(Self {
             gpu_frame: false,
             #[cfg(feature = "gpu")]
@@ -453,8 +434,6 @@ impl Runtime {
             rate: options.rate,
             fast_forward: options.fast_forward,
             show_counter: false,
-            profile_render_ms: 0.0,
-            profile_present_ms: 0.0,
             fps: 0.0,
             fps_window_start: 0.0,
             fps_window_frames: 0,
@@ -495,17 +474,6 @@ impl Runtime {
         }
         Ok(&self.target)
     }
-    #[cfg(feature = "gpu")]
-    pub fn gpu_diagnostics(&mut self) -> Option<String> {
-        self.host.gpu().map(|gpu| {
-            format!(
-            "GPU: {} composed frames, {} reused frames, {} uploaded bytes, {} explicit readbacks, {} dispatches, {} native tile batches / {} layers / {} quads",
-            gpu.composed_frames, gpu.reused_frames, gpu.uploaded_bytes, gpu.readbacks, gpu.dispatches,
-            gpu.native_tile_batches, gpu.native_tile_layers, gpu.native_tile_quads
-        )
-        })
-    }
-
     /// Queues a host input event, applied at the start of the next update.
     pub fn queue_input(&mut self, event: InputEvent) {
         self.queued.push(event);

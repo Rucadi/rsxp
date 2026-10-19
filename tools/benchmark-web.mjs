@@ -7,10 +7,11 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DefaultRubyVM } from '../web/node_modules/@ruby/wasm-wasi/dist/esm/browser.js';
+import { rubySource } from './ruby-sources.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const pkg = resolve(process.argv[2] || `${root}/web/dist/pkg`);
-const shim = readFileSync(process.argv[3] || `${root}/rust/rgss.rb`, 'utf8');
+const shim = process.argv[3] ? readFileSync(process.argv[3], 'utf8') : rubySource('RGSS_SOURCE');
 const engine = await import(pathToFileURL(`${pkg}/rsxp_web.js`));
 await engine.default({ module_or_path: readFileSync(`${pkg}/rsxp_web_bg.wasm`) });
 engine.web_init(160, 120, 1, 40, undefined);

@@ -9,7 +9,6 @@ in
 pkgs.mkShell {
   inputsFrom = [ (import ./default.nix { inherit pkgs; }) ];
   packages = [
-    (import ./ruby-profiler.nix { inherit pkgs; })
     pkgs.cargo
     pkgs.rustc
     pkgs.rustfmt
@@ -26,5 +25,4 @@ pkgs.mkShell {
     (pkgs.lib.makeLibraryPath (linuxLibraries ++ [ pkgs.ruby ]));
   # WebAssembly builds need a wasm-capable linker (rust-lld is not shipped here).
   CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_LINKER = "${pkgs.lld}/bin/wasm-ld";
-  RUBYLIB = "${import ./ruby-profiler.nix { inherit pkgs; }}/${pkgs.ruby.gemPath}/gems/stackprof-0.2.28/lib";
 }

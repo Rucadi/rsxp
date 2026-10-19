@@ -72,7 +72,7 @@ impl Runtime {
             }
             #[cfg(feature = "game-api")]
             "api_game_bridge" => {
-                return Ok(include_bytes!("../../api/game_bridge.rb").to_vec());
+                return Ok(crate::ruby::GAME_BRIDGE_SOURCE.as_bytes().to_vec());
             }
             #[cfg(feature = "game-api")]
             "api_poll" => return Ok(crate::api_bridge::poll()),

@@ -25,7 +25,7 @@ impl Workspace {
                     }
                     ui.menu_button("Workspace", |ui| {
                         ui.checkbox(&mut self.panels_left, "Tools (F2)");
-                        ui.checkbox(&mut self.panels_profiler, "Performance (F10)");
+                        ui.checkbox(&mut self.panels_performance, "Performance (F10)");
                         ui.checkbox(&mut self.panels_output, "Runtime output (F3)");
                     });
                     egui::ComboBox::from_id_salt("game-view-mode")

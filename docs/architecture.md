@@ -45,8 +45,10 @@ See [workspace](dashboard.md) and [transport measurements](session-performance.m
 
 ## Shared library and Cargo features
 
-`Cargo.toml` points the library at `rust/lib.rs`, the desktop binary at
-`rust/desktop/main.rs`, and the MCP binary at `api/main.rs`. The browser crate
+The root `rsxp` package points the library at `rust/lib.rs`; `desktop/` is the
+desktop application package and points its binary at `rust/desktop/main.rs`.
+`ruby_rgss_core/` owns MRI and all Magnus bindings. The MCP binary remains in
+the root package at `api/main.rs`. The browser crate
 has its own manifest in `web/engine/`.
 
 | Feature | What it enables |
@@ -55,14 +57,15 @@ has its own manifest in `web/engine/`.
 | `ui` | Shared egui panels and workspace service adapter |
 | `gpu` | Shared wgpu compositor, GPU presentation dependencies and `ui` |
 | `game-api` | JSON/image dependencies and game API bridge; native cable services outside wasm |
-| `desktop` | Magnus embedding, native media/audio/window dependencies and `game-api` |
 | `api-docs` | Utoipa declarations used by `rsxp-mcp` |
 
-Defaults are `desktop,gpu`. The desktop binary requires `desktop`; the MCP
-binary requires `api-docs`. The browser depends on the root library with
+The engine library defaults to `gpu`; the desktop package enables its `gpu`
+frontend and the needed engine features. The MCP binary requires `api-docs`.
+The browser depends on the root library with
 `ui` and `game-api`, and separately uses wgpu for canvas presentation. Browser game composition
 is software: using wgpu for the workspace does not enable the shared GPU compositor.
-Magnus bindings are compiled into the desktop binary, not the shared engine.
+Magnus is a private dependency of `ruby_rgss_core`; the engine library and
+desktop application use the crate's Rust-only interface.
 
 ## Startup and shutdown
 
@@ -86,7 +89,7 @@ flowchart TD
     Options --> Config["Set working directory; read Game.ini; select RGSS; load archives"]
     Config --> Host["Create DesktopHost and engine Runtime"]
     Host --> State["Install runtime; initialize bridge, settings and patches"]
-    State --> MRI["Initialize MRI; register Magnus bindings and profiling"]
+    State --> MRI["ruby_rgss_core initializes MRI and RGSS bindings"]
     MRI --> Shim["Evaluate rgss.rb and compatibility definitions"]
     Shim --> Load["Load preload.rb and script or game bundle"]
     Load --> Game["Execute Ruby game code"]
@@ -96,19 +99,19 @@ The child sees the internal session address and takes the runtime branch,
 avoiding recursive dashboard creation. Its host connects back to the dashboard;
 a headless host instead uses silent audio and no window.
 
-`desktop/runtime/options.rs` validates arguments and resolves capture and Ruby
-profile paths before changing directories. `runtime/game.rs` sets the working
+`desktop/runtime/options.rs` validates arguments and resolves capture paths
+before changing directories. `runtime/game.rs` sets the working
 directory, reads Game.ini, infers the RGSS version and loads recognized archives.
 Startup environment changes precede the host's thread-creating subsystems.
 
 `runtime::run` creates `DesktopHost` and `engine::Runtime`, installs the active
 runtime, initializes API/bridge state, resets live settings and applies startup
 patch selections. It initializes MRI once, attempts to enable YJIT, registers
-Magnus bindings and evaluates the embedded `rust/rgss.rb`. That shim supplies
+Magnus bindings and evaluates the compile-time Ruby bundle from `rust/ruby/`. That shim supplies
 RGSS classes, compatibility behavior and game script loading.
 
-On completion, profiling finishes and Ruby is dropped while the native
-registries still exist, so finalizers can release resources. The runner then
+On completion Ruby is dropped while the native registries still exist, so
+finalizers can release resources. The runner then
 takes the runtime, optionally captures the last frame, and returns the Ruby
 status. Reset recreates the process rather than reinitializing MRI in place
 (the runtime uses `exec` on Unix). The dashboard remains available after a game
@@ -122,7 +125,7 @@ Tone values must be compared by value. Serialized operations enter
 `engine/commands.rs`. Desktop sprites also have a typed Magnus snapshot path
 in `bindings/sprite.rs`, which calls the same runtime registries directly.
 The browser serializes through a base64 JavaScript bridge into wasm exports.
-Desktop Tables are GC-owned Magnus objects; browser Tables use the portable fallback in the same `rust/rgss.rb`.
+Desktop Tables are GC-owned Magnus objects; browser Tables use the portable fallback in the same RGSS source bundle.
 
 The active runtime is a thread-local `RefCell<Option<Runtime>>`. It owns
 bitmaps, sprites, planes and viewports under numeric IDs and holds no Ruby heap
@@ -170,7 +173,8 @@ sequenceDiagram
 2. `graphics_update` dispatches into `engine/frame.rs::update_frame`.
 3. The runtime checks the independent update limit, applies live pacing
    settings, begins pending input, applies queued events, polls the host and
-   injects scripted input. F10/F11 update profiler and uncapped state.
+   injects scripted input. F10 toggles the FPS display and F11 toggles uncapped
+   execution.
 4. The runtime attempts GPU rendering when available. Unsupported GPU scene
    cases return to software composition.
 5. Scene draws respect ordering and viewport grouping. Viewport effects apply
@@ -275,7 +279,7 @@ controls and replies. Session/library/save actions are frontend intents; the
 shared panel code does not own a Ruby VM.
 
 `rust/api_bridge.rs` queues requests for Ruby to service on the game thread.
-`api/game_bridge.rb` reads game state and applies input/transfer operations.
+`api/game_bridge/` reads game state and applies input/transfer operations.
 HTTP and `rsxp-mcp` are external interfaces to this mechanism; inspector panels
 do not require an HTTP listener. Pokémon Essentials introspection is
 version/game dependent. Native `cable_club.rs` and `cable_unmod.rs` provide
@@ -292,11 +296,11 @@ separate relay services, not a general HTTP implementation for game scripts.
 | CPU types, pixels and effects | `rust/graphics/` |
 | GPU setup, resources, commands, batching, submission and transport | `rust/gpu/` |
 | Archive decryption and Table storage | `rust/data/` |
-| Ruby compatibility classes and game loader | `rust/rgss.rb`, `binding/module_rpg*.rb.xxd` |
+| Ruby compatibility classes and game loader | `rust/ruby/`, `binding/module_rpg*.rb.xxd` |
 | Desktop entry and runtime lifecycle | `rust/desktop/main.rs`, `rust/desktop/runtime/` |
 | Dashboard, transport, library and save backups | `rust/desktop/{dashboard,session,library,saves}.rs` |
 | Platform services | `rust/desktop/{host,window,gpu_present,media,audio}.rs` |
-| Magnus and Win32 adapters | `rust/bindings/` |
+| Ruby VM, Magnus and Win32 adapters | `ruby_rgss_core/src/` |
 | Workspace panels and services | `rust/ui/`, `rust/workspace_services/`, `rust/workspace_services.rs` |
 | Runtime patch catalog and Ruby patch bodies | `rust/patches/` |
 | Browser scheduling and Ruby adaptations | `web/browser/app.js` |
@@ -316,7 +320,7 @@ Both frontends enable `ui` and `game-api`: the browser no longer excludes the
 inspector, map previews or Pokémon tools. `rust/api_bridge.rs` is the shared
 nonblocking game-thread queue and operation routing; only
 `rust/api_bridge/transport.rs` owns the desktop HTTP listener.
-`api/game_bridge.rb` executes the same game operations in both interpreters.
+`api/game_bridge/` is compiled into the same game operations for both interpreters.
 The browser does not need network access to inspect the running game.
 
 `LocalServices` accepts an asset reader for hosts without native files/workers.

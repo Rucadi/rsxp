@@ -2,7 +2,7 @@
 //! Workspace root: the single egui UI shared by every frontend.
 //!
 //! The desktop window and the browser canvas both render this module: the
-//! toolbar, the runtime-patches panel, the output log, the profiler, the game
+//! toolbar, the runtime-patches panel, the output log, the performance panel, the game
 //! view placement, and — behind `game-api` — the API console and the
 //! Essentials inspector windows. A frontend supplies per-frame
 //! [`WorkspaceInfo`] plus an injected [`backend::Backend`] for runtime services,
@@ -14,10 +14,10 @@
 //!   session panel, and (behind `game-api`) the Pokedex/Movedex/Itemdex and
 //!   world-map data and texture caches. [`Workspace::draw`] is the per-frame
 //!   entry point; it applies the theme, handles keyboard shortcuts (F1 toggles
-//!   all chrome, F2/F3/F10 toggle the left/output/profiler panels, F4 requests
+//!   all chrome, F2/F3/F10 toggle the left/output/performance panels, F4 requests
 //!   frontend fullscreen), and lays out the panels around the game view.
 //! * [`WorkspaceInfo`] — the frame's frontend-provided facts (logical size,
-//!   FPS/frame count, global fullscreen, optional [`ProfileStats`], and which
+//!   FPS/frame count, global fullscreen, and which
 //!   controls the frontend supports).
 //! * [`WorkspaceOutput`] — the frame's results: the `game_rect`, an optional
 //!   `fullscreen_request`, and `export_saves` / `import_saves` intents.
@@ -45,7 +45,6 @@
 //! The panel implementations live in the sibling modules declared below
 //! (toolbar, logs, patches, performance, game_view, session, and the `game-api`
 //! explorers).
-use crate::host::ProfileStats;
 pub mod backend;
 mod connections;
 #[cfg(feature = "game-api")]
@@ -322,7 +321,7 @@ impl ViewMode {
 }
 
 /// What the frontend tells the workspace for the current frame.
-pub struct WorkspaceInfo<'a> {
+pub struct WorkspaceInfo {
     pub logical_size: (u32, u32),
     pub fps: f64,
     pub frames: u64,
@@ -331,10 +330,6 @@ pub struct WorkspaceInfo<'a> {
     pub show_fullscreen: bool,
     /// Show the save export/import buttons (the browser provides the dialogs).
     pub show_save_buttons: bool,
-    /// Whether the profiler panel shows the full host profile (Ruby/bridge/
-    /// native timings and hotpaths). The browser keeps only the FPS.
-    pub show_profile_details: bool,
-    pub profile: Option<&'a ProfileStats>,
 }
 
 /// What the workspace asked the frontend to do, plus the game view rect.
@@ -382,7 +377,7 @@ pub struct Workspace {
     pub session_actions: session::SessionActions,
     panels_top: bool,
     panels_left: bool,
-    panels_profiler: bool,
+    panels_performance: bool,
     panels_output: bool,
     view_mode: ViewMode,
     controls_visible: bool,
@@ -509,7 +504,7 @@ impl Default for Workspace {
             session_actions: Default::default(),
             panels_top: false,
             panels_left: true,
-            panels_profiler: false,
+            panels_performance: false,
             panels_output: false,
             view_mode: ViewMode::default(),
             controls_visible: false,
@@ -635,8 +630,8 @@ impl Workspace {
         self.logs.push(message.into());
     }
 
-    pub fn profiler_visible(&self) -> bool {
-        self.controls_visible && !self.is_workspace_fullscreen() && self.panels_profiler
+    pub fn performance_visible(&self) -> bool {
+        self.controls_visible && !self.is_workspace_fullscreen() && self.panels_performance
     }
 
     pub fn is_workspace_fullscreen(&self) -> bool {
@@ -677,7 +672,7 @@ impl Workspace {
         for (key, panel) in [
             (egui::Key::F2, &mut self.panels_left),
             (egui::Key::F3, &mut self.panels_output),
-            (egui::Key::F10, &mut self.panels_profiler),
+            (egui::Key::F10, &mut self.panels_performance),
         ] {
             if key_pressed(key) {
                 *panel = !self.controls_visible || !*panel;
@@ -730,7 +725,7 @@ impl Workspace {
                     .show(root_ui, |ui| {
                         ui.heading("Workspace");
                         ui.label(format!(
-                            "Game output · {} × {} · F10 toggles profiler",
+                            "Game output · {} × {} · F10 toggles performance",
                             info.logical_size.0, info.logical_size.1
                         ));
                     })
@@ -742,8 +737,8 @@ impl Workspace {
         if !fullscreen && self.panels_left {
             self.draw_patches_panel(context, info);
         }
-        if !fullscreen && self.panels_profiler {
-            self.draw_profiler_panel(context, info);
+        if !fullscreen && self.panels_performance {
+            self.draw_performance_panel(context, info);
         }
         #[cfg(feature = "game-api")]
         self.draw_api_windows(context);
@@ -891,8 +886,6 @@ mod workspace_tests {
             global_fullscreen: fullscreen,
             show_fullscreen: true,
             show_save_buttons: false,
-            show_profile_details: true,
-            profile: None,
         };
         let mut result = WorkspaceOutput::default();
         context
@@ -953,9 +946,9 @@ mod workspace_tests {
             assert!(workspace.controls_visible);
             assert_eq!(workspace.view_mode, ViewMode::Docked);
         }
-        assert!(workspace.profiler_visible());
+        assert!(workspace.performance_visible());
         draw_frame(&mut workspace, Some(egui::Key::F1), false);
-        assert!(!workspace.profiler_visible());
+        assert!(!workspace.performance_visible());
     }
 
     #[test]
@@ -988,8 +981,6 @@ mod workspace_tests {
             global_fullscreen: false,
             show_fullscreen: true,
             show_save_buttons: false,
-            show_profile_details: true,
-            profile: None,
         };
         let mut output = context.run_pass(egui::RawInput::default(), |context| {
             workspace.draw(context, &info);
@@ -1023,8 +1014,6 @@ mod workspace_tests {
             global_fullscreen: false,
             show_fullscreen: true,
             show_save_buttons: false,
-            show_profile_details: true,
-            profile: None,
         };
         for _ in 0..3 {
             let input = egui::RawInput {

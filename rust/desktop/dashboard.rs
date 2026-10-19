@@ -12,7 +12,7 @@
 //! - [`Exchange`] is the shared state between the UI thread and the blocking
 //!   I/O thread: the latest CPU [`Bitmap`] or [`rsxp::gpu::GpuFrame`], drained
 //!   runtime logs, the pending `control` payload for the runner, the last
-//!   error, frame rate/frame counters, profiling stats, and text-input/cursor
+//!   error, frame rate/frame counters, performance state, and text-input/cursor
 //!   requests. It is guarded by a `Mutex` inside an `Arc`.
 //! - [`Session`] owns the child process, the shared [`Exchange`], a stop flag,
 //!   and the stdout/stderr drain threads. Dropping it kills and reaps the
@@ -65,7 +65,6 @@ struct Exchange {
     control: Value,
     error: Option<String>,
     rate: u32,
-    profile: Option<rsxp::host::ProfileStats>,
     fps: f64,
     frames: u64,
     text_input: bool,
@@ -276,27 +275,6 @@ impl Session {
                         state.frames = header["frames"].as_u64().unwrap_or(0);
                         state.text_input = header["text_input"].as_bool().unwrap_or(false);
                         state.cursor = header["cursor"].as_bool().unwrap_or(true);
-                        state.profile = header.get("profile").filter(|p| p.is_object()).map(|p| {
-                            rsxp::host::ProfileStats {
-                                ruby_ms: p["ruby_ms"].as_f64().unwrap_or(0.0),
-                                bridge_ms: p["bridge_ms"].as_f64().unwrap_or(0.0),
-                                native_ms: p["native_ms"].as_f64().unwrap_or(0.0),
-                                render_ms: p["render_ms"].as_f64().unwrap_or(0.0),
-                                present_ms: p["present_ms"].as_f64().unwrap_or(0.0),
-                                calls: p["calls"].as_u64().unwrap_or(0) as u32,
-                                hotspot_age_secs: p["hotspot_age_secs"].as_f64().unwrap_or(0.0),
-                                hotspots: p["hotspots"]
-                                    .as_array()
-                                    .into_iter()
-                                    .flatten()
-                                    .map(|h| rsxp::host::ProfileHotspot {
-                                        operation: h["operation"].as_str().unwrap_or("").into(),
-                                        calls: h["calls"].as_u64().unwrap_or(0),
-                                        total_ms: h["total_ms"].as_f64().unwrap_or(0.0),
-                                    })
-                                    .collect(),
-                            }
-                        });
                         if let Some(frame) = frame {
                             state.frame = Some(frame);
                             state.gpu_view = false;
@@ -367,7 +345,6 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
     let mut gpu_view = false;
     let mut logical_size = (640, 480);
     let mut fullscreen = false;
-    let mut profile = None;
     let mut save_task: Option<std::sync::mpsc::Receiver<Result<(), String>>> = None;
     loop {
         let start = std::time::Instant::now();
@@ -457,7 +434,6 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
                 frame = next;
                 display.workspace_mut().session.as_mut().unwrap().status = "Running".into();
             }
-            profile = state.profile.clone();
             display.set_game_metrics(state.fps, state.frames);
             window.text_input(state.text_input);
             window.cursor(state.cursor);
@@ -507,7 +483,7 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
             if paused {
                 display.workspace_mut().session.as_mut().unwrap().status = "Paused".into();
             }
-            state.control = json!({"paused":paused,"profiler":display.profiler_visible(),"downs":downs,"ups":ups,"keys":(-8..512).filter(|k| ![58,59,60,61,67,68].contains(k) && input.pressed(*k)).collect::<Vec<_>>(),"x":mouse.x as i32,"y":mouse.y as i32,"inside":!window.egui_context().egui_wants_pointer_input() && input.mouse_inside && mouse.x>=0.0 && mouse.y>=0.0 && mouse.x<logical_size.0 as f32 && mouse.y<logical_size.1 as f32,"scroll":scroll,"text":text,"fast":rsxp::runtime_settings::fast_forward(),"rate":rsxp::runtime_settings::rate_override(),"api":old_api+&api,"patches":rsxp::runtime_patch::patches().iter().map(|p|json!([p.id,rsxp::runtime_patch::is_enabled(&p.id),rsxp::runtime_patch::value(&p.id)])).collect::<Vec<_>>()});
+            state.control = json!({"paused":paused,"performance":display.performance_visible(),"downs":downs,"ups":ups,"keys":(-8..512).filter(|k| ![58,59,60,61,67,68].contains(k) && input.pressed(*k)).collect::<Vec<_>>(),"x":mouse.x as i32,"y":mouse.y as i32,"inside":!window.egui_context().egui_wants_pointer_input() && input.mouse_inside && mouse.x>=0.0 && mouse.y>=0.0 && mouse.x<logical_size.0 as f32 && mouse.y<logical_size.1 as f32,"scroll":scroll,"text":text,"fast":rsxp::runtime_settings::fast_forward(),"rate":rsxp::runtime_settings::rate_override(),"api":old_api+&api,"patches":rsxp::runtime_patch::patches().iter().map(|p|json!([p.id,rsxp::runtime_patch::is_enabled(&p.id),rsxp::runtime_patch::value(&p.id)])).collect::<Vec<_>>()});
             if let Some(error) = state.error.take() {
                 display.workspace_mut().session.as_mut().unwrap().error = Some(error);
             }
@@ -566,7 +542,6 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
             context: &context,
             input: window.take_egui_input(),
             global_fullscreen: fullscreen,
-            profile: profile.clone(),
         };
         let output = if gpu_view {
             display.present(&gpu, presentation)?

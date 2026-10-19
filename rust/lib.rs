@@ -35,8 +35,7 @@
 //!   native and browser frontends.
 //!
 //! ## Features
-//! `desktop` builds the native frontend and enables `game-api`; `ui` enables the
-//! shared egui workspace; `gpu` enables the device compositor without pulling in
+//! `ui` enables the shared egui workspace; `gpu` enables the device compositor without pulling in
 //! egui, so native/mobile frontends supply their own presentation; `game-api`
 //! enables the command bridge; `api-docs` enables the code-first OpenAPI schema
 //! used by the `rsxp-mcp` binary.
@@ -56,6 +55,8 @@ pub mod media;
 pub mod patches;
 #[cfg(feature = "portable-media")]
 pub mod portable_media;
+/// Embedded Ruby source bundles, assembled at compile time from logical units.
+pub mod ruby;
 pub mod runtime_settings;
 /// Shared egui workspace used by both the native and browser frontends.
 #[cfg(feature = "ui")]

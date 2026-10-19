@@ -90,7 +90,7 @@ interpreter, static extensions, and standard library target macOS, iOS device,
 and iOS Simulator separately. JIT compilation is disabled. The C adapter keeps
 Ruby exception unwinding inside C, then returns errors to Rust. Game fibers
 yield after Graphics.update so the shell stays responsive between frames.
-The same `rust/rgss.rb` compatibility layer calls the native Rust renderer and
+The same compile-time RGSS bundle from `rust/ruby/` calls the native Rust renderer and
 input engine directly, without JSON/base64 pixel transport through JavaScript.
 Platform-specific Ruby plugins still require a compatible native mobile port.
 

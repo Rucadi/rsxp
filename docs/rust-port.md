@@ -8,8 +8,8 @@ specification. See the [README](../README.md) for launch commands and
 
 `desktop/runtime/options.rs` accepts exactly one of `--script` and `--game`.
 Script mode canonicalizes the script and uses its parent as the working directory;
-game mode uses the selected directory. Relative capture and sampling output
-paths are resolved before that directory change.
+game mode uses the selected directory. Relative capture output paths are resolved
+before that directory change.
 
 `desktop/runtime/game.rs` reads `Title` and `Scripts` from Game.ini. `--rgss 1|2|3`
 overrides inference; otherwise the configured script extension, standard archive
@@ -19,7 +19,8 @@ Default bundles are `Data/Scripts.rxdata`, `.rvdata` and `.rvdata2`. Recognized
 Engine asset lookup supports loose files, archives, normalized separators and
 ASCII case-insensitive resolution.
 
-`rust/rgss.rb` supplies the Ruby API and script loader. Bundles contain Marshal
+`rust/ruby/` supplies the Ruby API and script loader, assembled at compile time
+as `rsxp::ruby::RGSS_SOURCE`. Bundles contain Marshal
 arrays of `[id, name, zlib_source]`; sources are decoded and evaluated in order
 in TOPLEVEL_BINDING, with decoded text retained in `$RGSS_SCRIPTS` slot 3.
 Section names appear in error backtraces. Embedded XP/VX/VX Ace RPG class
@@ -34,7 +35,7 @@ forwarding and in-memory repairs of redundant plugin self-inheritance.
 
 ## Implemented API areas
 
-The definitions in `rust/rgss.rb`, desktop `rust/bindings/`, and operations in
+The definitions in `rust/ruby/`, desktop `rust/ruby/desktop/bindings/`, and operations in
 `rust/engine/commands.rs` are the authoritative API surface. This table is an
 overview, not a promise that every original RGSS method is supported.
 
@@ -84,7 +85,7 @@ Ruby logic or rendering. Desktop headless audio is silent. Inject repeatable
 input with physical scancodes:
 
 ```sh
-RSXP_INPUT=60:40:3 cargo run --release --bin rsxp -- run \
+RSXP_INPUT=60:40:3 cargo run --release -p rsxp-desktop --bin rsxp -- run \
   --script rust/testdata/rgss_demo.rb --headless --frames 90
 ```
 
@@ -103,9 +104,6 @@ execution. These are runtime controls, not `--fps`/`--uncapped` CLI arguments.
 | --- | --- |
 | `--renderer auto\|software\|wgpu`, `RSXP_RENDERER` | Select compositor; headless auto uses software |
 | `--trace-scripts` | Log script sections during loading |
-| `--ruby-profile FILE` and `--ruby-profile-*` | Configure sampled Ruby stack recording; see [profiling](ruby-profiling.md) |
-| `--profile NAME` | Accepted for compatibility; no longer gates plugin repairs |
-| `RSXP_PROFILE=1` | Report native command/render diagnostics |
 | `RSXP_YJIT=0` | Disable the desktop attempt to enable YJIT |
 | `RSXP_INPUT` | Scripted frame/scancode input |
 | `RSXP_PATCH=ID[,ID...]` | Enable runtime patches at startup |

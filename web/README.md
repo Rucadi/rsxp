@@ -21,7 +21,7 @@ interpreter is a separate wasm module. `rgss.rb` is unchanged: it calls
 The browser enables the same `ui` and `game-api` library features as the desktop
 workspace. Game status, map tiles/world-map loading, encounters, NPCs, party,
 Pokédex, move/item tools and debug actions use the same panels, request queue
-and `api/game_bridge.rb` adapter. Press **F1** to reveal the workspace and
+and `api/game_bridge/` adapter. Press **F1** to reveal the workspace and
 **F2** for Tools. Map previews decode tileset/autotile images from the browser's
 virtual game files. No HTTP listener is needed for these tools.
 
@@ -168,11 +168,11 @@ linear memory.
 - `socket`, `io/wait` and `openssl` are marked as loaded if absent, so plugins
   that only `require` them (multiplayer features) load.
 - `Thread.new` runs its block synchronously (ruby.wasm has no threads).
-- The shared `rust/rgss.rb` supplies a portable `Table` fallback when native bindings are absent.
+- The shared `rust/ruby/` bundle supplies a portable `Table` fallback when native bindings are absent.
 - `System.data_directory` tolerates a read-only filesystem.
 
 The page and headless runner import the same VM setup from `browser/ruby-host.js`.
-`rust/rgss.rb`, the game adapter, engine and tool panels remain authoritative
+`rust/ruby/`, the game adapter, engine and tool panels remain authoritative
 shared sources. Only interpreter embedding, frame scheduling, files, media,
 presentation and external transport need platform adapters. Desktop Magnus
 bindings and retained/GPU fast paths are still platform-specific optimizations;

@@ -33,6 +33,11 @@ module Kernel
       yield
     rescue RGSSReset
       retry
+    rescue Exception => error
+      # Some Essentials forks raise their own Reset exception from title
+      # screen styles instead of using the engine's RGSSReset class.
+      raise unless error.class.name == 'Reset'
+      retry
     end
   end
   def rgss_stop

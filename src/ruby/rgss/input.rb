@@ -8,6 +8,14 @@ module Input
     @state.each { |scan,flags| states[scan]=(flags&1)!=0 if scan>=0 && scan<512 }
     states
   end
+  # Legacy scripts may replace Input.update and poll through Win32API instead
+  # of calling the native input updater. Refresh just the raw snapshot for that
+  # compatibility path; the legacy script maintains its own trigger/repeat state.
+  def self.refresh_raw_key_states
+    bytes=RSXP.call('input_poll')
+    @state=bytes.unpack('l<C'*(bytes.bytesize/5)).each_slice(2).to_h
+    nil
+  end
   def self.raw_keys(key)
     return [Integer(key)] unless key.is_a?(Symbol)
     name=key.to_s

@@ -206,6 +206,11 @@ module RSXP
   # has not already provided one.
   def self.before_scripts; end unless singleton_class.method_defined?(:before_scripts)
   def self.prepare_script(source)
+    # Realidea's PSystem_Controls replaces Input.update and reads the host
+    # keyboard state via Win32API. Refresh RSXP's raw state before that poll.
+    if source.include?('GetAsyncKeyState') && source.include?('def self.update')
+      source=source.sub(/def self\.update\s*\n/) { |definition| definition+"    Input.refresh_raw_key_states\n" }
+    end
     # Essentials' Main loader evaluates each archived script section itself.
     # Route only those calls through the decoder; leave event/plugin evals on
     # Ruby's native Kernel.eval so their caller binding and self are preserved.
@@ -249,7 +254,15 @@ module RSXP
     source=decode_script_source(source)
     source.replace(prepare_script(source))
     begin
-      eval(source,TOPLEVEL_BINDING,name,1)
+      if name.to_s=='Main'
+        # Some Essentials forks replace the usual rgss_main wrapper with a
+        # custom top-level loop. Keep their Reset exception inside the engine
+        # restart boundary by wrapping evaluation of Main itself.
+        main=TOPLEVEL_BINDING.eval('self')
+        main.__send__(:rgss_main) { eval(source,TOPLEVEL_BINDING,name,1) }
+      else
+        eval(source,TOPLEVEL_BINDING,name,1)
+      end
     rescue SyntaxError => error
       message=error.message.gsub(/\e\[[0-9;]*m/,'')
       lines=source.lines
@@ -263,6 +276,10 @@ module RSXP
         fixed=line
         if message.include?('Invalid retry') && line.match?(/\A[ \t]*retry\b/)
           fixed=line.sub(/\bretry\b/,'redo')
+        elsif message.include?('Invalid next') && line.match?(/\A[ \t]*next\b/)
+          # Older RGSS scripts use next as an early exit from a method. Modern
+          # Ruby rejects it there; return preserves the intended method exit.
+          fixed=line.sub(/\bnext\b/,'return')
         elsif message.include?("unexpected ':'")
           fixed=line.sub(/\A([ \t]*when\s+-?\d+(?:\s*,\s*-?\d+)*)[ \t]*:(?!:)/,'\1 then')
         elsif message.include?('invalid multibyte escape')

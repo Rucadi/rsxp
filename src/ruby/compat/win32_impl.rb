@@ -43,6 +43,12 @@ module Win32API_Impl
 				return common_keystate(vkey[0]) == 1 ? PRESSED_BIT : 0
 			end
 		end
+		# Games such as Realidea poll keys through Win32API and discard them
+		# unless their RGSS window is foreground. RSXP already routes input only
+		# to its active game window, represented by handle 42 in this shim.
+		class GetForegroundWindow
+			def call(_args) = 42
+		end
 		class GetKeyboardState
 			PRESSED_BIT = 0x80
 			def call(args)

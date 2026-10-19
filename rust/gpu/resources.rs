@@ -92,7 +92,10 @@ impl GpuRenderer {
         recv.recv()
             .map_err(|e| e.to_string())?
             .map_err(|e| e.to_string())?;
-        let mapped = staging.slice(..).get_mapped_range();
+        let mapped = staging
+            .slice(..)
+            .get_mapped_range()
+            .map_err(|e| e.to_string())?;
         let result = Bitmap::from_argb(self.size.0, self.size.1, bytemuck::cast_slice(&mapped))
             .map_err(|e| e.to_string());
         drop(mapped);

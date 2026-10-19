@@ -206,7 +206,9 @@ fn demo(args: &[String]) -> Result<(), Box<dyn Error>> {
     };
     #[cfg(feature = "gpu")]
     let (gpu, mut display) = if let Some(window) = &window {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(
+            Box::new(window.native()),
+        ));
         let surface = instance.create_surface(window.native())?;
         let gpu = rsxp::gpu::GpuRenderer::new_for_surface(width, height, instance, &surface)?;
         let display = crate::gpu_present::GpuDisplay::new(&gpu, surface, window.physical_size())?;

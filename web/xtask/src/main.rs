@@ -6,7 +6,7 @@
 //! 1. provisions the pinned Ruby WASM runtime (`web/dist/ruby/browser.umd.js`
 //!    and `ruby+stdlib.wasm`), running `npm ci` when needed unless `--ruby-runtime`
 //!    supplies a directory;
-//! 2. locates a matching wasm-bindgen 0.2.121 (system copy, `WASM_BINDGEN`, or a
+//! 2. locates a matching wasm-bindgen 0.2.129 (system copy, `WASM_BINDGEN`, or a
 //!    cached `target/tools` install) and builds `web/engine` for
 //!    `wasm32-unknown-unknown` via `wasm-ld` (`WASM_LD`);
 //! 3. runs wasm-bindgen into `web/dist/pkg` and optimizes the wasm with
@@ -118,7 +118,7 @@ fn runtime_with(
     Ok(())
 }
 fn bindgen(web: &Path, cargo: &std::ffi::OsStr) -> io::Result<PathBuf> {
-    const VERSION: &str = "0.2.121";
+    const VERSION: &str = "0.2.129";
     if let Some(path) = env::var_os("WASM_BINDGEN") {
         return Ok(path.into());
     }
@@ -151,6 +151,7 @@ fn bindgen(web: &Path, cargo: &std::ffi::OsStr) -> io::Result<PathBuf> {
                     "--version",
                     VERSION,
                     "--locked",
+                    "--force",
                     "--bin",
                     "wasm-bindgen",
                     "--root",

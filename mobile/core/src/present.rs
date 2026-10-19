@@ -48,7 +48,7 @@ impl Presenter {
         width: u32,
         height: u32,
     ) -> Result<(GpuRenderer, Self), String> {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let surface = unsafe {
             instance.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::CoreAnimationLayer(layer))
         }
@@ -74,6 +74,7 @@ impl Presenter {
             // paces game steps.
             present_mode: wgpu::PresentMode::Fifo,
             desired_maximum_frame_latency: 2,
+            color_space: wgpu::SurfaceColorSpace::Auto,
             alpha_mode: caps.alpha_modes[0],
             view_formats: vec![],
         };
@@ -111,13 +112,13 @@ impl Presenter {
                     },
                 ],
             });
-        let pipeline_layout =
-            gpu.device
-                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("mobile presentation layout"),
-                    bind_group_layouts: &[&layout],
-                    push_constant_ranges: &[],
-                });
+        let pipeline_layout = gpu
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("mobile presentation layout"),
+                bind_group_layouts: &[Some(&layout)],
+                immediate_size: 0,
+            });
         let pipeline = gpu
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -142,7 +143,7 @@ impl Presenter {
                 primitive: Default::default(),
                 depth_stencil: None,
                 multisample: Default::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
         let dimensions = gpu.device.create_buffer(&wgpu::BufferDescriptor {
@@ -263,14 +264,19 @@ impl Presenter {
             self.bound = Some((source.clone(), group));
         }
         let frame = match self.surface.get_current_texture() {
-            Ok(frame) => frame,
-            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+            wgpu::CurrentSurfaceTexture::Success(frame) => frame,
+            wgpu::CurrentSurfaceTexture::Suboptimal(_) | wgpu::CurrentSurfaceTexture::Outdated => {
                 crate::debug_log("draw surface lost/outdated");
                 self.surface.configure(&gpu.device, &self.config);
                 return Ok(());
             }
-            Err(wgpu::SurfaceError::Timeout) => return Ok(()),
-            Err(error) => return Err(error.to_string()),
+            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
+                return Ok(());
+            }
+            wgpu::CurrentSurfaceTexture::Lost => return Err("GPU presentation surface lost".into()),
+            wgpu::CurrentSurfaceTexture::Validation => {
+                return Err("GPU presentation surface validation failed".into());
+            }
         };
         let view = frame.texture.create_view(&Default::default());
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
@@ -289,13 +295,14 @@ impl Presenter {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.bound.as_ref().unwrap().1, &[]);
             pass.draw(0..3, 0..1);
         }
         gpu.queue.submit([encoder.finish()]);
-        frame.present();
+        gpu.queue.present(frame);
         Ok(())
     }
 }

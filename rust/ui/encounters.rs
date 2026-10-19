@@ -42,7 +42,7 @@ impl Workspace {
         egui::Window::new(title)
             // The displayed title follows the selected map, but the window's
             // identity must remain fixed so egui retains its position/size.
-            .id(egui::Id::new("pokemon_encounters_window"))
+            .id(egui::Id::unique("pokemon_encounters_window"))
             .open(&mut open)
             .default_size(egui::vec2(620.0, 680.0))
             .min_size(egui::vec2(360.0, 280.0))

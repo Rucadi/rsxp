@@ -80,6 +80,7 @@ impl Workspace {
         }
         let mut open = self.world_map_open;
         egui::Window::new("Connected world · actual maps and connections")
+            .id(egui::Id::unique("essentials-world-map"))
             .open(&mut open)
             .default_size(egui::vec2(1440.0, 960.0))
             .min_size(egui::vec2(480.0, 280.0))
@@ -301,7 +302,7 @@ impl Workspace {
             self.world_map_pan += response.drag_delta();
         }
         let zoom_scroll = if response.hovered() {
-            ui.input(|input| input.raw_scroll_delta.y)
+            ui.input(|input| input.smooth_scroll_delta().y)
         } else {
             0.0
         };
@@ -414,7 +415,7 @@ impl Workspace {
             }
             let map_response = ui.interact(
                 rect,
-                egui::Id::new(("world-map-node", id)),
+                egui::Id::unique(("world-map-node", id)),
                 egui::Sense::click(),
             );
             if map_response.clicked() {

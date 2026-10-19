@@ -14,7 +14,7 @@
 
 FROM ruby:3.4-bullseye AS toolchain
 
-ARG RUST_VERSION=1.88.0
+ARG RUST_VERSION=1.95.0
 ARG APPIMAGETOOL_URL=https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
 
 ENV DEBIAN_FRONTEND=noninteractive \

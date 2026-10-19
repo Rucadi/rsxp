@@ -88,7 +88,11 @@ pub fn patches() -> Vec<std::sync::Arc<RuntimePatch>> {
 /// Register one host-provided file from patches/<name>.rb. Desktop files and
 /// browser virtual files share naming, metadata, replacement and sort rules.
 pub fn register_user_patch(name: &str, source: String) -> bool {
-    if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
         return false;
     }
     let patch = std::sync::Arc::new(RuntimePatch {

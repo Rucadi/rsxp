@@ -44,9 +44,18 @@ impl Json {
             _ => None,
         }
     }
-    fn string(&self) -> Option<&str> { if let Self::String(value) = self { Some(value) } else { None } }
+    fn string(&self) -> Option<&str> {
+        if let Self::String(value) = self {
+            Some(value)
+        } else {
+            None
+        }
+    }
     fn integer(&self) -> Option<i64> {
-        match self { Self::Number(v) => v.parse().ok(), _ => None }
+        match self {
+            Self::Number(v) => v.parse().ok(),
+            _ => None,
+        }
     }
     fn encode(&self, out: &mut String) {
         match self {
@@ -56,14 +65,23 @@ impl Json {
             Self::String(v) => quote(v, out),
             Self::Array(values) => {
                 out.push('[');
-                for (i, value) in values.iter().enumerate() { if i > 0 { out.push(','); } value.encode(out); }
+                for (i, value) in values.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    value.encode(out);
+                }
                 out.push(']');
             }
             Self::Object(fields) => {
                 out.push('{');
                 for (i, (key, value)) in fields.iter().enumerate() {
-                    if i > 0 { out.push(','); }
-                    quote(key, out); out.push(':'); value.encode(out);
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    quote(key, out);
+                    out.push(':');
+                    value.encode(out);
                 }
                 out.push('}');
             }
@@ -75,39 +93,73 @@ fn quote(value: &str, out: &mut String) {
     out.push('"');
     for c in value.chars() {
         match c {
-            '"' => out.push_str("\\\""), '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"), '\r' => out.push_str("\\r"), '\t' => out.push_str("\\t"),
-            c if c.is_control() => out.push_str(&format!("\\u{:04x}", c as u32)), c => out.push(c),
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
         }
     }
     out.push('"');
 }
 
-struct Parser<'a> { input: &'a [u8], offset: usize }
+struct Parser<'a> {
+    input: &'a [u8],
+    offset: usize,
+}
 impl<'a> Parser<'a> {
     fn parse(input: &'a str) -> Result<Json, String> {
-        let mut parser = Self { input: input.as_bytes(), offset: 0 };
+        let mut parser = Self {
+            input: input.as_bytes(),
+            offset: 0,
+        };
         let value = parser.value()?;
         parser.space();
-        if parser.offset != parser.input.len() { return Err("trailing JSON data".into()); }
+        if parser.offset != parser.input.len() {
+            return Err("trailing JSON data".into());
+        }
         Ok(value)
     }
-    fn space(&mut self) { while self.input.get(self.offset).is_some_and(u8::is_ascii_whitespace) { self.offset += 1; } }
+    fn space(&mut self) {
+        while self
+            .input
+            .get(self.offset)
+            .is_some_and(u8::is_ascii_whitespace)
+        {
+            self.offset += 1;
+        }
+    }
     fn value(&mut self) -> Result<Json, String> {
         self.space();
         match self.input.get(self.offset).copied() {
-            Some(b'n') => { self.word(b"null")?; Ok(Json::Null) }
-            Some(b't') => { self.word(b"true")?; Ok(Json::Bool(true)) }
-            Some(b'f') => { self.word(b"false")?; Ok(Json::Bool(false)) }
+            Some(b'n') => {
+                self.word(b"null")?;
+                Ok(Json::Null)
+            }
+            Some(b't') => {
+                self.word(b"true")?;
+                Ok(Json::Bool(true))
+            }
+            Some(b'f') => {
+                self.word(b"false")?;
+                Ok(Json::Bool(false))
+            }
             Some(b'"') => self.string().map(Json::String),
-            Some(b'[') => self.array(), Some(b'{') => self.object(),
+            Some(b'[') => self.array(),
+            Some(b'{') => self.object(),
             Some(b'-' | b'0'..=b'9') => self.number(),
             _ => Err("invalid JSON value".into()),
         }
     }
     fn word(&mut self, word: &[u8]) -> Result<(), String> {
-        if self.input.get(self.offset..self.offset + word.len()) == Some(word) { self.offset += word.len(); Ok(()) }
-        else { Err("invalid JSON token".into()) }
+        if self.input.get(self.offset..self.offset + word.len()) == Some(word) {
+            self.offset += word.len();
+            Ok(())
+        } else {
+            Err("invalid JSON token".into())
+        }
     }
     fn string(&mut self) -> Result<String, String> {
         self.offset += 1;
@@ -115,16 +167,32 @@ impl<'a> Parser<'a> {
         while let Some(byte) = self.input.get(self.offset).copied() {
             self.offset += 1;
             match byte {
-                b'"' => return Ok(output), b'\\' => {
-                    let escaped = *self.input.get(self.offset).ok_or("incomplete JSON escape")?; self.offset += 1;
+                b'"' => return Ok(output),
+                b'\\' => {
+                    let escaped = *self
+                        .input
+                        .get(self.offset)
+                        .ok_or("incomplete JSON escape")?;
+                    self.offset += 1;
                     match escaped {
-                        b'"' => output.push('"'), b'\\' => output.push('\\'), b'/' => output.push('/'),
-                        b'b' => output.push('\u{8}'), b'f' => output.push('\u{c}'), b'n' => output.push('\n'),
-                        b'r' => output.push('\r'), b't' => output.push('\t'),
+                        b'"' => output.push('"'),
+                        b'\\' => output.push('\\'),
+                        b'/' => output.push('/'),
+                        b'b' => output.push('\u{8}'),
+                        b'f' => output.push('\u{c}'),
+                        b'n' => output.push('\n'),
+                        b'r' => output.push('\r'),
+                        b't' => output.push('\t'),
                         b'u' => {
                             let end = self.offset + 4;
-                            let digits = std::str::from_utf8(self.input.get(self.offset..end).ok_or("incomplete unicode escape")?).map_err(|_| "invalid unicode escape")?;
-                            let code = u16::from_str_radix(digits, 16).map_err(|_| "invalid unicode escape")?;
+                            let digits = std::str::from_utf8(
+                                self.input
+                                    .get(self.offset..end)
+                                    .ok_or("incomplete unicode escape")?,
+                            )
+                            .map_err(|_| "invalid unicode escape")?;
+                            let code = u16::from_str_radix(digits, 16)
+                                .map_err(|_| "invalid unicode escape")?;
                             self.offset = end;
                             let scalar = if (0xd800..=0xdbff).contains(&code) {
                                 if self.input.get(self.offset..self.offset + 2) != Some(b"\\u") {
@@ -132,11 +200,20 @@ impl<'a> Parser<'a> {
                                 }
                                 self.offset += 2;
                                 let end = self.offset + 4;
-                                let digits = std::str::from_utf8(self.input.get(self.offset..end).ok_or("incomplete unicode escape")?).map_err(|_| "invalid unicode escape")?;
-                                let low = u16::from_str_radix(digits, 16).map_err(|_| "invalid unicode escape")?;
-                                if !(0xdc00..=0xdfff).contains(&low) { return Err("invalid unicode surrogate pair".into()); }
+                                let digits = std::str::from_utf8(
+                                    self.input
+                                        .get(self.offset..end)
+                                        .ok_or("incomplete unicode escape")?,
+                                )
+                                .map_err(|_| "invalid unicode escape")?;
+                                let low = u16::from_str_radix(digits, 16)
+                                    .map_err(|_| "invalid unicode escape")?;
+                                if !(0xdc00..=0xdfff).contains(&low) {
+                                    return Err("invalid unicode surrogate pair".into());
+                                }
                                 self.offset = end;
-                                let value = 0x10000 + (((code as u32 - 0xd800) << 10) | (low as u32 - 0xdc00));
+                                let value = 0x10000
+                                    + (((code as u32 - 0xd800) << 10) | (low as u32 - 0xdc00));
                                 char::from_u32(value).ok_or("invalid unicode scalar")?
                             } else {
                                 char::from_u32(code as u32).ok_or("invalid unicode scalar")?
@@ -150,9 +227,11 @@ impl<'a> Parser<'a> {
                 b if b < 0x80 => output.push(b as char),
                 _ => {
                     self.offset -= 1;
-                    let remainder = std::str::from_utf8(&self.input[self.offset..]).map_err(|_| "invalid UTF-8")?;
+                    let remainder = std::str::from_utf8(&self.input[self.offset..])
+                        .map_err(|_| "invalid UTF-8")?;
                     let c = remainder.chars().next().ok_or("incomplete UTF-8")?;
-                    self.offset += c.len_utf8(); output.push(c);
+                    self.offset += c.len_utf8();
+                    output.push(c);
                 }
             }
         }
@@ -160,7 +239,9 @@ impl<'a> Parser<'a> {
     }
     fn number(&mut self) -> Result<Json, String> {
         let start = self.offset;
-        if self.input.get(self.offset) == Some(&b'-') { self.offset += 1; }
+        if self.input.get(self.offset) == Some(&b'-') {
+            self.offset += 1;
+        }
         match self.input.get(self.offset) {
             Some(b'0') => {
                 self.offset += 1;
@@ -170,61 +251,133 @@ impl<'a> Parser<'a> {
             }
             Some(b'1'..=b'9') => {
                 self.offset += 1;
-                while self.input.get(self.offset).is_some_and(u8::is_ascii_digit) { self.offset += 1; }
+                while self.input.get(self.offset).is_some_and(u8::is_ascii_digit) {
+                    self.offset += 1;
+                }
             }
             _ => return Err("invalid JSON number".into()),
         }
         if self.input.get(self.offset) == Some(&b'.') {
             self.offset += 1;
             let fraction = self.offset;
-            while self.input.get(self.offset).is_some_and(u8::is_ascii_digit) { self.offset += 1; }
-            if self.offset == fraction { return Err("missing JSON fraction digits".into()); }
+            while self.input.get(self.offset).is_some_and(u8::is_ascii_digit) {
+                self.offset += 1;
+            }
+            if self.offset == fraction {
+                return Err("missing JSON fraction digits".into());
+            }
         }
-        if self.input.get(self.offset).is_some_and(|b| matches!(b, b'e' | b'E')) {
+        if self
+            .input
+            .get(self.offset)
+            .is_some_and(|b| matches!(b, b'e' | b'E'))
+        {
             self.offset += 1;
-            if self.input.get(self.offset).is_some_and(|b| matches!(b, b'+' | b'-')) { self.offset += 1; }
+            if self
+                .input
+                .get(self.offset)
+                .is_some_and(|b| matches!(b, b'+' | b'-'))
+            {
+                self.offset += 1;
+            }
             let exponent = self.offset;
-            while self.input.get(self.offset).is_some_and(u8::is_ascii_digit) { self.offset += 1; }
-            if self.offset == exponent { return Err("missing JSON exponent digits".into()); }
+            while self.input.get(self.offset).is_some_and(u8::is_ascii_digit) {
+                self.offset += 1;
+            }
+            if self.offset == exponent {
+                return Err("missing JSON exponent digits".into());
+            }
         }
-        let number = std::str::from_utf8(&self.input[start..self.offset]).map_err(|_| "invalid number")?;
+        let number =
+            std::str::from_utf8(&self.input[start..self.offset]).map_err(|_| "invalid number")?;
         Ok(Json::Number(number.to_string()))
     }
     fn array(&mut self) -> Result<Json, String> {
-        self.offset += 1; self.space(); let mut values = Vec::new();
-        if self.input.get(self.offset) == Some(&b']') { self.offset += 1; return Ok(Json::Array(values)); }
-        loop { values.push(self.value()?); self.space(); match self.input.get(self.offset) {
-            Some(b',') => self.offset += 1, Some(b']') => { self.offset += 1; break; }, _ => return Err("expected , or ]".into()),
-        }}
+        self.offset += 1;
+        self.space();
+        let mut values = Vec::new();
+        if self.input.get(self.offset) == Some(&b']') {
+            self.offset += 1;
+            return Ok(Json::Array(values));
+        }
+        loop {
+            values.push(self.value()?);
+            self.space();
+            match self.input.get(self.offset) {
+                Some(b',') => self.offset += 1,
+                Some(b']') => {
+                    self.offset += 1;
+                    break;
+                }
+                _ => return Err("expected , or ]".into()),
+            }
+        }
         Ok(Json::Array(values))
     }
     fn object(&mut self) -> Result<Json, String> {
-        self.offset += 1; self.space(); let mut fields = Vec::new();
-        if self.input.get(self.offset) == Some(&b'}') { self.offset += 1; return Ok(Json::Object(fields)); }
+        self.offset += 1;
+        self.space();
+        let mut fields = Vec::new();
+        if self.input.get(self.offset) == Some(&b'}') {
+            self.offset += 1;
+            return Ok(Json::Object(fields));
+        }
         loop {
-            self.space(); if self.input.get(self.offset) != Some(&b'"') { return Err("expected JSON object key".into()); }
-            let key = self.string()?; self.space(); if self.input.get(self.offset) != Some(&b':') { return Err("expected :".into()); }
-            self.offset += 1; let value = self.value()?; fields.push((key, value)); self.space();
-            match self.input.get(self.offset) { Some(b',') => self.offset += 1, Some(b'}') => { self.offset += 1; break; }, _ => return Err("expected , or }".into()) }
+            self.space();
+            if self.input.get(self.offset) != Some(&b'"') {
+                return Err("expected JSON object key".into());
+            }
+            let key = self.string()?;
+            self.space();
+            if self.input.get(self.offset) != Some(&b':') {
+                return Err("expected :".into());
+            }
+            self.offset += 1;
+            let value = self.value()?;
+            fields.push((key, value));
+            self.space();
+            match self.input.get(self.offset) {
+                Some(b',') => self.offset += 1,
+                Some(b'}') => {
+                    self.offset += 1;
+                    break;
+                }
+                _ => return Err("expected , or }".into()),
+            }
         }
         Ok(Json::Object(fields))
     }
 }
 
-fn json(value: &Json) -> String { let mut out = String::new(); value.encode(&mut out); out }
+fn json(value: &Json) -> String {
+    let mut out = String::new();
+    value.encode(&mut out);
+    out
+}
 fn response(id: &Json, result: &str) -> String {
     let mut out = format!("{{\"jsonrpc\":\"2.0\",\"id\":{},\"result\":", json(id));
-    out.push_str(result); out.push('}'); out
+    out.push_str(result);
+    out.push('}');
+    out
 }
 fn error(id: &Json, code: i64, message: &str) -> String {
-    let mut out = format!("{{\"jsonrpc\":\"2.0\",\"id\":{},\"error\":{{\"code\":{code},\"message\":", json(id));
-    quote(message, &mut out); out.push_str("}}"); out
+    let mut out = format!(
+        "{{\"jsonrpc\":\"2.0\",\"id\":{},\"error\":{{\"code\":{code},\"message\":",
+        json(id)
+    );
+    quote(message, &mut out);
+    out.push_str("}}");
+    out
 }
 fn text_result(text: &str, is_error: bool) -> String {
     let mut out = String::from("{\"content\":[{\"type\":\"text\",\"text\":");
-    quote(text, &mut out); out.push_str("}]");
-    if is_error { out.push_str(",\"isError\":true"); }
-    out.push('}'); out
+    quote(text, &mut out);
+    out.push_str("}]");
+    if is_error {
+        out.push_str(",\"isError\":true");
+    }
+    out.push('}');
+    out
 }
 
 fn tools() -> &'static str {
@@ -258,20 +411,49 @@ fn call_game(path: &str) -> Result<String, String> {
     let mut stream = TcpStream::connect(format!("{host}:{port}"))
         .map_err(|e| format!("cannot connect to game API at {host}:{port}: {e}"))?;
     let timeout = Some(Duration::from_secs(10));
-    stream.set_read_timeout(timeout).map_err(|e| e.to_string())?;
-    stream.set_write_timeout(timeout).map_err(|e| e.to_string())?;
-    let method = if path == "/v1/input/held" { "DELETE" } else if path.starts_with("/v1/input/press") || path.starts_with("/v1/game/teleport") || path.starts_with("/v1/pokemon-essentials/inventory/add") || path.starts_with("/v1/pokemon-essentials/wild-encounter") || path.starts_with("/v1/pokemon-essentials/debug?") { "POST" } else { "GET" };
-    write!(stream, "{method} {path} HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: close\r\n\r\n").map_err(|e| e.to_string())?;
+    stream
+        .set_read_timeout(timeout)
+        .map_err(|e| e.to_string())?;
+    stream
+        .set_write_timeout(timeout)
+        .map_err(|e| e.to_string())?;
+    let method = if path == "/v1/input/held" {
+        "DELETE"
+    } else if path.starts_with("/v1/input/press")
+        || path.starts_with("/v1/game/teleport")
+        || path.starts_with("/v1/pokemon-essentials/inventory/add")
+        || path.starts_with("/v1/pokemon-essentials/wild-encounter")
+        || path.starts_with("/v1/pokemon-essentials/debug?")
+    {
+        "POST"
+    } else {
+        "GET"
+    };
+    write!(
+        stream,
+        "{method} {path} HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: close\r\n\r\n"
+    )
+    .map_err(|e| e.to_string())?;
     let mut response = String::new();
-    BufReader::new(stream).read_to_string(&mut response).map_err(|e| format!("game API read failed: {e}"))?;
-    let (headers, body) = response.split_once("\r\n\r\n").ok_or("invalid HTTP response from game API")?;
+    BufReader::new(stream)
+        .read_to_string(&mut response)
+        .map_err(|e| format!("game API read failed: {e}"))?;
+    let (headers, body) = response
+        .split_once("\r\n\r\n")
+        .ok_or("invalid HTTP response from game API")?;
     let status = headers.lines().next().unwrap_or_default();
-    if !status.contains(" 200 ") { 
+    if !status.contains(" 200 ") {
         let value = Parser::parse(body)?;
-        return Err(value.get("error").and_then(Json::string).unwrap_or(status).to_string());
+        return Err(value
+            .get("error")
+            .and_then(Json::string)
+            .unwrap_or(status)
+            .to_string());
     }
     let value = Parser::parse(body)?;
-    if let Some(message) = value.get("error").and_then(Json::string) { return Err(message.to_string()); }
+    if let Some(message) = value.get("error").and_then(Json::string) {
+        return Err(message.to_string());
+    }
     Ok(body.to_string())
 }
 
@@ -279,7 +461,10 @@ fn call_game(path: &str) -> Result<String, String> {
 /// values before they reach the game bridge.
 fn wild_encounter_path(args: &Json) -> Result<String, String> {
     let species = args.get("species").and_then(Json::string).unwrap_or("");
-    if species.is_empty() || !species.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    if species.is_empty()
+        || !species
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
     {
         return Err("species must be a game species ID".into());
     }
@@ -307,7 +492,10 @@ fn wild_encounter_path(args: &Json) -> Result<String, String> {
             if value.is_empty() {
                 continue;
             }
-            if !value.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_') {
+            if !value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+            {
                 return Err(format!("{field} contains invalid characters"));
             }
             path.push_str(&format!("&{field}={value}"));
@@ -325,12 +513,16 @@ fn wild_encounter_path(args: &Json) -> Result<String, String> {
     Ok(path)
 }
 
-fn handle(message: Json) -> Option<String> {    let id = message.get("id")?;
+fn handle(message: Json) -> Option<String> {
+    let id = message.get("id")?;
     let method = message.get("method").and_then(Json::string).unwrap_or("");
     let params = message.get("params").unwrap_or(&Json::Null);
     match method {
         "initialize" => {
-            let requested = params.get("protocolVersion").and_then(Json::string).unwrap_or("");
+            let requested = params
+                .get("protocolVersion")
+                .and_then(Json::string)
+                .unwrap_or("");
             let version = if ["2024-11-05", "2025-03-26", "2025-06-18"].contains(&requested) {
                 requested
             } else {
@@ -352,28 +544,52 @@ fn handle(message: Json) -> Option<String> {    let id = message.get("id")?;
                 "pokemon_essentials_movedex" => call_game("/v1/pokemon-essentials/movedex"),
                 "pokemon_essentials_add_item" => {
                     let item = args_obj.get("item").and_then(Json::string).unwrap_or("");
-                    let quantity = args_obj.get("quantity").map(Json::integer).unwrap_or(Some(1));
-                    if item.is_empty() || !item.bytes().all(|byte|byte.is_ascii_alphanumeric() || byte==b'_') {
+                    let quantity = args_obj
+                        .get("quantity")
+                        .map(Json::integer)
+                        .unwrap_or(Some(1));
+                    if item.is_empty()
+                        || !item
+                            .bytes()
+                            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+                    {
                         Err("item must be a game item ID".into())
-                    } else if !quantity.is_some_and(|quantity|(1..=9999).contains(&quantity)) { Err("quantity must be an integer in 1..9999".into()) }
-                    else { let quantity=quantity.unwrap(); call_game(&format!("/v1/pokemon-essentials/inventory/add?item={item}&quantity={quantity}")) }
+                    } else if !quantity.is_some_and(|quantity| (1..=9999).contains(&quantity)) {
+                        Err("quantity must be an integer in 1..9999".into())
+                    } else {
+                        let quantity = quantity.unwrap();
+                        call_game(&format!(
+                            "/v1/pokemon-essentials/inventory/add?item={item}&quantity={quantity}"
+                        ))
+                    }
                 }
                 "pokemon_essentials_itemdex" => call_game("/v1/pokemon-essentials/itemdex"),
                 "pokemon_essentials_pokedex" => call_game("/v1/pokemon-essentials/pokedex"),
                 "pokemon_essentials_species_entry" => {
                     let species = args_obj.get("species").and_then(Json::string).unwrap_or("");
-                    if species.is_empty() || !species.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_') {
+                    if species.is_empty()
+                        || !species
+                            .bytes()
+                            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+                    {
                         Err("species must be a game species/form ID".into())
-                    } else { call_game(&format!("/v1/pokemon-essentials/species/{species}")) }
+                    } else {
+                        call_game(&format!("/v1/pokemon-essentials/species/{species}"))
+                    }
                 }
                 "pokemon_essentials_status" => call_game("/v1/pokemon-essentials/status"),
                 "pokemon_essentials_party" => call_game("/v1/pokemon-essentials/party"),
                 "pokemon_essentials_info" => {
                     let slot = args_obj.get("slot").and_then(Json::integer).unwrap_or(-1);
-                    if !(0..=5).contains(&slot) { Err("slot must be 0..5".into()) }
-                    else { call_game(&format!("/v1/pokemon-essentials/party/{slot}")) }
+                    if !(0..=5).contains(&slot) {
+                        Err("slot must be 0..5".into())
+                    } else {
+                        call_game(&format!("/v1/pokemon-essentials/party/{slot}"))
+                    }
                 }
-                "pokemon_essentials_encounters" => call_game("/v1/pokemon-essentials/encounters/current-map"),
+                "pokemon_essentials_encounters" => {
+                    call_game("/v1/pokemon-essentials/encounters/current-map")
+                }
                 "pokemon_essentials_npcs" => call_game("/v1/pokemon-essentials/npcs/current-map"),
                 "pokemon_essentials_battle" => call_game("/v1/pokemon-essentials/battle"),
                 "pokemon_essentials_wild_encounter" => {
@@ -389,14 +605,20 @@ fn handle(message: Json) -> Option<String> {    let id = message.get("id")?;
                 "release_all_keys" => call_game("/v1/input/held"),
                 "get_surroundings" => {
                     let radius = args_obj.get("radius").and_then(Json::integer).unwrap_or(5);
-                    if !(1..=15).contains(&radius) { Err("radius must be 1..15".into()) }
-                    else { call_game(&format!("/v1/game/surroundings?radius={radius}")) }
+                    if !(1..=15).contains(&radius) {
+                        Err("radius must be 1..15".into())
+                    } else {
+                        call_game(&format!("/v1/game/surroundings?radius={radius}"))
+                    }
                 }
                 "world_map" => call_game("/v1/game/world-map"),
                 "map_preview" => {
                     let map_id = args_obj.get("map_id").and_then(Json::integer).unwrap_or(-1);
-                    if map_id < 1 { Err("map_id must be positive".into()) }
-                    else { call_game(&format!("/v1/game/maps/{map_id}/tiles")) }
+                    if map_id < 1 {
+                        Err("map_id must be positive".into())
+                    } else {
+                        call_game(&format!("/v1/game/maps/{map_id}/tiles"))
+                    }
                 }
                 "teleport" => {
                     let map_id = args_obj.get("map_id").and_then(Json::integer).unwrap_or(-1);
@@ -407,9 +629,13 @@ fn handle(message: Json) -> Option<String> {    let id = message.get("id")?;
                 "press_key" => {
                     let key = args_obj.get("key").and_then(Json::string).unwrap_or("");
                     let frames = args_obj.get("frames").and_then(Json::integer).unwrap_or(1);
-                    if !["up", "down", "left", "right", "action", "cancel"].contains(&key) { Err("key must be up, down, left, right, action, or cancel".into()) }
-                    else if !(1..=60).contains(&frames) { Err("frames must be 1..60".into()) }
-                    else { call_game(&format!("/v1/input/press?key={key}&frames={frames}")) }
+                    if !["up", "down", "left", "right", "action", "cancel"].contains(&key) {
+                        Err("key must be up, down, left, right, action, or cancel".into())
+                    } else if !(1..=60).contains(&frames) {
+                        Err("frames must be 1..60".into())
+                    } else {
+                        call_game(&format!("/v1/input/press?key={key}&frames={frames}"))
+                    }
                 }
                 _ => Err(format!("unknown tool: {name}")),
             };
@@ -430,19 +656,33 @@ fn main() -> io::Result<()> {
     #[cfg(feature = "api-docs")]
     if std::env::args().any(|arg| arg == "--openapi") {
         use utoipa::OpenApi as _;
-        println!("{}", openapi::ApiDoc::openapi().to_pretty_json().map_err(io::Error::other)?);
+        println!(
+            "{}",
+            openapi::ApiDoc::openapi()
+                .to_pretty_json()
+                .map_err(io::Error::other)?
+        );
         return Ok(());
     }
     let stdin = io::stdin();
     let mut stdout = io::BufWriter::new(io::stdout().lock());
     for line in stdin.lock().lines() {
         let line = line?;
-        if line.trim().is_empty() { continue; }
+        if line.trim().is_empty() {
+            continue;
+        }
         let reply = match Parser::parse(&line) {
             Ok(message) => handle(message),
-            Err(message) => Some(error(&Json::Null, -32700, &format!("Parse error: {message}"))),
+            Err(message) => Some(error(
+                &Json::Null,
+                -32700,
+                &format!("Parse error: {message}"),
+            )),
         };
-        if let Some(reply) = reply { writeln!(stdout, "{reply}")?; stdout.flush()?; }
+        if let Some(reply) = reply {
+            writeln!(stdout, "{reply}")?;
+            stdout.flush()?;
+        }
     }
     Ok(())
 }
@@ -459,8 +699,11 @@ mod tests {
         .unwrap();
         assert_eq!(value.get("id").and_then(Json::integer), Some(7));
         assert_eq!(
-            value.get("params").and_then(|v| v.get("arguments"))
-                .and_then(|v| v.get("label")).and_then(Json::string),
+            value
+                .get("params")
+                .and_then(|v| v.get("arguments"))
+                .and_then(|v| v.get("label"))
+                .and_then(Json::string),
             Some("🚀")
         );
     }
@@ -485,12 +728,36 @@ mod tests {
     #[test]
     fn essentials_tools_are_advertised_and_slot_is_bounded() {
         let listing = Parser::parse(tools()).unwrap();
-        let names = listing.get("tools").and_then(|value| match value { Json::Array(values) => Some(values), _ => None }).unwrap();
-        for name in ["pokemon_essentials_status", "pokemon_essentials_party", "pokemon_essentials_info", "pokemon_essentials_encounters", "pokemon_essentials_npcs", "pokemon_essentials_battle", "pokemon_essentials_wild_encounter", "pokemon_essentials_debug"] {
-            assert!(names.iter().any(|tool| tool.get("name").and_then(Json::string) == Some(name)), "missing {name}");
+        let names = listing
+            .get("tools")
+            .and_then(|value| match value {
+                Json::Array(values) => Some(values),
+                _ => None,
+            })
+            .unwrap();
+        for name in [
+            "pokemon_essentials_status",
+            "pokemon_essentials_party",
+            "pokemon_essentials_info",
+            "pokemon_essentials_encounters",
+            "pokemon_essentials_npcs",
+            "pokemon_essentials_battle",
+            "pokemon_essentials_wild_encounter",
+            "pokemon_essentials_debug",
+        ] {
+            assert!(
+                names
+                    .iter()
+                    .any(|tool| tool.get("name").and_then(Json::string) == Some(name)),
+                "missing {name}"
+            );
         }
-        assert!(names.iter().any(|tool| tool.get("name").and_then(Json::string) == Some("world_map")));
-        assert!(names.iter().any(|tool| tool.get("name").and_then(Json::string) == Some("teleport")));
+        assert!(names
+            .iter()
+            .any(|tool| tool.get("name").and_then(Json::string) == Some("world_map")));
+        assert!(names
+            .iter()
+            .any(|tool| tool.get("name").and_then(Json::string) == Some("teleport")));
         let request = Parser::parse(
             r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"pokemon_essentials_info","arguments":{"slot":6}}}"#,
         ).unwrap();
@@ -509,9 +776,15 @@ mod tests {
             .unwrap(),
             "/v1/pokemon-essentials/wild-encounter?species=PIKACHU&level=30&nature=JOLLY&shiny=true"
         );
-        assert!(wild_encounter_path(&Parser::parse(r#"{"species":"PIKACHU","level":0}"#).unwrap()).is_err());
+        assert!(
+            wild_encounter_path(&Parser::parse(r#"{"species":"PIKACHU","level":0}"#).unwrap())
+                .is_err()
+        );
         assert!(wild_encounter_path(&Parser::parse(r#"{"species":"PI/KACHU"}"#).unwrap()).is_err());
-        assert!(wild_encounter_path(&Parser::parse(r#"{"species":"PIKACHU","friendship":300}"#).unwrap()).is_err());
+        assert!(wild_encounter_path(
+            &Parser::parse(r#"{"species":"PIKACHU","friendship":300}"#).unwrap()
+        )
+        .is_err());
     }
 
     #[cfg(feature = "api-docs")]

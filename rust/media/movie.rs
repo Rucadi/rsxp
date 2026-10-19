@@ -14,8 +14,8 @@ use crate::graphics::Bitmap;
 use ogg::reading::PacketReader;
 use std::io::{BufReader, Cursor};
 use theora_rs::{
-    DecoderContext, HeaderParser, PixelFmt, YCbCrBuffer, th_decode_packetin, th_decode_ycbcr_out,
-    th_granule_time,
+    th_decode_packetin, th_decode_ycbcr_out, th_granule_time, DecoderContext, HeaderParser,
+    PixelFmt, YCbCrBuffer,
 };
 
 pub struct Movie {
@@ -60,12 +60,7 @@ impl Movie {
                 break;
             }
         }
-        movie.decoder = Some(
-            movie
-                .parser
-                .decoder()
-                .map_err(|error| error.to_string())?,
-        );
+        movie.decoder = Some(movie.parser.decoder().map_err(|error| error.to_string())?);
         Ok(movie)
     }
 
@@ -120,8 +115,10 @@ impl Movie {
             };
             if self.serial.is_none() {
                 let data = &packet.data;
-                let is_theora =
-                    packet.first_in_stream() && data.len() >= 7 && data[0] == 0x80 && &data[1..7] == b"theora";
+                let is_theora = packet.first_in_stream()
+                    && data.len() >= 7
+                    && data[0] == 0x80
+                    && &data[1..7] == b"theora";
                 if !is_theora {
                     continue;
                 }
@@ -214,8 +211,16 @@ pub(crate) fn ycbcr_to_bitmap(
     for y in 0..height as usize {
         for x in 0..width as usize {
             let yy = i32::from(sample_plane(&frame[0], crop_x + x, crop_y + y));
-            let cb = i32::from(sample_plane(&frame[1], (crop_x + x) >> hdec, (crop_y + y) >> vdec));
-            let cr = i32::from(sample_plane(&frame[2], (crop_x + x) >> hdec, (crop_y + y) >> vdec));
+            let cb = i32::from(sample_plane(
+                &frame[1],
+                (crop_x + x) >> hdec,
+                (crop_y + y) >> vdec,
+            ));
+            let cr = i32::from(sample_plane(
+                &frame[2],
+                (crop_x + x) >> hdec,
+                (crop_y + y) >> vdec,
+            ));
             let red = clamp_channel((1904000 * yy + 2609823 * cr - 363703744) / 1635200);
             let green =
                 clamp_channel((3827562 * yy - 1287801 * cb - 2672387 * cr + 447306710) / 3287200);

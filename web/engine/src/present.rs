@@ -90,9 +90,9 @@ impl Presenter {
         // requested: wgpu's web dispatch would claim the canvas with a `webgpu`
         // context, which then makes `getContext("webgl2")` fail ("canvas already
         // in use"), so there is no way to fall back on the same canvas.
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::GL,
-            ..Default::default()
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
         let surface = instance
             .create_surface(wgpu::SurfaceTarget::Canvas(canvas))
@@ -102,6 +102,7 @@ impl Presenter {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 force_fallback_adapter: false,
                 compatible_surface: Some(&surface),
+                ..Default::default()
             })
             .await
             .map_err(|error| error.to_string())?;
@@ -134,6 +135,7 @@ impl Presenter {
             height: size.1,
             present_mode: wgpu::PresentMode::AutoVsync,
             desired_maximum_frame_latency: 2,
+            color_space: wgpu::SurfaceColorSpace::Auto,
             alpha_mode: caps.alpha_modes[0],
             view_formats: vec![],
         };
@@ -203,8 +205,8 @@ impl Presenter {
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[&layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
         });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("present"),
@@ -228,7 +230,7 @@ impl Presenter {
             primitive: Default::default(),
             depth_stencil: None,
             multisample: Default::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
         let dimensions = device.create_buffer(&wgpu::BufferDescriptor {
@@ -347,6 +349,8 @@ impl Presenter {
         self.input.events.push(egui::Event::MouseWheel {
             unit: egui::MouseWheelUnit::Line,
             delta: egui::vec2(0.0, delta),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
             modifiers: self.input.modifiers,
         });
         self.input.events.push(egui::Event::PointerMoved(point));
@@ -379,25 +383,36 @@ impl Presenter {
             self.fps_window = now;
         }
 
-        let (output, ui) = self.run_ui((frame.width(), frame.height()));
+        let surface_texture = match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(texture) => texture,
+            wgpu::CurrentSurfaceTexture::Suboptimal(_) | wgpu::CurrentSurfaceTexture::Outdated => {
+                self.surface.configure(&self.device, &self.config);
+                return Ok(());
+            }
+            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
+                return Ok(());
+            }
+            wgpu::CurrentSurfaceTexture::Lost => return Err("GPU presentation surface lost".into()),
+            wgpu::CurrentSurfaceTexture::Validation => {
+                return Err("GPU presentation surface validation failed".into());
+            }
+        };
+
+        let (mut output, ui) = self.run_ui((frame.width(), frame.height()));
         if ui.export_saves {
             call_global("__rsxp_exportSaves");
         }
         if ui.import_saves {
             call_global("__rsxp_importSaves");
         }
-        self.upload_frame(frame, ui.game_rect)?;
-        let paint_jobs = self.context.tessellate(output.shapes, output.pixels_per_point);
+        if let Err(error) = self.upload_frame(frame, ui.game_rect) {
+            output.drop_without_applying_deltas();
+            return Err(error);
+        }
+        let paint_jobs = self
+            .context
+            .tessellate(output.shapes, output.pixels_per_point);
 
-        let surface_texture = match self.surface.get_current_texture() {
-            Ok(texture) => texture,
-            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                self.surface.configure(&self.device, &self.config);
-                return Ok(());
-            }
-            Err(wgpu::SurfaceError::Timeout) => return Ok(()),
-            Err(error) => return Err(error.to_string()),
-        };
         let view = surface_texture
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -408,7 +423,12 @@ impl Presenter {
             size_in_pixels: [self.size.0, self.size.1],
             pixels_per_point: output.pixels_per_point,
         };
-        for (id, delta) in &output.textures_delta.set {
+        for (id, delta) in output
+            .textures_delta
+            .set
+            .iter()
+            .flat_map(|(id, deltas)| deltas.iter().map(move |delta| (id, delta)))
+        {
             self.renderer
                 .update_texture(&self.device, &self.queue, *id, delta);
         }
@@ -434,6 +454,7 @@ impl Presenter {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             if let Some(bind_group) = &self.bind_group {
                 pass.set_pipeline(&self.pipeline);
@@ -448,7 +469,8 @@ impl Presenter {
         for id in &output.textures_delta.free {
             self.renderer.free_texture(id);
         }
-        surface_texture.present();
+        output.textures_delta.clear();
+        self.queue.present(surface_texture);
         Ok(())
     }
 
@@ -490,7 +512,7 @@ impl Presenter {
         let context = self.context.clone();
         let workspace = &mut self.workspace;
         let mut result = None;
-        let output = context.run(raw_input, |context| {
+        let output = context.run_pass(raw_input, |context| {
             result = Some(workspace.draw(context, &info));
         });
         (output, result.unwrap_or_default())

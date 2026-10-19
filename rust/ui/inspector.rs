@@ -742,9 +742,11 @@ mod tests {
         );
         backend.responses.borrow_mut().insert(1,Ok(r#"{"item":"POTION","name":"Poción","added":7,"requested":7,"total":9,"complete":true}"#.into()));
         let context = egui::Context::default();
-        let _ = context.run(egui::RawInput::default(), |context| {
-            workspace.draw_registry_dex_windows(context)
-        });
+        context
+            .run_pass(egui::RawInput::default(), |context| {
+                workspace.draw_registry_dex_windows(context)
+            })
+            .drop_without_applying_deltas();
         assert!(backend.responses.borrow().is_empty());
         assert_eq!(workspace.api_response, "manual response");
         assert_eq!(workspace.api_error.as_deref(), Some("manual error"));
@@ -769,9 +771,11 @@ mod tests {
             .borrow_mut()
             .insert(1, Ok(r#"{"species":[],"note":"Game data"}"#.into()));
         let context = egui::Context::default();
-        let _ = context.run(egui::RawInput::default(), |context| {
-            workspace.draw_pokedex_window(context)
-        });
+        context
+            .run_pass(egui::RawInput::default(), |context| {
+                workspace.draw_pokedex_window(context)
+            })
+            .drop_without_applying_deltas();
         assert_eq!(workspace.api_response, "manual response");
         assert_eq!(workspace.api_error.as_deref(), Some("manual error"));
         assert!(workspace.api_pending.is_none());
@@ -792,7 +796,9 @@ mod tests {
                 )),
                 ..Default::default()
             };
-            let output = context.run(input, |context| workspace.draw_pokeapi_window(context));
+            let mut output =
+                context.run_pass(input, |context| workspace.draw_pokeapi_window(context));
+            output.textures_delta.clear();
             for shape in output.shapes {
                 if let egui::Shape::Text(text) = shape.shape {
                     positions.insert(text.galley.text().to_owned(), text.pos.x);

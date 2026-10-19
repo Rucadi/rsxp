@@ -31,10 +31,10 @@ mod commands;
 mod frame;
 pub mod host;
 pub mod input;
+pub mod map_chunks;
 #[cfg(feature = "gpu")]
 mod render_gpu;
 mod render_software;
-pub mod map_chunks;
 pub mod retained_map;
 mod scene;
 #[cfg(test)]

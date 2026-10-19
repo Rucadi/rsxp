@@ -119,7 +119,10 @@ impl EncounterCheats {
         self.form = number(data, "form") as i32;
         self.gender.clear();
         self.nature.clear();
-        self.ability = species_abilities(data).first().map(|(id, _)| id.clone()).unwrap_or_default();
+        self.ability = species_abilities(data)
+            .first()
+            .map(|(id, _)| id.clone())
+            .unwrap_or_default();
         self.item.clear();
         self.max_ivs = false;
         self.set_friendship = false;
@@ -130,9 +133,9 @@ impl EncounterCheats {
 }
 
 const NATURES: [&str; 25] = [
-    "HARDY", "LONELY", "BRAVE", "ADAMANT", "NAUGHTY", "BOLD", "DOCILE", "RELAXED", "IMPISH",
-    "LAX", "TIMID", "HASTY", "SERIOUS", "JOLLY", "NAIVE", "MODEST", "MILD", "QUIET", "BASHFUL",
-    "RASH", "CALM", "GENTLE", "SASSY", "CAREFUL", "QUIRKY",
+    "HARDY", "LONELY", "BRAVE", "ADAMANT", "NAUGHTY", "BOLD", "DOCILE", "RELAXED", "IMPISH", "LAX",
+    "TIMID", "HASTY", "SERIOUS", "JOLLY", "NAIVE", "MODEST", "MILD", "QUIET", "BASHFUL", "RASH",
+    "CALM", "GENTLE", "SASSY", "CAREFUL", "QUIRKY",
 ];
 
 /// Reads a game ID that may be a string (newer Essentials) or a number (older PBS data).
@@ -388,7 +391,7 @@ impl Workspace {
         }
         let mut open = true;
         egui::Window::new("Pokédex · game species explorer")
-            .id(egui::Id::new("essentials-pokedex"))
+            .id(egui::Id::unique("essentials-pokedex"))
             .open(&mut open)
             .default_size(egui::vec2(1110.0, 760.0))
             .min_size(egui::vec2(780.0, 500.0))
@@ -1040,7 +1043,11 @@ impl Workspace {
                 .spacing([20.0, 10.0])
                 .show(ui, |ui| {
                     ui.label("Level");
-                    ui.add(egui::DragValue::new(&mut cheats.level).range(1..=100).speed(1));
+                    ui.add(
+                        egui::DragValue::new(&mut cheats.level)
+                            .range(1..=100)
+                            .speed(1),
+                    );
                     ui.end_row();
 
                     ui.label("Shiny");
@@ -1048,7 +1055,11 @@ impl Workspace {
                     ui.end_row();
 
                     ui.label("Form");
-                    ui.add(egui::DragValue::new(&mut cheats.form).range(0..=9999).speed(1));
+                    ui.add(
+                        egui::DragValue::new(&mut cheats.form)
+                            .range(0..=9999)
+                            .speed(1),
+                    );
                     ui.end_row();
 
                     ui.label("Gender");
@@ -1076,7 +1087,11 @@ impl Workspace {
                     egui::ComboBox::from_id_salt("cheat-ability")
                         .selected_text(ability_label(&cheats.ability, &abilities))
                         .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut cheats.ability, String::new(), "Species default");
+                            ui.selectable_value(
+                                &mut cheats.ability,
+                                String::new(),
+                                "Species default",
+                            );
                             for (id, name) in &abilities {
                                 ui.selectable_value(&mut cheats.ability, id.clone(), name.clone());
                             }
@@ -1100,7 +1115,9 @@ impl Workspace {
                         ui.checkbox(&mut cheats.set_friendship, "Set");
                         ui.add_enabled(
                             cheats.set_friendship,
-                            egui::DragValue::new(&mut cheats.friendship).range(0..=255).speed(1),
+                            egui::DragValue::new(&mut cheats.friendship)
+                                .range(0..=255)
+                                .speed(1),
                         );
                     });
                     ui.end_row();
@@ -1157,8 +1174,8 @@ mod tests {
                 );
                 let context = egui::Context::default();
                 theme::apply(&context);
-                let id = egui::Id::new(if world_map {
-                    "Connected world · actual maps and connections"
+                let id = egui::Id::unique(if world_map {
+                    "essentials-world-map"
                 } else {
                     "essentials-pokedex"
                 });
@@ -1174,13 +1191,15 @@ mod tests {
                         screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, screen)),
                         ..Default::default()
                     };
-                    let _ = context.run(input, |context| {
-                        if world_map {
-                            workspace.draw_world_map_window(context);
-                        } else {
-                            workspace.draw_pokedex_window(context);
-                        }
-                    });
+                    context
+                        .run_pass(input, |context| {
+                            if world_map {
+                                workspace.draw_world_map_window(context);
+                            } else {
+                                workspace.draw_pokedex_window(context);
+                            }
+                        })
+                        .drop_without_applying_deltas();
                     let width = context.memory(|memory| memory.area_rect(id).unwrap().width());
                     if frame == 8 {
                         settled_width = width;
@@ -1253,7 +1272,10 @@ mod tests {
                     )),
                     ..Default::default()
                 };
-                let output = context.run(input, |context| workspace.draw_pokedex_window(context));
+                let mut output =
+                    context.run_pass(input, |context| workspace.draw_pokedex_window(context));
+                let texture_updates = std::mem::take(&mut output.textures_delta.set);
+                output.textures_delta.clear();
                 fn has_text(shape: &egui::Shape, title: &str) -> bool {
                     match shape {
                         egui::Shape::Text(text) => text.galley.text().contains(title),
@@ -1273,7 +1295,10 @@ mod tests {
                     );
                 }
                 if let Ok(directory) = std::env::var("RSXP_POKEDEX_SNAPSHOT") {
-                    for (id, delta) in &output.textures_delta.set {
+                    for (id, delta) in texture_updates
+                        .iter()
+                        .flat_map(|(id, deltas)| deltas.iter().map(move |delta| (id, delta)))
+                    {
                         let egui::TextureId::Managed(id) = id else {
                             continue;
                         };

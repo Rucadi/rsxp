@@ -227,7 +227,7 @@ On the first build it runs `npm ci` if the
 pinned Ruby runtime is missing.
 Use the project's `nix-shell`, or supply Rust's `wasm32-unknown-unknown` target,
 Node/npm, `wasm-ld`, and Binaryen (`wasm-opt`). The build automatically installs and caches
-`wasm-bindgen` **0.2.121** when the matching tool is not on PATH. `WASM_BINDGEN`, `WASM_LD`, and `WASM_OPT` can
+`wasm-bindgen` **0.2.129** when the matching tool is not on PATH. `WASM_BINDGEN`, `WASM_LD`, and `WASM_OPT` can
 select alternative executable paths.
 
 Ruby WASM is a prebuilt upstream dependency, not rebuilt by rsxp. Running

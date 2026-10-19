@@ -38,10 +38,12 @@ pub fn configure() -> Result<(), Box<dyn Error>> {
     let base = exe.parent().ok_or("missing executable directory")?;
     // macOS stores the manifest in Resources so the bundle's MacOS directory
     // holds only signed Mach-O code; other layouts keep it beside the binary.
-    let manifest = [base.join("ruby-runtime.json"),
-                    base.join("../Resources/ruby-runtime.json")]
-        .into_iter()
-        .find(|path| path.is_file());
+    let manifest = [
+        base.join("ruby-runtime.json"),
+        base.join("../Resources/ruby-runtime.json"),
+    ]
+    .into_iter()
+    .find(|path| path.is_file());
     let Some(manifest) = manifest else {
         return Ok(());
     };

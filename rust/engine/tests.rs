@@ -312,7 +312,9 @@ fn graphics_snapshot_recomposites_the_current_scene() {
         ..Default::default()
     };
     runtime.sync_sprite(base_sprite, state(base, 0)).unwrap();
-    runtime.sync_sprite(overlay_sprite, state(overlay, 10)).unwrap();
+    runtime
+        .sync_sprite(overlay_sprite, state(overlay, 10))
+        .unwrap();
     let pixel = |runtime: &mut Runtime, snapshot: u64| -> (i64, i64, i64) {
         let bytes = runtime
             .dispatch(format!("bitmap_get\t{snapshot}\t1\t1\n").as_bytes())

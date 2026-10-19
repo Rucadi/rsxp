@@ -241,10 +241,16 @@ fn kgl_invert_and_compress_alpha_match_reference_values() {
     let mut bitmap = Bitmap::new(1, 1).unwrap();
     bitmap.set_pixel(0, 0, Color::rgba(0x03, 0x02, 0x01, 0xff));
     bitmap.kgl_invert();
-    assert_eq!(bitmap.get_pixel(0, 0), Some(Color::rgba(0xfc, 0xfd, 0xfe, 0xff)));
+    assert_eq!(
+        bitmap.get_pixel(0, 0),
+        Some(Color::rgba(0xfc, 0xfd, 0xfe, 0xff))
+    );
     bitmap.set_pixel(0, 0, Color::rgba(0x80, 0x40, 0x20, 0x80));
     bitmap.kgl_compress_alpha();
-    assert_eq!(bitmap.get_pixel(0, 0), Some(Color::rgba(0x40, 0x20, 0x10, 0x00)));
+    assert_eq!(
+        bitmap.get_pixel(0, 0),
+        Some(Color::rgba(0x40, 0x20, 0x10, 0x00))
+    );
 }
 #[test]
 fn kgl_light_shader_subtracts_and_force_opaque() {
@@ -258,11 +264,19 @@ fn kgl_light_shader_subtracts_and_force_opaque() {
     };
     // mkxp-z tests/kgl2/light.rb tests 1-3.
     assert_eq!(
-        subtract(Color::rgb(0xff, 0xff, 0xff), Color::rgb(0xff, 0xff, 0xff), 255),
+        subtract(
+            Color::rgb(0xff, 0xff, 0xff),
+            Color::rgb(0xff, 0xff, 0xff),
+            255
+        ),
         Color::rgb(0x00, 0x00, 0x00)
     );
     assert_eq!(
-        subtract(Color::rgb(0x03, 0x02, 0x01), Color::rgb(0x01, 0x02, 0x03), 255),
+        subtract(
+            Color::rgb(0x03, 0x02, 0x01),
+            Color::rgb(0x01, 0x02, 0x03),
+            255
+        ),
         Color::rgb(0x02, 0x00, 0x00)
     );
     assert_eq!(

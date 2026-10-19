@@ -2,25 +2,25 @@
 name = "rsxp"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.95"
 license = "GPL-2.0-or-later"
 description = "Native Rust engine for RPG Maker RGSS games"
 
 [dependencies]
 web-time = { version = "1.1", optional = true }
-getrandom = { version = "0.3", optional = true }
+getrandom = { version = "0.4.3", optional = true }
 magnus = { version = "0.9.2", default-features = false, features = ["embed"], optional = true }
-wgpu = { version = "27.0.1", default-features = false, features = ["std", "vulkan", "gles", "metal", "wgsl"], optional = true }
-pollster = { version = "0.4", optional = true }
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "vulkan", "gles", "metal", "wgsl"], optional = true }
+pollster = { version = "1.0.1", optional = true }
 bytemuck = { version = "1", features = ["derive"], optional = true }
-egui = { version = "0.33.3", optional = true }
-egui-wgpu = { version = "0.33.3", default-features = false, optional = true }
-egui-winit = { version = "0.33.3", default-features = false, features = ["wayland", "x11", "clipboard"], optional = true }
+egui = { version = "0.37.0", features = ["default_fonts"], optional = true }
+egui-wgpu = { version = "0.37.0", default-features = false, optional = true }
+egui-winit = { version = "0.37.0", default-features = false, features = ["wayland", "x11", "clipboard"], optional = true }
 fontdue = { version = "0.9", optional = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp"], optional = true }
 kira = { version = "0.12.5", default-features = false, features = ["cpal", "flac", "mp3", "ogg", "pcm", "vorbis", "wav"], optional = true }
 winit = { version = "0.30.13", features = ["rwh_06", "wayland", "x11"], optional = true }
-utoipa = { version = "5.4.0", features = ["macros"], optional = true }
+utoipa = { version = "6.0.0", features = ["macros"], optional = true }
 serde_json = { version = "1", optional = true }
 # Animated GIF decoding for Bitmap animation, shared by every frontend.
 gif = "0.14"

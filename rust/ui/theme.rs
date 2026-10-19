@@ -8,7 +8,7 @@
 //! makes later frames a no-op, so callers may invoke it unconditionally each
 //! frame (`Workspace::draw` does).
 pub(super) fn apply(context: &egui::Context) {
-    let id = egui::Id::new("rsxp-theme-v1");
+    let id = egui::Id::unique("rsxp-theme-v1");
     if context.data_mut(|d| d.get_temp::<bool>(id).unwrap_or(false)) {
         return;
     }
@@ -19,11 +19,32 @@ pub(super) fn apply(context: &egui::Context) {
     visuals.widgets.active.bg_fill = egui::Color32::from_rgb(47, 112, 99);
     visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(49, 59, 70);
     context.set_visuals(visuals);
-    context.style_mut(|style| {
+    context.global_style_mut(|style| {
         style.interaction.selectable_labels = true;
         style.spacing.item_spacing = egui::vec2(9.0, 7.0);
         style.spacing.button_padding = egui::vec2(10.0, 6.0);
         style.spacing.window_margin = egui::Margin::same(16);
     });
     context.data_mut(|d| d.insert_temp(id, true));
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn workspace_fonts_cover_labels_and_accents() {
+        let context = egui::Context::default();
+        context
+            .run_ui(egui::RawInput::default(), |ui| {
+                super::apply(ui.ctx());
+                ui.fonts_mut(|fonts| {
+                    for font in [
+                        egui::FontId::proportional(14.0),
+                        egui::FontId::monospace(14.0),
+                    ] {
+                        assert!(fonts.has_glyphs(&font, "rsxp Pokédex Poción Conexión × · −"));
+                    }
+                });
+            })
+            .drop_without_applying_deltas();
+    }
 }

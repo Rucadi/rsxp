@@ -612,9 +612,13 @@ fn media_demo_reports_animated_gif_metadata() {
     let mut bytes = Vec::new();
     {
         // The encoder borrows `bytes`; drop it before writing the file.
-        let mut encoder =
-            gif::Encoder::new(&mut bytes, 2, 2, &[0, 0, 0, 0xff, 0, 0, 0, 0xff, 0, 0, 0, 0xff])
-                .unwrap();
+        let mut encoder = gif::Encoder::new(
+            &mut bytes,
+            2,
+            2,
+            &[0, 0, 0, 0xff, 0, 0, 0, 0xff, 0, 0, 0, 0xff],
+        )
+        .unwrap();
         encoder.set_repeat(gif::Repeat::Infinite).unwrap();
         for color in 1u8..4 {
             let mut frame = gif::Frame::default();
@@ -626,10 +630,7 @@ fn media_demo_reports_animated_gif_metadata() {
         }
     }
     fs::write(&gif, bytes).unwrap();
-    let script = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/rust/testdata/media_demo.rb"
-    );
+    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/rust/testdata/media_demo.rb");
     let result = Command::new(env!("CARGO_BIN_EXE_rsxp"))
         .args(["run", "--script", script, "--headless", "--frames", "5"])
         .env("RSXP_GIF", &gif)
@@ -649,10 +650,7 @@ fn media_demo_reports_animated_gif_metadata() {
 
 #[test]
 fn kgl2_compatibility_functions_run_headless() {
-    let script = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/rust/testdata/kgl2_smoke.rb"
-    );
+    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/rust/testdata/kgl2_smoke.rb");
     let result = run(&["run", "--script", script, "--headless"]);
     assert!(
         result.status.success(),
@@ -668,10 +666,7 @@ fn kgl2_compatibility_functions_run_headless() {
 
 #[test]
 fn mkxp_compatibility_methods_run_headless() {
-    let script = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/rust/testdata/mkxp_compat.rb"
-    );
+    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/rust/testdata/mkxp_compat.rb");
     let result = run(&["run", "--script", script, "--headless"]);
     assert!(
         result.status.success(),
@@ -1166,10 +1161,21 @@ fn retained_legacy_tilemap_gpu_matches_rebuilt_software() {
 #[test]
 fn legacy_kernel_helpers_remain_callable_after_runtime_definition_or_privatization() {
     let result = run(&[
-        "run", "--script",
-        concat!(env!("CARGO_MANIFEST_DIR"), "/rust/testdata/rgss_kernel_helpers.rb"),
+        "run",
+        "--script",
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/rust/testdata/rgss_kernel_helpers.rb"
+        ),
         "--headless",
     ]);
-    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
-    assert_eq!(String::from_utf8_lossy(&result.stdout).trim(), "KERNEL_GAME_HELPERS_OK");
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&result.stdout).trim(),
+        "KERNEL_GAME_HELPERS_OK"
+    );
 }

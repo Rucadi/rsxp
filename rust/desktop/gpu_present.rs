@@ -101,6 +101,7 @@ impl GpuDisplay {
             height: size.1,
             present_mode: wgpu::PresentMode::AutoNoVsync,
             desired_maximum_frame_latency: 2,
+            color_space: wgpu::SurfaceColorSpace::Auto,
             alpha_mode: caps.alpha_modes[0],
             view_formats: vec![],
         };
@@ -150,8 +151,8 @@ impl GpuDisplay {
             .device
             .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: None,
-                bind_group_layouts: &[&layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&layout)],
+                immediate_size: 0,
             });
         let pipeline = gpu
             .device
@@ -177,7 +178,7 @@ impl GpuDisplay {
                 primitive: Default::default(),
                 depth_stencil: None,
                 multisample: Default::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
         let dimensions = gpu.device.create_buffer(&wgpu::BufferDescriptor {
@@ -282,13 +283,18 @@ impl GpuDisplay {
             self.surface.configure(&gpu.device, &self.config);
         }
         let frame = match self.surface.get_current_texture() {
-            Ok(frame) => frame,
-            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+            wgpu::CurrentSurfaceTexture::Success(frame) => frame,
+            wgpu::CurrentSurfaceTexture::Suboptimal(_) | wgpu::CurrentSurfaceTexture::Outdated => {
                 self.surface.configure(&gpu.device, &self.config);
                 return Ok(Default::default());
             }
-            Err(wgpu::SurfaceError::Timeout) => return Ok(Default::default()),
-            Err(error) => return Err(error.to_string()),
+            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
+                return Ok(Default::default());
+            }
+            wgpu::CurrentSurfaceTexture::Lost => return Err("GPU presentation surface lost".into()),
+            wgpu::CurrentSurfaceTexture::Validation => {
+                return Err("GPU presentation surface validation failed".into());
+            }
         };
 
         self.fps_frames += 1;
@@ -311,7 +317,7 @@ impl GpuDisplay {
         };
         let mut game_rect = egui::Rect::ZERO;
         let mut fullscreen_request = None;
-        let output = context.run(input, |context| {
+        let mut output = context.run_pass(input, |context| {
             let result = self.workspace.draw(context, &workspace_info);
             game_rect = result.game_rect;
             fullscreen_request = result.fullscreen_request;
@@ -374,7 +380,12 @@ impl GpuDisplay {
         }
         let view = frame.texture.create_view(&Default::default());
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
-        for (id, delta) in &output.textures_delta.set {
+        for (id, delta) in output
+            .textures_delta
+            .set
+            .iter()
+            .flat_map(|(id, deltas)| deltas.iter().map(move |delta| (id, delta)))
+        {
             self.egui_renderer
                 .update_texture(&gpu.device, &gpu.queue, *id, delta);
         }
@@ -400,6 +411,7 @@ impl GpuDisplay {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.bound_frame.as_ref().unwrap().1, &[]);
@@ -412,7 +424,8 @@ impl GpuDisplay {
         for id in &output.textures_delta.free {
             self.egui_renderer.free_texture(id);
         }
-        frame.present();
+        output.textures_delta.clear();
+        gpu.queue.present(frame);
         Ok(output.platform_output)
     }
 }

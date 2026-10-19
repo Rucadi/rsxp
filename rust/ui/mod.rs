@@ -48,11 +48,9 @@
 use crate::host::ProfileStats;
 pub mod backend;
 mod connections;
-mod encounters;
 #[cfg(feature = "game-api")]
 mod dex_search;
-#[cfg(feature = "game-api")]
-mod registry_dex;
+mod encounters;
 mod game_view;
 mod inspector;
 mod library;
@@ -62,6 +60,8 @@ mod patches;
 mod performance;
 #[cfg(feature = "game-api")]
 mod pokedex;
+#[cfg(feature = "game-api")]
+mod registry_dex;
 mod saves;
 pub mod session;
 mod theme;
@@ -73,8 +73,12 @@ use image::Pixel;
 /// Contents may wrap/scroll inside a pane but cannot enlarge its parent window.
 #[cfg(feature = "game-api")]
 fn bounded_tool_pane(ui: &mut egui::Ui, id: &str, rect: egui::Rect) -> egui::Ui {
-    let mut pane = ui.new_child(egui::UiBuilder::new().id_salt(id).max_rect(rect)
-        .layout(egui::Layout::top_down(egui::Align::Min)));
+    let mut pane = ui.new_child(
+        egui::UiBuilder::new()
+            .id_salt(id)
+            .max_rect(rect)
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
     pane.set_clip_rect(rect.intersect(ui.clip_rect()));
     pane.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
     pane
@@ -719,16 +723,18 @@ impl Workspace {
 
         let fullscreen = self.is_workspace_fullscreen();
         if !fullscreen && self.panels_top {
-            egui::TopBottomPanel::top("workspace-top-panel")
-                .resizable(true)
-                .default_height(62.0)
-                .show(context, |ui| {
-                    ui.heading("Workspace");
-                    ui.label(format!(
-                        "Game output · {} × {} · F10 toggles profiler",
-                        info.logical_size.0, info.logical_size.1
-                    ));
-                });
+            context.root_ui(|root_ui| {
+                egui::Panel::top("workspace-top-panel")
+                    .resizable(true)
+                    .default_size(62.0)
+                    .show(root_ui, |ui| {
+                        ui.heading("Workspace");
+                        ui.label(format!(
+                            "Game output · {} × {} · F10 toggles profiler",
+                            info.logical_size.0, info.logical_size.1
+                        ));
+                    })
+            });
         }
         if !fullscreen && self.panels_output {
             self.draw_logs(context);
@@ -784,25 +790,27 @@ fn display_json_value(value: &serde_json::Value) -> String {
 }
 
 fn draw_loading(context: &egui::Context, done: u32, total: u32) {
-    egui::CentralPanel::default()
-        .frame(egui::Frame::NONE)
-        .show(context, |ui| {
-            ui.vertical_centered(|ui| {
-                ui.add_space(ui.available_height() * 0.35);
-                ui.heading("Loading game…");
-                ui.add_space(8.0);
-                let fraction = if total == 0 {
-                    0.0
-                } else {
-                    done as f32 / total as f32
-                };
-                ui.add(
-                    egui::ProgressBar::new(fraction)
-                        .desired_width(360.0)
-                        .text(format!("{done} / {total}")),
-                );
-            });
-        });
+    context.root_ui(|root_ui| {
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE)
+            .show(root_ui, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(ui.available_height() * 0.35);
+                    ui.heading("Loading game…");
+                    ui.add_space(8.0);
+                    let fraction = if total == 0 {
+                        0.0
+                    } else {
+                        done as f32 / total as f32
+                    };
+                    ui.add(
+                        egui::ProgressBar::new(fraction)
+                            .desired_width(360.0)
+                            .text(format!("{done} / {total}")),
+                    );
+                });
+            })
+    });
 }
 
 #[cfg(all(test, feature = "game-api"))]
@@ -887,7 +895,9 @@ mod workspace_tests {
             profile: None,
         };
         let mut result = WorkspaceOutput::default();
-        let _ = context.run(input, |context| result = workspace.draw(context, &info));
+        context
+            .run_pass(input, |context| result = workspace.draw(context, &info))
+            .drop_without_applying_deltas();
         result
     }
 
@@ -955,7 +965,10 @@ mod workspace_tests {
         workspace.game_stopped("Ruby crash marker");
         assert!(workspace.controls_visible && workspace.panels_top && workspace.panels_output);
         assert!(workspace.loading.is_none());
-        assert_eq!(workspace.logs.last().map(String::as_str), Some("Ruby crash marker"));
+        assert_eq!(
+            workspace.logs.last().map(String::as_str),
+            Some("Ruby crash marker")
+        );
         draw_frame(&mut workspace, None, false);
         draw_frame(&mut workspace, Some(egui::Key::F1), false);
         assert!(!workspace.controls_visible);
@@ -978,9 +991,10 @@ mod workspace_tests {
             show_profile_details: true,
             profile: None,
         };
-        let output = context.run(egui::RawInput::default(), |context| {
+        let mut output = context.run_pass(egui::RawInput::default(), |context| {
             workspace.draw(context, &info);
         });
+        output.textures_delta.clear();
         fn contains_crash(shape: &egui::Shape) -> bool {
             match shape {
                 egui::Shape::Text(text) => text.galley.text().contains("crash marker"),
@@ -1020,9 +1034,11 @@ mod workspace_tests {
                 )),
                 ..Default::default()
             };
-            let _ = context.run(input, |context| {
-                workspace.draw(context, &info);
-            });
+            context
+                .run_pass(input, |context| {
+                    workspace.draw(context, &info);
+                })
+                .drop_without_applying_deltas();
             assert_eq!(crate::runtime_settings::rate_override(), None);
         }
     }

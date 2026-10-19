@@ -349,7 +349,9 @@ impl Session {
 pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error>> {
     let mut window = Window::new(1100, 740)?;
     window.set_title("rsxp · Game workspace")?;
-    let instance = wgpu::Instance::new(&Default::default());
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(
+        Box::new(window.native()),
+    ));
     let surface = instance.create_surface(window.native())?;
     let mut gpu = rsxp::gpu::GpuRenderer::new_for_surface(640, 480, instance, &surface)?;
     let mut display = GpuDisplay::new(&gpu, surface, window.physical_size())?;
@@ -384,10 +386,10 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
         if !window.poll(&mut input, false) {
             break;
         }
-        if window.egui_context().wants_keyboard_input() {
+        if window.egui_context().egui_wants_keyboard_input() {
             input.release_all();
         }
-        if window.egui_context().wants_pointer_input() {
+        if window.egui_context().egui_wants_pointer_input() {
             for key in -8..0 {
                 input.key_up(key);
             }
@@ -505,7 +507,7 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
             if paused {
                 display.workspace_mut().session.as_mut().unwrap().status = "Paused".into();
             }
-            state.control = json!({"paused":paused,"profiler":display.profiler_visible(),"downs":downs,"ups":ups,"keys":(-8..512).filter(|k| ![58,59,60,61,67,68].contains(k) && input.pressed(*k)).collect::<Vec<_>>(),"x":mouse.x as i32,"y":mouse.y as i32,"inside":!window.egui_context().wants_pointer_input() && input.mouse_inside && mouse.x>=0.0 && mouse.y>=0.0 && mouse.x<logical_size.0 as f32 && mouse.y<logical_size.1 as f32,"scroll":scroll,"text":text,"fast":rsxp::runtime_settings::fast_forward(),"rate":rsxp::runtime_settings::rate_override(),"api":old_api+&api,"patches":rsxp::runtime_patch::patches().iter().map(|p|json!([p.id,rsxp::runtime_patch::is_enabled(&p.id),rsxp::runtime_patch::value(&p.id)])).collect::<Vec<_>>()});
+            state.control = json!({"paused":paused,"profiler":display.profiler_visible(),"downs":downs,"ups":ups,"keys":(-8..512).filter(|k| ![58,59,60,61,67,68].contains(k) && input.pressed(*k)).collect::<Vec<_>>(),"x":mouse.x as i32,"y":mouse.y as i32,"inside":!window.egui_context().egui_wants_pointer_input() && input.mouse_inside && mouse.x>=0.0 && mouse.y>=0.0 && mouse.x<logical_size.0 as f32 && mouse.y<logical_size.1 as f32,"scroll":scroll,"text":text,"fast":rsxp::runtime_settings::fast_forward(),"rate":rsxp::runtime_settings::rate_override(),"api":old_api+&api,"patches":rsxp::runtime_patch::patches().iter().map(|p|json!([p.id,rsxp::runtime_patch::is_enabled(&p.id),rsxp::runtime_patch::value(&p.id)])).collect::<Vec<_>>()});
             if let Some(error) = state.error.take() {
                 display.workspace_mut().session.as_mut().unwrap().error = Some(error);
             }
@@ -548,10 +550,11 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
             rsxp::api_bridge::end_session();
         }
         let context = window.egui_context().clone();
-        if context.wants_keyboard_input() {
+        if context.egui_wants_keyboard_input() {
             input.release_all();
         }
-        let dropped = context.input(|i| i.raw.dropped_files.iter().find_map(|f| f.path.clone()));
+        let dropped =
+            context.input(|i| i.raw.dropped_files.first().map(|f| f.path().to_path_buf()));
         if let Some(path) = dropped {
             let panel = display.workspace_mut().session.as_mut().unwrap();
             panel.source = path.to_string_lossy().into_owned();

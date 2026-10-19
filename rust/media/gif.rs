@@ -34,7 +34,10 @@ pub fn decode(bytes: &[u8]) -> Result<Bitmap, String> {
     let mut frames: Vec<Vec<u32>> = Vec::new();
     let mut delays: Vec<f64> = Vec::new();
     let mut previous: Option<Vec<u32>> = None;
-    while let Some(frame) = decoder.read_next_frame().map_err(|error| error.to_string())? {
+    while let Some(frame) = decoder
+        .read_next_frame()
+        .map_err(|error| error.to_string())?
+    {
         let dispose = frame.dispose;
         if dispose == DisposalMethod::Previous {
             previous = Some(canvas.clone());

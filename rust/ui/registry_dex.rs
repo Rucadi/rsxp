@@ -610,7 +610,7 @@ impl RegistryDex {
         let mut open = true;
         let mut inspect_move = None;
         egui::Window::new(kind.title())
-            .id(egui::Id::new(kind.title()))
+            .id(egui::Id::unique(kind.title()))
             .open(&mut open)
             .default_size(egui::vec2(1100.0, 760.0))
             .min_size(egui::vec2(780.0, 520.0))
@@ -1170,12 +1170,14 @@ mod tests {
                         screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, screen)),
                         ..Default::default()
                     };
-                    let output = context.run(input, |context| {
+                    let mut output = context.run_pass(input, |context| {
                         dex.show(context, &backend, kind);
                     });
+                    let texture_updates = std::mem::take(&mut output.textures_delta.set);
+                    output.textures_delta.clear();
                     let width = context.memory(|memory| {
                         memory
-                            .area_rect(egui::Id::new(kind.title()))
+                            .area_rect(egui::Id::unique(kind.title()))
                             .unwrap()
                             .width()
                     });
@@ -1215,7 +1217,9 @@ mod tests {
                     }
                     if screen.x == 1280.0 {
                         if let Ok(directory) = std::env::var("RSXP_REGISTRY_SNAPSHOT") {
-                            for (id, delta) in &output.textures_delta.set {
+                            for (id, delta) in texture_updates.iter().flat_map(|(id, deltas)| {
+                                deltas.iter().map(move |delta| (id, delta))
+                            }) {
                                 let egui::TextureId::Managed(id) = id else {
                                     continue;
                                 };

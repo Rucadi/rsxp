@@ -36,7 +36,7 @@ use std::{
 
 impl GpuRenderer {
     pub fn new(width: u32, height: u32) -> Result<Self, String> {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         pollster::block_on(Self::initialize(width, height, instance, None))
     }
 
@@ -62,6 +62,7 @@ impl GpuRenderer {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 force_fallback_adapter: false,
                 compatible_surface: surface,
+                ..Default::default()
             })
             .await
             .map_err(|e| e.to_string())?;
@@ -69,7 +70,7 @@ impl GpuRenderer {
         limits.max_storage_buffer_binding_size = adapter
             .limits()
             .max_storage_buffer_binding_size
-            .min(adapter.limits().max_buffer_size.min(512 * 1024 * 1024) as u32);
+            .min(adapter.limits().max_buffer_size.min(512 * 1024 * 1024));
         limits.max_buffer_size = limits
             .max_buffer_size
             .max(u64::from(limits.max_storage_buffer_binding_size));
@@ -84,7 +85,7 @@ impl GpuRenderer {
             })
             .await
             .map_err(|e| e.to_string())?;
-        device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let error_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("RGSS packed-pixel compositor"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
@@ -146,8 +147,8 @@ impl GpuRenderer {
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[&layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
         });
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("RGSS composition"),
@@ -157,7 +158,7 @@ impl GpuRenderer {
             compilation_options: Default::default(),
             cache: None,
         });
-        if let Some(error) = device.pop_error_scope().await {
+        if let Some(error) = error_scope.pop().await {
             return Err(error.to_string());
         }
         let atlas = device.create_buffer(&wgpu::BufferDescriptor {

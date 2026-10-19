@@ -633,14 +633,8 @@ impl Runtime {
                 };
                 #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
                 {
-                    image::save_buffer(
-                        path,
-                        &rgba,
-                        width,
-                        height,
-                        image::ExtendedColorType::Rgba8,
-                    )
-                    .map_err(|error| error.to_string())?;
+                    image::save_buffer(path, &rgba, width, height, image::ExtendedColorType::Rgba8)
+                        .map_err(|error| error.to_string())?;
                 }
                 #[cfg(not(all(feature = "game-api", not(target_arch = "wasm32"))))]
                 {

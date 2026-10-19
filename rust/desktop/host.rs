@@ -115,7 +115,9 @@ impl DesktopHost {
                 Some(Window::new(width, height)?)
             };
             let (gpu, display) = if let Some(window) = &window {
-                let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+                let instance = wgpu::Instance::new(
+                    wgpu::InstanceDescriptor::new_with_display_handle(Box::new(window.native())),
+                );
                 let surface = instance
                     .create_surface(window.native())
                     .map_err(|error| error.to_string())?;

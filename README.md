@@ -11,7 +11,7 @@ game or its plugins will run. See [runtime behavior and compatibility](docs/rust
 
 ## Build and launch
 
-The root package requires Rust 1.88 or newer. Default Cargo features are
+The root package requires Rust 1.95 or newer. Default Cargo features are
 `desktop` and `gpu`. Desktop builds need shared MRI Ruby and development headers,
 a C compiler, libclang and the platform audio/window dependencies. Ruby and its
 standard libraries, including Zlib, must be available. The Nix development shell

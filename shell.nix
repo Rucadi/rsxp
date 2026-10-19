@@ -14,6 +14,7 @@ pkgs.mkShell {
     pkgs.rustc
     pkgs.rustfmt
     pkgs.clippy
+    pkgs.rustfmt
     pkgs.wasm-bindgen-cli
     pkgs.binaryen
     pkgs.lld

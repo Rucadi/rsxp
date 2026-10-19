@@ -119,7 +119,10 @@ impl EncounterCheats {
         self.form = number(data, "form") as i32;
         self.gender.clear();
         self.nature.clear();
-        self.ability = species_abilities(data).first().map(|(id, _)| id.clone()).unwrap_or_default();
+        self.ability = species_abilities(data)
+            .first()
+            .map(|(id, _)| id.clone())
+            .unwrap_or_default();
         self.item.clear();
         self.max_ivs = false;
         self.set_friendship = false;
@@ -130,9 +133,9 @@ impl EncounterCheats {
 }
 
 const NATURES: [&str; 25] = [
-    "HARDY", "LONELY", "BRAVE", "ADAMANT", "NAUGHTY", "BOLD", "DOCILE", "RELAXED", "IMPISH",
-    "LAX", "TIMID", "HASTY", "SERIOUS", "JOLLY", "NAIVE", "MODEST", "MILD", "QUIET", "BASHFUL",
-    "RASH", "CALM", "GENTLE", "SASSY", "CAREFUL", "QUIRKY",
+    "HARDY", "LONELY", "BRAVE", "ADAMANT", "NAUGHTY", "BOLD", "DOCILE", "RELAXED", "IMPISH", "LAX",
+    "TIMID", "HASTY", "SERIOUS", "JOLLY", "NAIVE", "MODEST", "MILD", "QUIET", "BASHFUL", "RASH",
+    "CALM", "GENTLE", "SASSY", "CAREFUL", "QUIRKY",
 ];
 
 /// Reads a game ID that may be a string (newer Essentials) or a number (older PBS data).
@@ -1040,7 +1043,11 @@ impl Workspace {
                 .spacing([20.0, 10.0])
                 .show(ui, |ui| {
                     ui.label("Level");
-                    ui.add(egui::DragValue::new(&mut cheats.level).range(1..=100).speed(1));
+                    ui.add(
+                        egui::DragValue::new(&mut cheats.level)
+                            .range(1..=100)
+                            .speed(1),
+                    );
                     ui.end_row();
 
                     ui.label("Shiny");
@@ -1048,7 +1055,11 @@ impl Workspace {
                     ui.end_row();
 
                     ui.label("Form");
-                    ui.add(egui::DragValue::new(&mut cheats.form).range(0..=9999).speed(1));
+                    ui.add(
+                        egui::DragValue::new(&mut cheats.form)
+                            .range(0..=9999)
+                            .speed(1),
+                    );
                     ui.end_row();
 
                     ui.label("Gender");
@@ -1076,7 +1087,11 @@ impl Workspace {
                     egui::ComboBox::from_id_salt("cheat-ability")
                         .selected_text(ability_label(&cheats.ability, &abilities))
                         .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut cheats.ability, String::new(), "Species default");
+                            ui.selectable_value(
+                                &mut cheats.ability,
+                                String::new(),
+                                "Species default",
+                            );
                             for (id, name) in &abilities {
                                 ui.selectable_value(&mut cheats.ability, id.clone(), name.clone());
                             }
@@ -1100,7 +1115,9 @@ impl Workspace {
                         ui.checkbox(&mut cheats.set_friendship, "Set");
                         ui.add_enabled(
                             cheats.set_friendship,
-                            egui::DragValue::new(&mut cheats.friendship).range(0..=255).speed(1),
+                            egui::DragValue::new(&mut cheats.friendship)
+                                .range(0..=255)
+                                .speed(1),
                         );
                     });
                     ui.end_row();

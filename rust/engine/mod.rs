@@ -31,10 +31,10 @@ mod commands;
 mod frame;
 pub mod host;
 pub mod input;
+pub mod map_chunks;
 #[cfg(feature = "gpu")]
 mod render_gpu;
 mod render_software;
-pub mod map_chunks;
 pub mod retained_map;
 mod scene;
 #[cfg(test)]
@@ -360,6 +360,72 @@ pub struct SpriteMotion {
 }
 
 impl Runtime {
+    /// Runs one frame on the shared engine render path.
+    pub fn tick(&mut self) -> Result<(), String> {
+        self.update_frame()
+    }
+
+    /// Creates a bitmap that can be used by small native frontends and tests.
+    pub fn create_bitmap(&mut self, width: u32, height: u32) -> Result<u64, String> {
+        let bitmap = Bitmap::new(width, height).map_err(|e| e.to_string())?;
+        let id = self.id();
+        self.bitmaps.insert(id, bitmap);
+        Ok(id)
+    }
+
+    /// Fills an engine-owned bitmap with a solid color.
+    pub fn fill_bitmap(&mut self, id: u64, color: Color) -> Result<(), String> {
+        self.bitmaps
+            .get_mut(&id)
+            .ok_or_else(|| "disposed bitmap".to_string())?
+            .clear(color);
+        Ok(())
+    }
+
+    /// Adds a sprite to the engine scene using an existing bitmap.
+    pub fn create_sprite(&mut self, bitmap: u64, x: i32, y: i32, z: i32) -> Result<u64, String> {
+        let src = self.bitmaps.get(&bitmap).ok_or("disposed bitmap")?.rect();
+        let id = self.id();
+        let order = id;
+        self.sprites.insert(
+            id,
+            RuntimeSprite {
+                #[cfg(feature = "gpu")]
+                native_tile: false,
+                state: SpriteState {
+                    clip: self.target.rect(),
+                    bitmap,
+                    src,
+                    x: x as f64,
+                    y: y as f64,
+                    z,
+                    opacity: 255,
+                    visible: true,
+                    zoom_x: 1.0,
+                    zoom_y: 1.0,
+                    ..SpriteState::default()
+                },
+                world: None,
+                order,
+            },
+        );
+        self.invalidate_scene();
+        Ok(id)
+    }
+
+    /// Presents the current software framebuffer through the host.
+    pub fn present_current(&mut self) -> Result<(), String> {
+        self.host.present(&self.target)
+    }
+
+    /// Resize the logical render target after a platform surface change.
+    pub fn resize(&mut self, width: u32, height: u32) -> Result<(), String> {
+        let width = width.clamp(1, 8192);
+        let height = height.clamp(1, 8192);
+        self.target = Bitmap::new(width, height).map_err(|e| e.to_string())?;
+        self.host.resize(width, height)
+    }
+
     pub fn update_native_tiles(&mut self, updates: &[NativeTileUpdate], hidden: &[u64]) {
         for tile in updates {
             if let Some(sprite) = self.sprites.get_mut(&tile.id) {

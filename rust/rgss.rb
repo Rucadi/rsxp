@@ -124,6 +124,329 @@ module RSXP
     end
   end
 
+  # Android's Storage Access Framework grants a content:// tree URI, not a
+  # POSIX path. Route game reads and directory queries through the native Host
+  # bridge while keeping writes in the app-private per-game working directory.
+  if ENV['RSXP_SAF_FILES'] == '1'
+    require 'stringio'
+    module RSXP
+      SAF_SAVE_ROOT = File.expand_path(ENV.fetch('RSXP_GAME_SAVE_ROOT')).freeze
+
+      def self.saf_relative(path)
+        path = path.to_path if path.respond_to?(:to_path)
+        return nil unless path.is_a?(String) && !path.include?("\0")
+        absolute = File.expand_path(path.tr('\\', '/'))
+        prefix = SAF_SAVE_ROOT.sub(%r{/+$}, '')
+        return '' if absolute == prefix
+        return nil unless absolute.start_with?(prefix + '/')
+        relative = absolute.delete_prefix(prefix + '/')
+        return nil if relative.split('/').any? { |part| part == '..' }
+        relative
+      rescue ArgumentError, SystemCallError
+        nil
+      end
+
+      def self.saf_native(op, path)
+        __rsxp_native((op + "\n" + path).b)
+      end
+
+      def self.saf_file?(path)
+        saf_native('exists', path) == '1'
+      rescue StandardError
+        false
+      end
+
+      def self.saf_directory?(path)
+        saf_native('is_dir', path) == '1'
+      rescue StandardError
+        false
+      end
+
+      def self.saf_read(path)
+        saf_native('read', path)
+      rescue StandardError
+        nil
+      end
+
+      def self.saf_children(path)
+        remote = saf_native('list', path).split("\0")
+        local_path = path.empty? ? SAF_SAVE_ROOT : File.join(SAF_SAVE_ROOT, path)
+        local = if __rsxp_saf_real_directory?(local_path)
+          __rsxp_saf_real_children(local_path)
+        else
+          []
+        end
+        seen = {}
+        (remote + local).each_with_object([]) do |name, result|
+          key = name.downcase(:fold)
+          next if seen[key]
+          seen[key] = true
+          result << name
+        end
+      rescue StandardError
+        []
+      end
+
+      def self.saf_glob(pattern, flags = 0)
+        parts = pattern.split('/').reject(&:empty?)
+        walk = lambda do |directory, index|
+          if index >= parts.length
+            [directory]
+          elsif parts[index] == '**'
+            result = walk.call(directory, index + 1)
+            saf_children(directory).each do |name|
+              child = [directory, name].reject(&:empty?).join('/')
+              result.concat(walk.call(child, index)) if saf_directory?(child)
+            end
+            result
+          else
+            matcher = parts[index]
+            saf_children(directory).each_with_object([]) do |name, result|
+              next unless File.fnmatch?(matcher, name, flags | File::FNM_CASEFOLD)
+              child = [directory, name].reject(&:empty?).join('/')
+              if index == parts.length - 1
+                result << child
+              elsif saf_directory?(child)
+                result.concat(walk.call(child, index + 1))
+              end
+            end
+          end
+        end
+        walk.call('', 0)
+      end
+
+      class << self
+        alias_method :__rsxp_local_case_insensitive_path, :case_insensitive_path
+        def case_insensitive_path(path)
+          if (relative = saf_relative(path))
+            return path if saf_file?(relative) || saf_directory?(relative)
+          end
+          __rsxp_local_case_insensitive_path(path)
+        end
+      end
+    end
+
+    class << File
+      alias_method :__rsxp_saf_real_open, :open
+      alias_method :__rsxp_saf_real_read, :read
+      alias_method :__rsxp_saf_real_binread, :binread
+      alias_method :__rsxp_saf_real_binwrite, :binwrite
+      alias_method :__rsxp_saf_real_file?, :file?
+      alias_method :__rsxp_saf_real_directory?, :directory?
+      alias_method :__rsxp_saf_real_size, :size
+      alias_method :__rsxp_saf_real_mtime, :mtime
+      alias_method :__rsxp_saf_real_ctime, :ctime
+      alias_method :__rsxp_saf_real_atime, :atime
+
+      def open(path, *args, **kwargs, &block)
+        relative = RSXP.saf_relative(path)
+        mode = kwargs[:mode] || args.first || 'r'
+        reading = mode.is_a?(String) && mode.start_with?('r') && !mode.match?(/[wa+]/)
+        if relative && reading
+          local = File.join(RSXP::SAF_SAVE_ROOT, relative)
+          if __rsxp_saf_real_file?(local)
+            return __rsxp_saf_real_open(local, *args, **kwargs, &block)
+          end
+          bytes = RSXP.saf_read(relative)
+          raise Errno::ENOENT, path.to_s if bytes.nil?
+          io = StringIO.new(bytes)
+          io.set_encoding(kwargs[:encoding]) if kwargs[:encoding]
+          return io unless block
+          begin
+            return block.call(io)
+          ensure
+            io.close
+          end
+        end
+        if relative && mode.is_a?(String) && mode.match?(/[a+]/)
+          local = File.join(RSXP::SAF_SAVE_ROOT, relative)
+          unless __rsxp_saf_real_file?(local)
+            bytes = RSXP.saf_read(relative)
+            if bytes
+              require 'fileutils'
+              FileUtils.mkdir_p(File.dirname(local))
+              __rsxp_saf_real_binwrite(local, bytes)
+            end
+          end
+          return __rsxp_saf_real_open(local, *args, **kwargs, &block)
+        end
+        __rsxp_saf_real_open(path, *args, **kwargs, &block)
+      end
+
+      def read(path, *args, **kwargs)
+        relative = RSXP.saf_relative(path)
+        if relative
+          local = File.join(RSXP::SAF_SAVE_ROOT, relative)
+          return __rsxp_saf_real_read(local, *args, **kwargs) if __rsxp_saf_real_file?(local)
+          bytes = RSXP.saf_read(relative)
+          return StringIO.new(bytes).read(*args, **kwargs) unless bytes.nil?
+        end
+        __rsxp_saf_real_read(path, *args, **kwargs)
+      end
+
+      def binread(path, *args, **kwargs)
+        relative = RSXP.saf_relative(path)
+        if relative
+          local = File.join(RSXP::SAF_SAVE_ROOT, relative)
+          return __rsxp_saf_real_binread(local, *args, **kwargs) if __rsxp_saf_real_file?(local)
+          bytes = RSXP.saf_read(relative)
+          return StringIO.new(bytes).read(*args, **kwargs) unless bytes.nil?
+        end
+        __rsxp_saf_real_binread(path, *args, **kwargs)
+      end
+
+      def foreach(path, *args, **kwargs, &block)
+        return enum_for(:foreach, path, *args, **kwargs) unless block
+        relative = RSXP.saf_relative(path)
+        if relative
+          local = File.join(RSXP::SAF_SAVE_ROOT, relative)
+          if __rsxp_saf_real_file?(local)
+            return __rsxp_saf_real_open(local, 'r', **kwargs) { |io| io.each_line(*args, &block) }
+          end
+          bytes = RSXP.saf_read(relative)
+          return StringIO.new(bytes).each_line(*args, &block) unless bytes.nil?
+        end
+        __rsxp_saf_real_open(path, 'r', **kwargs) { |io| io.each_line(*args, &block) }
+      end
+
+      def readlines(path, *args, **kwargs)
+        open(path, 'r', **kwargs) { |io| io.readlines(*args) }
+      end
+
+      def exist?(path)
+        return true if FileTest.__rsxp_case_sensitive_exist?(path)
+        relative = RSXP.saf_relative(path)
+        relative ? (RSXP.saf_file?(relative) || RSXP.saf_directory?(relative)) : false
+      end
+      alias_method :exists?, :exist?
+
+      def file?(path)
+        return true if __rsxp_saf_real_file?(path)
+        relative = RSXP.saf_relative(path)
+        relative ? RSXP.saf_file?(relative) : false
+      end
+
+      def directory?(path)
+        return true if __rsxp_saf_real_directory?(path)
+        relative = RSXP.saf_relative(path)
+        relative ? RSXP.saf_directory?(relative) : false
+      end
+
+      def size(path)
+        relative = RSXP.saf_relative(path)
+        if relative && !__rsxp_saf_real_file?(path)
+          bytes = RSXP.saf_read(relative)
+          return bytes.bytesize unless bytes.nil?
+        end
+        __rsxp_saf_real_size(path)
+      end
+      alias_method :size?, :size
+
+      def mtime(path)
+        relative = RSXP.saf_relative(path)
+        return __rsxp_saf_real_mtime(path) unless relative && !__rsxp_saf_real_file?(path)
+        raise Errno::ENOENT, path.to_s unless RSXP.saf_file?(relative)
+        Time.at(0)
+      end
+
+      def ctime(path)
+        relative = RSXP.saf_relative(path)
+        return __rsxp_saf_real_ctime(path) unless relative && !__rsxp_saf_real_file?(path)
+        raise Errno::ENOENT, path.to_s unless RSXP.saf_file?(relative)
+        Time.at(0)
+      end
+
+      def atime(path)
+        relative = RSXP.saf_relative(path)
+        return __rsxp_saf_real_atime(path) unless relative && !__rsxp_saf_real_file?(path)
+        raise Errno::ENOENT, path.to_s unless RSXP.saf_file?(relative)
+        Time.at(0)
+      end
+    end
+
+    module FileTest
+      class << self
+        def exist?(path) = File.exist?(path)
+        def exists?(path) = File.exist?(path)
+        def file?(path) = File.file?(path)
+        def directory?(path) = File.directory?(path)
+        def size(path) = File.size(path)
+      end
+    end
+
+    class << Dir
+      alias_method :__rsxp_saf_real_children, :children
+      alias_method :__rsxp_saf_real_entries, :entries
+      alias_method :__rsxp_saf_real_foreach, :foreach
+      alias_method :__rsxp_saf_real_glob, :glob
+      alias_method :__rsxp_saf_real_directory?, :exist?
+      alias_method :__rsxp_saf_real_chdir, :chdir
+
+      def children(path = '.', **kwargs)
+        relative = RSXP.saf_relative(path)
+        return RSXP.saf_children(relative) if relative
+        __rsxp_saf_real_children(path, **kwargs)
+      end
+
+      def entries(path = '.', **kwargs)
+        relative = RSXP.saf_relative(path)
+        return ['.', '..'] + RSXP.saf_children(relative) if relative
+        __rsxp_saf_real_entries(path, **kwargs)
+      end
+
+      def foreach(path, **kwargs, &block)
+        return enum_for(:foreach, path, **kwargs) unless block
+        entries(path, **kwargs).each(&block)
+        nil
+      end
+
+      def exist?(path)
+        return true if __rsxp_saf_real_directory?(path)
+        relative = RSXP.saf_relative(path)
+        relative ? RSXP.saf_directory?(relative) : false
+      end
+      alias_method :exists?, :exist?
+
+      def chdir(path = '.', &block)
+        relative = RSXP.saf_relative(path)
+        if relative && RSXP.saf_directory?(relative)
+          local = relative.empty? ? RSXP::SAF_SAVE_ROOT : File.join(RSXP::SAF_SAVE_ROOT, relative)
+          require 'fileutils'
+          FileUtils.mkdir_p(local)
+          return __rsxp_saf_real_chdir(local, &block)
+        end
+        __rsxp_saf_real_chdir(path, &block)
+      end
+
+      def glob(pattern, *args, **kwargs, &block)
+        if pattern.is_a?(String) && (relative = RSXP.saf_relative(pattern))
+          matches = RSXP.saf_glob(relative, args.first || 0).map do |entry|
+            pattern.start_with?('/') ? File.join(RSXP::SAF_SAVE_ROOT, entry) : entry
+          end
+          if block
+            matches.each(&block)
+            return nil
+          end
+          return matches
+        end
+        __rsxp_saf_real_glob(pattern, *args, **kwargs, &block)
+      end
+    end
+
+    module Kernel
+      alias_method :__rsxp_saf_real_load, :load
+      def load(path, wrap = false)
+        relative = RSXP.saf_relative(path)
+        bytes = relative && RSXP.saf_read(relative)
+        return __rsxp_saf_real_load(path, wrap) if bytes.nil?
+        filename = File.expand_path(path)
+        binding = wrap ? Module.new.module_eval { binding } : TOPLEVEL_BINDING
+        eval(bytes.force_encoding(Encoding::UTF_8), binding, filename, 1)
+        true
+      end
+    end
+  end
+
   # Some games reopen WeakRef with a Ruby 1.8 implementation. Keep the engine's
   # resource registry on the interpreter's GC-aware implementation.
   ResourceRef = WeakRef.dup

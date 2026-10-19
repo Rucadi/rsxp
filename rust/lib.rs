@@ -39,20 +39,34 @@
 //! shared egui workspace; `gpu` enables `ui` plus the device compositor;
 //! `game-api` enables the command bridge; `api-docs` enables the code-first
 //! OpenAPI schema used by the `rsxp-mcp` binary.
+extern crate self as rsxp;
+#[cfg(all(target_os = "android", feature = "android"))]
+mod android;
+#[cfg(all(target_os = "android", feature = "android"))]
+mod android_saf;
 #[cfg(feature = "game-api")]
 pub mod api_bridge;
+#[cfg(all(target_os = "android", feature = "android"))]
+#[path = "bindings/mod.rs"]
+mod bindings;
 #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
 pub mod cable_club;
 #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
 pub mod cable_unmod;
 pub mod controls;
 pub mod data;
+#[cfg(all(target_os = "android", feature = "android"))]
+#[path = "desktop/media.rs"]
+mod desktop_media;
 pub mod engine;
 #[cfg(feature = "gpu")]
 pub mod gpu;
 pub mod graphics;
 pub mod media;
 pub mod patches;
+#[cfg(all(target_os = "android", feature = "android"))]
+#[path = "android_runtime.rs"]
+mod runtime;
 pub mod runtime_settings;
 /// Shared egui workspace used by both the native and browser frontends.
 #[cfg(feature = "ui")]

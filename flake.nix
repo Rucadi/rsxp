@@ -65,6 +65,7 @@
         let pkgs = import nixpkgs { inherit system; };
         in {
           default = import ./shell.nix { inherit pkgs; };
+          android = import ./shell-droid.nix { inherit pkgs; };
         });
 
       formatter = eachSystem (linuxSystems ++ darwinSystems) (system: nixpkgs.legacyPackages.${system}.nixfmt);

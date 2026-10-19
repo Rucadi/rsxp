@@ -85,3 +85,12 @@ pokemonz
 
 # Default standalone player export
 /player.html
+
+# Android Gradle and native build outputs
+/android/build/
+/android/.gradle/
+/android/app/build/
+/android/app/src/main/jniLibs/
+/android/local.properties
+/android/ruby-build/
+/android/ruby/

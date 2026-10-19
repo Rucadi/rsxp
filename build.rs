@@ -10,6 +10,12 @@
 use std::{env, path::PathBuf};
 
 fn main() {
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("android") {
+        // The Android CRuby build includes its zlib extension in the static
+        // archive; explicitly link the platform zlib after libruby so those
+        // extension references are resolved in the NativeActivity library.
+        println!("cargo:rustc-link-lib=z");
+    }
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     for version in 1..=3 {
         let path = format!("binding/module_rpg{version}.rb.xxd");

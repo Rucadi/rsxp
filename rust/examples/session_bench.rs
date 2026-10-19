@@ -83,7 +83,10 @@ end
         .env("RSXP_SESSION_ADDR", listener.local_addr()?.to_string())
         .env("RSXP_SESSION_TOKEN", "local-benchmark")
         .env("RSXP_API", "0")
-        .env("RSXP_PROFILE",std::env::var("RSXP_PROFILE").unwrap_or_else(|_|"0".into()))
+        .env(
+            "RSXP_PROFILE",
+            std::env::var("RSXP_PROFILE").unwrap_or_else(|_| "0".into()),
+        )
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;

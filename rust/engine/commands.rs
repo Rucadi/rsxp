@@ -195,7 +195,15 @@ impl Runtime {
             }
             "exists" => {
                 let path = std::str::from_utf8(payload).map_err(|_| "asset path must be UTF-8")?;
-                return Ok(text(u8::from(self.asset(path).is_ok())));
+                return Ok(text(u8::from(self.asset_exists(path))));
+            }
+            "is_dir" => {
+                let path = std::str::from_utf8(payload).map_err(|e| e.to_string())?;
+                return Ok(text(u8::from(self.asset_is_dir(path))));
+            }
+            "list" => {
+                let path = std::str::from_utf8(payload).map_err(|e| e.to_string())?;
+                return Ok(self.asset_directory(path).join("\0").into_bytes());
             }
             "graphics_size" => {
                 return Ok(text(format!(
@@ -633,14 +641,8 @@ impl Runtime {
                 };
                 #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
                 {
-                    image::save_buffer(
-                        path,
-                        &rgba,
-                        width,
-                        height,
-                        image::ExtendedColorType::Rgba8,
-                    )
-                    .map_err(|error| error.to_string())?;
+                    image::save_buffer(path, &rgba, width, height, image::ExtendedColorType::Rgba8)
+                        .map_err(|error| error.to_string())?;
                 }
                 #[cfg(not(all(feature = "game-api", not(target_arch = "wasm32"))))]
                 {

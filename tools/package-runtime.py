@@ -149,13 +149,22 @@ MINGW_RUNTIME_DLLS = (
 
 def windows_dependencies(executable, ruby):
     destination = executable.parent
+    # `x64-ucrt-ruby340.dll` embeds a side-by-side manifest that depends on the
+    # `ruby_builtin_dlls` assembly, which Windows resolves from a sibling
+    # directory of the same name holding the assembly manifest and its DLLs.
+    # Copy that directory verbatim: without it the loader cannot generate an
+    # activation context and every launch dies with STATUS_SXS_CANT_GEN_ACTCTX
+    # (0xC0150002) before the program's entry point runs.
+    builtin_dlls = Path(ruby["bin"]) / "ruby_builtin_dlls"
+    if builtin_dlls.is_dir():
+        shutil.copytree(builtin_dlls, destination / "ruby_builtin_dlls")
     # Prefer the MinGW PE-aware objdump over whatever else is on PATH.
     objdump = shutil.which("x86_64-w64-mingw32-objdump") or shutil.which("objdump")
     if objdump is None:
         raise RuntimeError("objdump is required to bundle Windows DLLs")
     compiler = shutil.which("x86_64-w64-mingw32-gcc") or shutil.which("gcc")
     toolchain = Path(compiler).parent if compiler else None
-    search = [Path(ruby["bin"])]
+    search = [Path(ruby["bin"]), builtin_dlls]
     if toolchain is not None:
         search.append(toolchain)
     search += [Path(p) for p in os.environ["PATH"].split(os.pathsep)]

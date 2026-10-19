@@ -48,11 +48,9 @@
 use crate::host::ProfileStats;
 pub mod backend;
 mod connections;
-mod encounters;
 #[cfg(feature = "game-api")]
 mod dex_search;
-#[cfg(feature = "game-api")]
-mod registry_dex;
+mod encounters;
 mod game_view;
 mod inspector;
 mod library;
@@ -62,6 +60,8 @@ mod patches;
 mod performance;
 #[cfg(feature = "game-api")]
 mod pokedex;
+#[cfg(feature = "game-api")]
+mod registry_dex;
 mod saves;
 pub mod session;
 mod theme;
@@ -73,8 +73,12 @@ use image::Pixel;
 /// Contents may wrap/scroll inside a pane but cannot enlarge its parent window.
 #[cfg(feature = "game-api")]
 fn bounded_tool_pane(ui: &mut egui::Ui, id: &str, rect: egui::Rect) -> egui::Ui {
-    let mut pane = ui.new_child(egui::UiBuilder::new().id_salt(id).max_rect(rect)
-        .layout(egui::Layout::top_down(egui::Align::Min)));
+    let mut pane = ui.new_child(
+        egui::UiBuilder::new()
+            .id_salt(id)
+            .max_rect(rect)
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
     pane.set_clip_rect(rect.intersect(ui.clip_rect()));
     pane.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
     pane
@@ -955,7 +959,10 @@ mod workspace_tests {
         workspace.game_stopped("Ruby crash marker");
         assert!(workspace.controls_visible && workspace.panels_top && workspace.panels_output);
         assert!(workspace.loading.is_none());
-        assert_eq!(workspace.logs.last().map(String::as_str), Some("Ruby crash marker"));
+        assert_eq!(
+            workspace.logs.last().map(String::as_str),
+            Some("Ruby crash marker")
+        );
         draw_frame(&mut workspace, None, false);
         draw_frame(&mut workspace, Some(egui::Key::F1), false);
         assert!(!workspace.controls_visible);

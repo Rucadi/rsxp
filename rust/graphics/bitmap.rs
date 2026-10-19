@@ -265,14 +265,10 @@ impl Bitmap {
     }
     /// Whether this bitmap has more than one frame and can animate.
     pub fn animated(&self) -> bool {
-        self.animation
-            .as_ref()
-            .is_some_and(|a| a.frames.len() > 1)
+        self.animation.as_ref().is_some_and(|a| a.frames.len() > 1)
     }
     pub fn frame_count(&self) -> u32 {
-        self.animation
-            .as_ref()
-            .map_or(1, |a| a.frames.len() as u32)
+        self.animation.as_ref().map_or(1, |a| a.frames.len() as u32)
     }
     pub fn current_frame(&self) -> u32 {
         self.animation.as_ref().map_or(0, |a| a.index as u32)
@@ -670,7 +666,8 @@ fn source_over(destination: u32, source: Color) -> u32 {
     if alpha == 0 {
         return 0;
     }
-    let channel = |s: u8, d: u8| ((u32::from(s) * source_alpha + u32::from(d) * back) / alpha) as u8;
+    let channel =
+        |s: u8, d: u8| ((u32::from(s) * source_alpha + u32::from(d) * back) / alpha) as u8;
     Color::rgba(
         channel(source.red, destination.red),
         channel(source.green, destination.green),
@@ -685,13 +682,7 @@ impl Bitmap {
     fn lerp_channel(a: u8, b: u8, t: f64) -> u8 {
         (f64::from(a) + (f64::from(b) - f64::from(a)) * t).round() as u8
     }
-    pub fn gradient_fill_rect(
-        &mut self,
-        rect: Rect,
-        color1: Color,
-        color2: Color,
-        vertical: bool,
-    ) {
+    pub fn gradient_fill_rect(&mut self, rect: Rect, color1: Color, color2: Color, vertical: bool) {
         self.touch();
         let (x0, y0, x1, y1) = self.clipped(rect);
         if x0 >= x1 || y0 >= y1 {
@@ -748,7 +739,8 @@ impl Bitmap {
                     }
                 }
                 self.pixels[(y * w + x) as usize] =
-                    Color::rgba((r / n) as u8, (g / n) as u8, (b / n) as u8, (a / n) as u8).packed();
+                    Color::rgba((r / n) as u8, (g / n) as u8, (b / n) as u8, (a / n) as u8)
+                        .packed();
             }
         }
     }
@@ -787,7 +779,8 @@ impl Bitmap {
                 }
                 let n = divisions as u32;
                 self.pixels[(y * w + x) as usize] =
-                    Color::rgba((r / n) as u8, (g / n) as u8, (b / n) as u8, (a / n) as u8).packed();
+                    Color::rgba((r / n) as u8, (g / n) as u8, (b / n) as u8, (a / n) as u8)
+                        .packed();
             }
         }
     }

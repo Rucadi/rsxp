@@ -28,6 +28,12 @@ gif = "0.14"
 ogg = "0.9"
 theora-rs = "0.1"
 gilrs = { version = "0.11.2", optional = true }
+# Android activity glue for the lightweight native frontend.
+android-activity = { version = "0.6", features = ["native-activity"], optional = true }
+ndk = { version = "0.9", optional = true }
+android_logger = { package = "android_logger", version = "0.14", optional = true }
+log = { version = "0.4", optional = true }
+jni = { version = "0.22", optional = true }
 
 [features]
 default = ["desktop", "gpu"]
@@ -45,9 +51,11 @@ api-docs = ["dep:utoipa"]
 # target them explicitly:
 #   cargo test --features game-tests --test game-tests
 game-tests = ["desktop"]
+android = ["dep:android-activity", "dep:ndk", "dep:image", "dep:android_logger", "dep:log", "dep:magnus", "dep:fontdue", "dep:jni"]
 
 [lib]
 path = "rust/lib.rs"
+crate-type = ["rlib", "cdylib"]
 
 [[bin]]
 name = "rsxp"

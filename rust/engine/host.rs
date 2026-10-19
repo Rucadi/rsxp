@@ -110,6 +110,18 @@ pub trait Host {
     /// Read a loose game file (case-insensitive on platforms that need it).
     /// Returns `None` when the file does not exist.
     fn read_file(&self, path: &str) -> Option<Vec<u8>>;
+    /// Whether a loose game file exists without reading its contents.
+    fn file_exists(&self, _path: &str) -> Option<bool> {
+        None
+    }
+    /// Whether a loose game path is a directory.
+    fn is_dir(&self, _path: &str) -> Option<bool> {
+        None
+    }
+    /// Immediate child names of a loose game directory.
+    fn read_dir(&self, _path: &str) -> Option<Vec<String>> {
+        None
+    }
     /// Decode an image from its raw bytes.
     fn image(&self, bytes: &[u8]) -> Result<Bitmap, String>;
     /// Measure (render == false) or rasterize (render == true) a line of text.

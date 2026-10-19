@@ -36,6 +36,78 @@ impl Runtime {
         }
         Err(format!("asset not found: {name}"))
     }
+
+    /// Fast loose-file existence check with encrypted-archive fallback.
+    pub fn asset_exists(&self, name: &str) -> bool {
+        let normalized = name.replace('\\', "/");
+        if self
+            .host
+            .file_exists(&normalized)
+            .unwrap_or_else(|| self.host.read_file(&normalized).is_some())
+        {
+            return true;
+        }
+        self.archives.iter().any(|bytes| {
+            Archive::parse(bytes).is_ok_and(|archive| {
+                archive
+                    .entries()
+                    .iter()
+                    .any(|entry| entry.name.eq_ignore_ascii_case(normalized.as_bytes()))
+            })
+        })
+    }
+
+    /// Lists immediate game-folder children and archive-backed virtual paths.
+    pub fn asset_directory(&self, name: &str) -> Vec<String> {
+        let normalized = name.trim_matches('/').replace('\\', "/");
+        let prefix = if normalized.is_empty() {
+            String::new()
+        } else {
+            format!("{normalized}/")
+        };
+        let mut entries = self.host.read_dir(&normalized).unwrap_or_default();
+        for bytes in &self.archives {
+            let Ok(archive) = Archive::parse(bytes) else {
+                continue;
+            };
+            for entry in archive.entries() {
+                let Ok(path) = std::str::from_utf8(&entry.name) else {
+                    continue;
+                };
+                let normalized_path = path.replace('\\', "/");
+                let Some(remainder) = normalized_path.strip_prefix(&prefix) else {
+                    continue;
+                };
+                if let Some(child) = remainder.split('/').next().filter(|part| !part.is_empty()) {
+                    entries.push(child.to_owned());
+                }
+            }
+        }
+        let mut seen = std::collections::HashSet::new();
+        entries.retain(|entry| seen.insert(entry.to_lowercase()));
+        entries
+    }
+
+    /// Checks whether a game path is a directory in the host tree or archives.
+    pub fn asset_is_dir(&self, name: &str) -> bool {
+        let normalized = name.trim_matches('/').replace('\\', "/");
+        if self.host.is_dir(&normalized).unwrap_or(false) {
+            return true;
+        }
+        let prefix = if normalized.is_empty() {
+            String::new()
+        } else {
+            format!("{normalized}/")
+        };
+        self.archives.iter().any(|bytes| {
+            Archive::parse(bytes).is_ok_and(|archive| {
+                archive.entries().iter().any(|entry| {
+                    std::str::from_utf8(&entry.name)
+                        .is_ok_and(|path| path.replace('\\', "/").starts_with(&prefix))
+                })
+            })
+        })
+    }
     pub(super) fn image_bytes(&self, name: &str) -> Result<Vec<u8>, String> {
         if let Ok(bytes) = self.asset(name) {
             return Ok(bytes);

@@ -101,13 +101,20 @@ UI thread. Only the bundled interface may navigate or invoke that bridge.
 ## Current limits and verification
 
 This is an experimental development build, not an App Store release. Audio and
-the desktop inspector are not implemented. Rendering uses the CPU renderer and
-presents RGBA frames through UIImageView on iOS and ImageView on Android.
-Frames stay outside JavaScript on mobile, though native presentation still
-copies pixel buffers. GPU rendering and zero-copy presentation are future work;
-native execution alone does not establish a particular frame rate. Large games and long play sessions need device testing.
+the desktop inspector are not implemented. On iOS the core composites scenes with
+wgpu on Metal and presents directly to a `CAMetalLayer`, with no RGBA readback;
+if Metal is unavailable it falls back to the CPU renderer and UIImageView.
+Android currently uses CPU frames through ImageView. Native execution alone does
+not establish a particular frame rate. Large games and long play sessions need
+device testing.
 MRI writes saves directly to native application storage, separately for each game.
 Uninstalling the app removes its private games and saves; save export is pending.
+
+The desktop Magnus bindings (retained sprite state, built-in RGSS1 tilemap
+batching, Win32API) are not compiled into the mobile core. Mobile uses the shared
+`rgss.rb` plus the serialized native-call path instead, so tiles still reach the
+GPU native-tile geometry path but per-tile Ruby updates are not batched as they
+are on desktop.
 
 The native MRI integration test launches the RGSS demo, renders a frame, sends
 Right input, and checks that the rendered frame changes. The shared touch tests
@@ -121,6 +128,8 @@ node --test mobile/tests/input.mjs
 cargo check --manifest-path web/engine/Cargo.toml --target wasm32-unknown-unknown
 ```
 
-For a repeatable iOS Simulator smoke test, launch the Debug app with
+For a repeatable iOS Simulator smoke test, launch the app with
 `xcrun simctl launch booted org.rsxp.mobile --demo`. This starts the same built-in
-Ruby game through the shared UI. Normal launches open the library.
+Ruby game through the shared UI in Debug or Release builds. Pass
+`--game 'Game Folder'` to open an imported library game directly. Normal launches
+open the library.

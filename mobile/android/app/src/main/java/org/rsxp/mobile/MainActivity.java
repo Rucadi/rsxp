@@ -62,6 +62,10 @@ public final class MainActivity extends Activity {
                         layout.leftMargin=(int)(value.getDouble("x")*scale);layout.topMargin=(int)(value.getDouble("y")*scale);gameImage.setLayoutParams(layout);
                         result.confirm("{\"ok\":null}");return true;
                     }
+                    if(op.equals("frameVisibility")) {
+                        gameImage.setVisibility(value.optBoolean("visible",true)?View.VISIBLE:View.GONE);
+                        result.confirm("{\"ok\":null}");return true;
+                    }
                     if (op.equals("import")) {
                         if (!importing) {
                             importing = true;

@@ -13,9 +13,11 @@ path = "tests/native_mri.rs"
 harness = false
 
 [dependencies]
-rsxp = { path = "../..", default-features = false, features = ["game-api", "portable-media"] }
+rsxp = { path = "../..", default-features = false, features = ["game-api", "portable-media", "gpu"] }
 serde_json = "1"
 base64 = "0.22"
+bytemuck = "1"
+wgpu = { version = "27.0.1", default-features = false, features = ["std", "vulkan", "gles", "metal", "wgsl"] }
 
 [build-dependencies]
 cc = "1"

@@ -17,7 +17,29 @@ use std::{
 static LIBRARY: OnceLock<PathBuf> = OnceLock::new();
 static RUBY_RUNTIME: OnceLock<PathBuf> = OnceLock::new();
 mod mri;
+mod present;
+/// Appends diagnostic lines to `<library>/.gpu-debug.log` for device builds
+/// where stderr is not attached to a console.
+pub(crate) fn debug_log(message: &str) {
+    let Some(library) = LIBRARY.get() else {
+        return;
+    };
+    use std::io::Write;
+    if let Ok(mut file) = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(library.join(".gpu-debug.log"))
+    {
+        let _ = writeln!(file, "{message}");
+    }
+}
 thread_local! {static FRAME: std::cell::RefCell<Vec<u8>>=const {std::cell::RefCell::new(Vec::new())};}
+// Platform drawable attached by the shell before the first game starts.
+thread_local! {
+    static SURFACE: std::cell::Cell<*mut std::ffi::c_void> = const { std::cell::Cell::new(std::ptr::null_mut()) };
+    static SURFACE_SIZE: std::cell::Cell<(u32, u32)> = const { std::cell::Cell::new((1, 1)) };
+    static GPU_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
 const DEMO: &str = include_str!("../../demo.rb");
 
 fn safe_file(root: &Path, name: &str) -> Option<PathBuf> {
@@ -56,10 +78,37 @@ fn safe_file(root: &Path, name: &str) -> Option<PathBuf> {
 
 struct MobileHost {
     root: PathBuf,
+    /// Compositor owned by this host; `None` keeps the software renderer.
+    gpu: Option<rsxp::gpu::GpuRenderer>,
+    presenter: Option<present::Presenter>,
 }
 impl Host for MobileHost {
     fn read_file(&self, path: &str) -> Option<Vec<u8>> {
         fs::read(safe_file(&self.root, path)?).ok()
+    }
+    fn gpu(&mut self) -> Option<&mut rsxp::gpu::GpuRenderer> {
+        if std::env::var_os("RSXP_FORCE_SOFTWARE").is_some() {
+            return None;
+        }
+        self.gpu.as_mut()
+    }
+    fn present_gpu(&mut self) -> Result<(), String> {
+        let (Some(gpu), Some(presenter)) = (self.gpu.as_mut(), self.presenter.as_mut()) else {
+            return Ok(());
+        };
+        let (width, height) = SURFACE_SIZE.with(|size| size.get());
+        presenter.resize(gpu, width, height);
+        presenter.present(gpu)
+    }
+    fn present(&mut self, frame: &Bitmap) -> Result<(), String> {
+        // Scenes the GPU compositor cannot reproduce exactly fall back to the
+        // software reference renderer; upload that frame and present it.
+        let (Some(gpu), Some(presenter)) = (self.gpu.as_mut(), self.presenter.as_mut()) else {
+            return Ok(());
+        };
+        let (width, height) = SURFACE_SIZE.with(|size| size.get());
+        presenter.resize(gpu, width, height);
+        presenter.present_bitmap(gpu, frame)
     }
     fn image(&self, bytes: &[u8]) -> Result<Bitmap, String> {
         rsxp::portable_media::image(bytes)
@@ -120,7 +169,32 @@ fn prepare(id: &str) -> Result<Value, String> {
     } else {
         (544, 416, 60)
     };
+    // Tear down any previous game before reusing the platform drawable: two
+    // wgpu surfaces must not be attached to the same CAMetalLayer at once.
+    GPU_ACTIVE.with(|active| active.set(false));
     mri::stop();
+    engine::take_runtime();
+    // Attach the platform drawable (a CAMetalLayer on iOS) so scenes composite
+    // on the GPU and present without a CPU readback. If Metal is unavailable
+    // the runtime falls back to the software renderer.
+    let layer = SURFACE.with(|surface| surface.get());
+    let (gpu, presenter) = if layer.is_null() {
+        (None, None)
+    } else {
+        let (view_width, view_height) = SURFACE_SIZE.with(|size| size.get());
+        match unsafe { present::Presenter::attach(layer, view_width, view_height) } {
+            Ok((gpu, presenter)) => {
+                debug_log(&format!("gpu presentation ready on {}", gpu.adapter_name));
+                (Some(gpu), Some(presenter))
+            }
+            Err(error) => {
+                debug_log(&format!("gpu presentation unavailable: {error}"));
+                eprintln!("RSXP GPU presentation unavailable: {error}");
+                (None, None)
+            }
+        }
+    };
+    GPU_ACTIVE.with(|active| active.set(gpu.is_some()));
     engine::set_runtime(Runtime::new(RuntimeOptions {
         width,
         height,
@@ -131,7 +205,11 @@ fn prepare(id: &str) -> Result<Value, String> {
         fast_forward: true,
         archives,
         scripted: vec![],
-        host: Box::new(MobileHost { root: root.clone() }),
+        host: Box::new(MobileHost {
+            root: root.clone(),
+            gpu,
+            presenter,
+        }),
     })?);
     rsxp::runtime_settings::reset();
     rsxp::runtime_settings::set_fast_forward(true); // The shared UI paces Ruby fibers.
@@ -160,7 +238,7 @@ fn initialize(id: &str) -> Result<Value, String> {
 fn dispatch(request: Value) -> Result<Value, String> {
     match request["op"].as_str().unwrap_or("") {
         "info" => Ok(
-            json!({"engine":"Native Rust + MRI Ruby", "platform":std::env::consts::OS,"arch":std::env::consts::ARCH,"nativePresentation":cfg!(any(target_os="ios",target_os="android"))}),
+            json!({"engine":"Native Rust + MRI Ruby", "platform":std::env::consts::OS,"arch":std::env::consts::ARCH,"nativePresentation":cfg!(any(target_os="ios",target_os="android")),"gpu":GPU_ACTIVE.with(|active| active.get())}),
         ),
         "games" => {
             let mut games = vec![json!({"id":".demo","title":"Touch controls demo","demo":true})];
@@ -190,18 +268,29 @@ fn dispatch(request: Value) -> Result<Value, String> {
             .ok_or("No game is running")?;
             Ok(Value::Null)
         }
-        "frame" => engine::with_runtime(|r| {
+        "frame" => engine::with_runtime_mut(|r| {
             let mut rgba = Vec::new();
-            r.target().write_rgba(&mut rgba);
-            json!({"width":r.target().width(),"height":r.target().height(),"rgba":B64.encode(rgba)})
+            // Read back a GPU-composited frame when necessary.
+            let target = r.capture()?;
+            target.write_rgba(&mut rgba);
+            Ok::<Value, String>(json!({"width":target.width(),"height":target.height(),"rgba":B64.encode(rgba)}))
         })
-        .ok_or_else(|| "No game is running".into()),
+        .ok_or_else(|| "No game is running".to_string())?,
         "stop" => {
             mri::stop();
             engine::take_runtime();
             Ok(Value::Null)
         }
-        "step" => Ok(json!({"running":mri::step()?})),
+        "step" => {
+            // Ruby may reenter the engine, so finish the fiber step before
+            // borrowing the runtime for the performance counters.
+            let running = mri::step()?;
+            let stats = engine::with_runtime(|r| {
+                json!({"frames":r.frame_count(),"rate":r.rate(),"fastForward":r.is_fast_forward()})
+            })
+            .unwrap_or_else(|| json!({"frames":0,"rate":0,"fastForward":false}));
+            Ok(json!({"running":running,"frames":stats["frames"],"rate":stats["rate"],"fastForward":stats["fastForward"]}))
+        }
         _ => Err("Unknown mobile operation".into()),
     }
 }
@@ -332,19 +421,60 @@ pub unsafe extern "C" fn rsxp_mobile_frame(
         *height = 0;
         *length = 0;
     }
-    engine::with_runtime(|runtime| {
+    engine::with_runtime_mut(|runtime| {
         FRAME.with(|slot| {
             let mut bytes = slot.borrow_mut();
-            runtime.target().write_rgba(&mut bytes);
+            let target = match runtime.capture() {
+                Ok(target) => target,
+                Err(_) => return std::ptr::null(),
+            };
+            target.write_rgba(&mut bytes);
             unsafe {
-                *width = runtime.target().width();
-                *height = runtime.target().height();
+                *width = target.width();
+                *height = target.height();
                 *length = bytes.len();
             }
             bytes.as_ptr()
         })
     })
     .unwrap_or(std::ptr::null())
+}
+
+/// Attaches the platform drawable used for GPU presentation. `layer` is a
+/// `CAMetalLayer` on iOS; `width` and `height` are its size in physical pixels.
+/// Call before starting a game. Returns 1 when the drawable was accepted.
+///
+/// # Safety
+/// `layer` must stay alive for as long as games present to it.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rsxp_mobile_attach_surface(
+    layer: *mut std::ffi::c_void,
+    width: u32,
+    height: u32,
+) -> i32 {
+    if layer.is_null() {
+        return 0;
+    }
+    SURFACE.with(|surface| surface.set(layer));
+    SURFACE_SIZE.with(|size| size.set((width.max(1), height.max(1))));
+    1
+}
+
+/// Resizes the game drawable in physical pixels after a rotation or layout
+/// change. Returns 1 when a drawable is attached.
+#[unsafe(no_mangle)]
+pub extern "C" fn rsxp_mobile_resize_surface(width: u32, height: u32) -> i32 {
+    if SURFACE.with(|surface| surface.get()).is_null() {
+        return 0;
+    }
+    SURFACE_SIZE.with(|size| size.set((width.max(1), height.max(1))));
+    1
+}
+
+/// Whether the active game composites and presents through the GPU.
+#[unsafe(no_mangle)]
+pub extern "C" fn rsxp_mobile_gpu_active() -> i32 {
+    i32::from(GPU_ACTIVE.with(|active| active.get()))
 }
 
 #[cfg(test)]

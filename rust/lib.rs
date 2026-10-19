@@ -36,9 +36,10 @@
 //!
 //! ## Features
 //! `desktop` builds the native frontend and enables `game-api`; `ui` enables the
-//! shared egui workspace; `gpu` enables `ui` plus the device compositor;
-//! `game-api` enables the command bridge; `api-docs` enables the code-first
-//! OpenAPI schema used by the `rsxp-mcp` binary.
+//! shared egui workspace; `gpu` enables the device compositor without pulling in
+//! egui, so native/mobile frontends supply their own presentation; `game-api`
+//! enables the command bridge; `api-docs` enables the code-first OpenAPI schema
+//! used by the `rsxp-mcp` binary.
 #[cfg(feature = "game-api")]
 pub mod api_bridge;
 #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]

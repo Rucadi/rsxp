@@ -470,6 +470,18 @@ impl Runtime {
     pub fn target(&self) -> &Bitmap {
         &self.target
     }
+    /// Completed RGSS frames, for host-side performance displays.
+    pub fn frame_count(&self) -> u64 {
+        self.frame
+    }
+    /// The frame rate currently in effect.
+    pub fn rate(&self) -> u32 {
+        self.rate
+    }
+    /// Whether frame pacing is disabled in the engine.
+    pub fn is_fast_forward(&self) -> bool {
+        self.fast_forward
+    }
     /// Synchronize only for explicit CPU reads (screenshots, freeze, snap).
     pub fn capture(&mut self) -> Result<&Bitmap, String> {
         #[cfg(feature = "gpu")]

@@ -87,7 +87,8 @@ def core(target=None, environment=None):
     run(*command,env=environment)
     return MOBILE / "core/target" / (target or "") / "release"
 
-def ios(device=False, launch=False):
+def ios(device=False, launch=False, debug=False):
+    configuration = "Debug" if debug else "Release"
     environment = dict(os.environ)
     developer = Path(environment.get("DEVELOPER_DIR", "/Applications/Xcode.app/Contents/Developer"))
     if not (developer / "usr/bin/xcodebuild").is_file():
@@ -118,7 +119,7 @@ def ios(device=False, launch=False):
     library = core(target,environment)
     destination=BUILD / sdk; destination.mkdir(parents=True,exist_ok=True)
     shutil.copy2(library / "librsxp_mobile.a",destination)
-    command = [xcodebuild,"-project",str(MOBILE / "ios/RSXP.xcodeproj"),"-scheme","RSXP","-configuration","Debug","-sdk",sdk,"-derivedDataPath",str(BUILD / "ios"),"ARCHS=arm64","ONLY_ACTIVE_ARCH=YES","build"]
+    command = [xcodebuild,"-project",str(MOBILE / "ios/RSXP.xcodeproj"),"-scheme","RSXP","-configuration",configuration,"-sdk",sdk,"-derivedDataPath",str(BUILD / "ios"),"ARCHS=arm64","ONLY_ACTIVE_ARCH=YES","build"]
     if not device: command += ["-destination","generic/platform=iOS Simulator","CODE_SIGNING_ALLOWED=NO"]
     run(*command,env=environment)
     if launch:
@@ -148,7 +149,7 @@ def ios(device=False, launch=False):
         if not simulator: raise SystemExit("The installed Xcode has no Simulator or Device Hub app.")
         run("/usr/bin/open",str(simulator))
         run(xcrun,"simctl","bootstatus",device["udid"],"-b",env=environment)
-        run(xcrun,"simctl","install",device["udid"],BUILD / "ios/Build/Products/Debug-iphonesimulator/RSXP.app",env=environment)
+        run(xcrun,"simctl","install",device["udid"],BUILD / f"ios/Build/Products/{configuration}-iphonesimulator/RSXP.app",env=environment)
         run(xcrun,"simctl","launch",device["udid"],"org.rsxp.mobile",env=environment)
 
 def android():
@@ -177,8 +178,9 @@ if __name__ == "__main__":
     parser.add_argument("platform",choices=["ios","android","host","assets"])
     parser.add_argument("--run",action="store_true",help="Install and launch iOS Simulator")
     parser.add_argument("--device",action="store_true",help="Build iOS device core; requires an Xcode signing team")
+    parser.add_argument("--debug",action="store_true",help="Build the iOS app in Debug (enables the --game/--demo debug launch arguments)")
     args=parser.parse_args()
-    if args.platform=="ios": ios(args.device,args.run)
+    if args.platform=="ios": ios(args.device,args.run,args.debug)
     elif args.platform=="android": android()
     elif args.platform=="assets": assets()
     else: assets(); core()

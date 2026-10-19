@@ -32,11 +32,13 @@ gilrs = { version = "0.11.2", optional = true }
 [features]
 portable-media = ["dep:fontdue", "dep:image"]
 default = ["desktop", "gpu"]
-gpu = ["ui", "dep:wgpu", "dep:pollster", "dep:bytemuck", "dep:egui-wgpu", "dep:egui-winit"]
+# Native GPU composition. Presentation is the frontend's job, so this does not
+# pull in the shared egui workspace: mobile and the desktop binary both use it.
+gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
 # The shared egui workspace, used by the native and browser frontends.
 ui = ["dep:egui", "dep:web-time"]
-# The desktop frontend embeds MRI Ruby through Magnus.
-desktop = ["dep:getrandom", "dep:magnus", "dep:fontdue", "dep:image", "dep:kira", "dep:winit", "dep:gilrs", "game-api"]
+# The desktop frontend embeds MRI Ruby through Magnus and owns the egui window.
+desktop = ["dep:getrandom", "dep:magnus", "dep:fontdue", "dep:image", "dep:kira", "dep:winit", "dep:gilrs", "dep:egui-wgpu", "dep:egui-winit", "ui", "game-api"]
 # Shared local game-command queue, Ruby adapter and egui inspector controls.
 game-api = ["dep:serde_json", "dep:image"]
 # Compile-time, code-first OpenAPI generation for the MCP/HTTP API binary.

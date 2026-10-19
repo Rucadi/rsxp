@@ -20,6 +20,16 @@ fn main() {
         1
     );
     request(json!({"op":"init","id":".demo"}));
+    // The typed Magnus bindings must be installed, or the game silently falls
+    // back to the slower serialized bridge.
+    let ruby = magnus::Ruby::get().unwrap();
+    assert!(
+        ruby.eval::<bool>(
+            "Sprite.private_method_defined?(:__rsxp_sprite_sync) && defined?(Table)"
+        )
+        .unwrap(),
+        "Magnus bindings are not installed"
+    );
     assert_eq!(request(json!({"op":"step"}))["running"], true);
     let first = request(json!({"op":"frame"}));
     assert_eq!(first["width"], 320);

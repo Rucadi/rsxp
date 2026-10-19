@@ -14,7 +14,7 @@
   <p class="muted">Native Rust renderer + native MRI Ruby. No WebAssembly game runtime. Audio is not enabled in this first prototype.</p>
 </main>
 <section id="player" hidden>
-  <nav><button id="back" aria-label="Back to library">‹ Library</button><span id="title">Game</span><button id="pause">Pause</button></nav>
+  <nav><button id="back" aria-label="Back to library">‹ Library</button><span id="title">Game</span><span id="hud" aria-live="off"><span id="hud-fps">– fps</span><span id="hud-frame">frame 0</span><span id="hud-rate">–</span></span><button id="menu" aria-label="Game menu">Menu</button></nav>
   <div id="viewport"><canvas id="screen" width="640" height="480" aria-label="Game screen"></canvas></div>
   <div id="controls" aria-label="Touch game controller">
     <div class="dpad"><button data-key="82" class="up" aria-label="Up">▲</button><button data-key="80" class="left" aria-label="Left">◀</button><span class="center"></span><button data-key="79" class="right" aria-label="Right">▶</button><button data-key="81" class="down" aria-label="Down">▼</button></div>
@@ -22,6 +22,30 @@
     <div class="actions"><button data-key="27" class="b">B</button><button data-key="29" class="a">A</button></div>
   </div>
 </section>
+<dialog id="game-menu">
+  <h2>Game menu</h2>
+  <div class="stats">
+    <div><span>FPS</span><strong id="menu-fps">–</strong></div>
+    <div><span>Frame</span><strong id="menu-frame">0</strong></div>
+    <div><span>Frame time</span><strong id="menu-frame-time">–</strong></div>
+    <div><span>Target rate</span><strong id="menu-rate">–</strong></div>
+  </div>
+  <label class="toggle"><input type="checkbox" id="menu-hud-toggle" checked> Show performance overlay</label>
+  <div class="rate">
+    <span class="label">Frame rate</span>
+    <div class="segmented" role="group" aria-label="Frame rate">
+      <button data-rate="default">Game</button>
+      <button data-rate="30">30</button>
+      <button data-rate="60">60</button>
+      <button data-rate="uncapped">Uncapped</button>
+    </div>
+  </div>
+  <div class="menu-actions">
+    <button id="menu-resume">Resume</button>
+    <button id="menu-restart">Restart game</button>
+    <button id="menu-library">Quit to library</button>
+  </div>
+</dialog>
 <div id="status" role="status" hidden></div>
 <dialog id="error"><h2>Couldn’t start the game</h2><pre id="error-message"></pre><button id="dismiss">Back to library</button></dialog>
 <script type="module" src="app.js"></script>

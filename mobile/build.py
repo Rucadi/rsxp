@@ -2,10 +2,13 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """One entry point for shared assets, native core, and platform app builds."""
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
+import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
 MOBILE = ROOT / "mobile"
@@ -15,12 +18,120 @@ def run(*command, env=None, cwd=ROOT):
     print("==>", *map(str, command), flush=True)
     subprocess.run(list(map(str,command)), cwd=cwd, env=env, check=True)
 
+def patch_elf(tool, *arguments):
+    subprocess.run([tool,*map(str,arguments)], check=True)
+
+RUBY_ANDROID_VERSION='0.1.5'
+RUBY_ANDROID_SHA256='81a8beb55a352eb7cb726e4e71bf6be40fe7e0aeed7819233a6c8ce70bdd40d4'
+
+def android_ruby():
+    """Provision the Termux-patched MRI build for Android arm64.
+
+    The release contains a shared libruby, its headers and the standard
+    library, but no static archive. The Rust core links the shared library and
+    the APK stages the runtime library and its small dependency set next to the
+    JNI library.
+    """
+    prefix=BUILD/f'ruby-android-{RUBY_ANDROID_VERSION}'
+    archive=BUILD/f'ruby-android-{RUBY_ANDROID_VERSION}.zip'
+    ready=prefix/'.rsxp-ready'
+    if not ready.is_file():
+        BUILD.mkdir(parents=True,exist_ok=True)
+        if not archive.is_file():
+            url=f'https://github.com/jekyllex/ruby-android/releases/download/v{RUBY_ANDROID_VERSION}/ruby-aarch64.zip'
+            run('curl','-fL',url,'-o',archive)
+        if hashlib.sha256(archive.read_bytes()).hexdigest()!=RUBY_ANDROID_SHA256:
+            raise SystemExit('Android Ruby checksum mismatch')
+        temporary=BUILD/f'ruby-android-{RUBY_ANDROID_VERSION}.tmp'
+        if temporary.exists(): shutil.rmtree(temporary)
+        temporary.mkdir()
+        with zipfile.ZipFile(archive) as bundle:
+            for member in bundle.infolist():
+                path=(temporary/member.filename).resolve()
+                if not path.is_relative_to(temporary.resolve()): raise SystemExit('Invalid Android Ruby archive entry')
+            bundle.extractall(temporary)
+        # zipfile cannot restore the Termux bootstrap's symlinks. They matter
+        # for the Ruby standard library and shared-library lookup.
+        links=temporary/'SYMLINKS.txt'
+        if links.is_file():
+            for line in links.read_text().splitlines():
+                if '←' not in line: continue
+                target,link=line.split('←',1)
+                link_path=(temporary/link.removeprefix('./')).resolve()
+                if not link_path.is_relative_to(temporary.resolve()): raise SystemExit('Invalid Android Ruby symlink')
+                link_path.parent.mkdir(parents=True,exist_ok=True)
+                if link_path.is_symlink() or link_path.exists(): link_path.unlink()
+                link_path.symlink_to(target)
+        # Drop dangling links from tools that are irrelevant to the embedded
+        # runtime (for example lib/terminfo -> ../share/terminfo).
+        for link in [path for path in temporary.rglob('*') if path.is_symlink()]:
+            if not link.exists(): link.unlink()
+        if prefix.exists(): shutil.rmtree(prefix)
+        temporary.rename(prefix)
+        ready.touch()
+    # Android's APK packager only ships names ending in .so, and the loader
+    # resolves the SONAME. Normalise the versioned Termux libraries once, and
+    # remove the libz version suffix from extensions that expect libz.so.1.
+    patchelf=shutil.which('patchelf')
+    if not patchelf: raise SystemExit('Android builds need patchelf (provided by shell-droid.nix)')
+    for link in [path for path in prefix.rglob('*') if path.is_symlink()]:
+        if not link.exists(): link.unlink()
+    library=prefix/'lib'
+    ruby_versioned=library/'libruby.so.3.3.4'
+    if ruby_versioned.is_file():
+        ruby_link=library/'libruby.so'
+        if ruby_link.is_symlink(): ruby_link.unlink()
+        shutil.copy2(ruby_versioned,ruby_link)
+        patch_elf(patchelf,'--set-soname','libruby.so',ruby_link)
+        patch_elf(patchelf,'--replace-needed','libz.so.1','libz.so',ruby_link)
+    zlib=library/'libz.so.1.3.2'
+    if zlib.is_file():
+        zlib_link=library/'libz.so'
+        if zlib_link.is_symlink(): zlib_link.unlink()
+        shutil.copy2(zlib,zlib_link)
+        patch_elf(patchelf,'--set-soname','libz.so',zlib_link)
+    # OpenSSL extension dependencies use versioned names that Android's APK
+    # packager will not accept. Stage unversioned copies and rewrite the links.
+    crypto=library/'libcrypto.so.3'
+    if crypto.is_file():
+        crypto_link=library/'libcrypto.so'
+        if crypto_link.is_symlink(): crypto_link.unlink()
+        shutil.copy2(crypto,crypto_link)
+        patch_elf(patchelf,'--set-soname','libcrypto.so',crypto_link)
+    ssl=library/'libssl.so.3'
+    if ssl.is_file():
+        ssl_link=library/'libssl.so'
+        if ssl_link.is_symlink(): ssl_link.unlink()
+        shutil.copy2(ssl,ssl_link)
+        patch_elf(patchelf,'--set-soname','libssl.so',ssl_link)
+        patch_elf(patchelf,'--replace-needed','libcrypto.so.3','libcrypto.so',ssl_link)
+    for extension in (library/'ruby/3.3.0').rglob('*.so'):
+        if extension.is_symlink(): continue
+        try:
+            data = extension.read_bytes()
+            replace = []
+            if b'libruby.so.3.3' in data:
+                replace += ['--replace-needed','libruby.so.3.3','libruby.so']
+            if b'libz.so.1' in data:
+                replace += ['--replace-needed','libz.so.1','libz.so']
+            if b'libcrypto.so.3' in data:
+                replace += ['--replace-needed','libcrypto.so.3','libcrypto.so']
+            if b'libssl.so.3' in data:
+                replace += ['--replace-needed','libssl.so.3','libssl.so']
+            if replace:
+                patch_elf(patchelf,*replace,extension)
+        except (OSError,subprocess.CalledProcessError):
+            pass
+    if not (library/'libruby.so').is_file():
+        raise SystemExit('Android Ruby archive has no libruby shared library')
+    return prefix
+
 def native_ruby(target=None):
-    import hashlib, tarfile
+    import tarfile
     if target and 'android' in target:
         supplied=os.environ.get('RSXP_RUBY_PREFIX')
-        if not supplied: raise SystemExit('Android needs a native MRI distribution. Set RSXP_RUBY_PREFIX to its headers, static library, and lib/ruby tree; WASM/WASI is not a fallback.')
-        return Path(supplied)
+        if supplied: return Path(supplied)
+        return android_ruby()
     version='4.0.701'
     expected='e364fce6fcf6649d9f42d9094d960fcf6c8c7a4a2431b45f87aa2fa08fa2a9ae'
     archive=BUILD/f'CRuby_prebuilt-{version}.tar.gz'
@@ -82,7 +193,17 @@ def core(target=None, environment=None):
             environment["RUSTC"] = tool("rustc")
             environment["RUSTDOC"] = tool("rustdoc")
             command[0] = tool("cargo")
-            environment["DYLD_LIBRARY_PATH"] = str(Path(environment["RUSTC"]).parent.parent / "lib")
+            if sys.platform=="darwin":
+                environment["CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER"]="/usr/bin/cc"
+                environment["CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER"]="/usr/bin/cc"
+        # Build scripts and proc macros link for the host. Prefer the system
+        # linker over Nix's clang wrapper, which can pick up a different
+        # libLLVM through wrapper environment variables.
+        for name in ["RUSTFLAGS","CARGO_ENCODED_RUSTFLAGS","NIX_LDFLAGS","NIX_CFLAGS_COMPILE","NIX_CFLAGS_LINK","LD","CC","CXX","AR","AS","NM","RANLIB","STRIP","DYLD_LIBRARY_PATH"]:
+            environment.pop(name,None)
+        if sys.platform=="darwin":
+            environment["CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER"]="/usr/bin/cc"
+            environment["CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER"]="/usr/bin/cc"
     environment["RSXP_RUBY_PREFIX"] = str(native_ruby(target))
     run(*command,env=environment)
     return MOBILE / "core/target" / (target or "") / "release"
@@ -166,11 +287,47 @@ def android():
     compiler=toolchains[0]/"bin/aarch64-linux-android26-clang"
     environment["CC_aarch64_linux_android"]=str(compiler)
     environment["CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"]=str(compiler)
-    assets(native_ruby(target)); library=core(target,environment)
+    runtime=native_ruby(target)
+    assets(runtime)
+    # RGSS games do not need RubyGems, IRB, RDoc or Bundler in the APK. Drop
+    # those trees to keep the packaged runtime small; the core stdlib and
+    # native extensions remain available.
+    for relative in ["ruby/gems","ruby/3.3.0/rdoc","ruby/3.3.0/irb",
+                     "ruby/3.3.0/bundler","ruby/3.3.0/rubygems","ruby/3.3.0/reline"]:
+        shutil.rmtree(BUILD/"runtime/lib"/relative,ignore_errors=True)
+    # Shared libraries at the top of lib/ are linked from the APK's native
+    # library directory instead; only Ruby's stdlib and extension modules need
+    # to be extracted from assets.
+    for shared in (BUILD/"runtime/lib").glob("*.so*"):
+        shared.unlink()
+    android_assets=BUILD/"android/assets"
+    if android_assets.exists(): shutil.rmtree(android_assets)
+    android_assets.mkdir(parents=True)
+    shutil.copytree(BUILD/"ui",android_assets/"ui")
+    shutil.copytree(BUILD/"runtime",android_assets/"runtime")
+    library=core(target,environment)
+    # Rust cdylibs have no SONAME. Without one the JNI link records this absolute
+    # build-host path as DT_NEEDED, which Android cannot resolve.
+    patchelf=shutil.which('patchelf')
+    if not patchelf: raise SystemExit('Android builds need patchelf (provided by shell-droid.nix)')
+    patch_elf(patchelf,'--set-soname','librsxp_mobile.so',library/"librsxp_mobile.so")
     destination=BUILD/"android/arm64-v8a"; destination.mkdir(parents=True,exist_ok=True)
     shutil.copy2(library/"librsxp_mobile.so",destination)
+    # Shared Ruby and its non-system dependencies must live in the APK's
+    # native-library directory. Ruby extensions themselves are extracted from
+    # assets at first launch (the manifest targets SDK 28 so the platform
+    # permits loading them from app storage).
+    jni=BUILD/"android/jniLibs/arm64-v8a"
+    if jni.exists(): shutil.rmtree(jni)
+    jni.mkdir(parents=True)
+    shutil.copy2(library/"librsxp_mobile.so",jni/"librsxp_mobile.so")
+    for name in ["libruby.so","libz.so","libandroid-support.so","libandroid-execinfo.so",
+                 "libgmp.so","libffi.so","libyaml-0.so","libssl.so","libcrypto.so"]:
+        source=runtime/"lib"/name
+        if not source.is_file(): raise SystemExit(f"Android Ruby is missing lib/{name}")
+        shutil.copy2(source,jni/name)
     gradle=shutil.which("gradle")
-    if not gradle: raise SystemExit("Install Gradle 8.9, or open mobile/android in Android Studio and choose Build APK.")
+    if not gradle: raise SystemExit("Install Gradle 8.9+, or open mobile/android in Android Studio and choose Build APK.")
     run(gradle,"assembleDebug",cwd=MOBILE/"android",env=environment)
 
 if __name__ == "__main__":

@@ -42,7 +42,7 @@ thread_local! {
 }
 const DEMO: &str = include_str!("../../demo.rb");
 
-fn safe_file(root: &Path, name: &str) -> Option<PathBuf> {
+fn safe_path(root: &Path, name: &str) -> Option<PathBuf> {
     let normalized = name.replace('\\', "/");
     let relative = Path::new(&normalized);
     if relative
@@ -73,7 +73,15 @@ fn safe_file(root: &Path, name: &str) -> Option<PathBuf> {
         };
     }
     let path = path.canonicalize().ok()?;
-    (path.starts_with(root) && path.is_file()).then_some(path)
+    path.starts_with(root).then_some(path)
+}
+
+fn safe_file(root: &Path, name: &str) -> Option<PathBuf> {
+    safe_path(root, name).filter(|path| path.is_file())
+}
+
+fn safe_dir(root: &Path, name: &str) -> Option<PathBuf> {
+    safe_path(root, name).filter(|path| path.is_dir())
 }
 
 struct MobileHost {
@@ -132,8 +140,13 @@ fn prepare(id: &str) -> Result<Value, String> {
         return Err("Invalid game identifier".into());
     }
     let library = LIBRARY.get().ok_or("Library is not configured")?;
-    let root = library.join(id).canonicalize().map_err(|e| e.to_string())?;
-    if !root.starts_with(library) {
+    let requested = library.join(id);
+    let linked = requested
+        .symlink_metadata()
+        .map(|metadata| metadata.file_type().is_symlink())
+        .unwrap_or(false);
+    let root = requested.canonicalize().map_err(|e| e.to_string())?;
+    if !root.starts_with(library) && !linked {
         return Err("Game is outside the library".into());
     }
     let ini = safe_file(&root, "Game.ini")
@@ -147,7 +160,7 @@ fn prepare(id: &str) -> Result<Value, String> {
                 .then(|| value.trim().replace('\\', "/"))
         })
     };
-    let scripts = field("Scripts").unwrap_or_else(|| "Data/Scripts.rxdata".into());
+    let mut scripts = field("Scripts").unwrap_or_else(|| "Data/Scripts.rxdata".into());
     let mut archives = Vec::new();
     for name in ["Game.rgssad", "Game.rgss2a", "Game.rgss3a"] {
         if let Some(path) = safe_file(&root, name) {
@@ -162,7 +175,16 @@ fn prepare(id: &str) -> Result<Value, String> {
         1
     };
     if id != ".demo" && safe_file(&root, &scripts).is_none() && archives.is_empty() {
-        return Err("No RPG Maker scripts or archive found in this folder".into());
+        // MKXP-style releases often extract the script bundle into a directory
+        // of `.rb` files while leaving the original `Scripts=Data\Scripts.rxdata`
+        // entry in Game.ini.
+        if safe_dir(&root, &scripts).is_some() {
+            // The configured path itself is a directory.
+        } else if safe_dir(&root, "Data/Scripts").is_some() {
+            scripts = "Data/Scripts".into();
+        } else {
+            return Err("No RPG Maker scripts or archive found in this folder".into());
+        }
     }
     let (width, height, rate) = if version == 1 {
         (640, 480, 40)
@@ -242,13 +264,13 @@ fn dispatch(request: Value) -> Result<Value, String> {
         ),
         "games" => {
             let mut games = vec![json!({"id":".demo","title":"Touch controls demo","demo":true})];
-            for entry in fs::read_dir(LIBRARY.get().ok_or("Library is not configured")?)
-                .map_err(|e| e.to_string())?
-            {
+            let library = LIBRARY.get().ok_or("Library is not configured")?;
+            for entry in fs::read_dir(library).map_err(|e| e.to_string())? {
                 let entry = entry.map_err(|e| e.to_string())?;
                 let name = entry.file_name().to_string_lossy().into_owned();
-                if !name.starts_with('.') && entry.file_type().map_err(|e| e.to_string())?.is_dir()
-                {
+                // External Android games are linked into the library with a
+                // symlink, so follow the entry instead of checking file_type().
+                if !name.starts_with('.') && entry.path().is_dir() {
                     games.push(json!({"id":name,"title":name}));
                 }
             }
@@ -526,6 +548,19 @@ mod tests {
         assert_eq!(config["version"], 3);
         assert_eq!(config["title"], "Imported title");
         assert_eq!(config["width"], 544);
+        // MKXP-style extracted scripts: Game.ini still names Scripts.rxdata,
+        // but the game ships a directory of loose Ruby files.
+        let loose = root.join("Loose Game");
+        fs::create_dir_all(loose.join("Data/Scripts")).unwrap();
+        fs::write(
+            loose.join("Game.ini"),
+            "[Game]\nTitle=Loose\nScripts=Data\\Scripts.rxdata\n",
+        )
+        .unwrap();
+        fs::write(loose.join("Data/Scripts/001_Test.rb"), b"# test\n").unwrap();
+        let config = prepare("Loose Game").unwrap();
+        assert_eq!(config["scripts"], "Data/Scripts");
+        assert_eq!(config["version"], 1);
         dispatch(json!({"op":"stop"})).unwrap();
         assert!(dispatch(json!({"op":"frame"})).is_err());
         fs::remove_dir_all(root).unwrap();

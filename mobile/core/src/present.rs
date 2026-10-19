@@ -8,6 +8,7 @@
 use rsxp::gpu::GpuRenderer;
 use std::ffi::c_void;
 
+#[cfg(not(target_os = "android"))]
 const SHADER: &str = r#"
 @group(0) @binding(0) var<storage,read> pixels:array<u32>;
 @group(0) @binding(1) var<uniform> dimensions:array<vec4<f32>,2>;
@@ -43,6 +44,7 @@ impl Presenter {
     ///
     /// # Safety
     /// `layer` must be a live `CAMetalLayer` that outlives the returned values.
+    #[cfg(not(target_os = "android"))]
     pub unsafe fn attach(
         layer: *mut c_void,
         width: u32,
@@ -304,5 +306,21 @@ impl Presenter {
         gpu.queue.submit([encoder.finish()]);
         gpu.queue.present(frame);
         Ok(())
+    }
+}
+
+#[cfg(target_os = "android")]
+impl Presenter {
+    /// Android uses CPU frames in an ImageView; there is no native surface to
+    /// attach yet. Returning an error keeps the core on the software path.
+    ///
+    /// # Safety
+    /// No pointer is dereferenced.
+    pub unsafe fn attach(
+        _layer: *mut c_void,
+        _width: u32,
+        _height: u32,
+    ) -> Result<(GpuRenderer, Self), String> {
+        Err("native GPU surface presentation is not available on Android".into())
     }
 }

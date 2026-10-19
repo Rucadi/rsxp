@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 package org.rsxp.mobile;
+import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
-import android.database.Cursor;
+import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.provider.DocumentsContract;
+import android.system.Os;
 import android.webkit.*;
 import android.graphics.Bitmap;
 import android.widget.FrameLayout;
@@ -17,6 +21,8 @@ import org.json.JSONObject;
 
 public final class MainActivity extends Activity {
     static { System.loadLibrary("rsxp_jni"); }
+    private static final int REQUEST_STORAGE = 40;
+    private static final int REQUEST_TREE = 41;
     private static native boolean nativeConfigure(String path,String runtime);
     private static native String nativeRequest(String request);
     private static native int[] nativeFrame();
@@ -29,7 +35,14 @@ public final class MainActivity extends Activity {
         super.onCreate(state);
         library = new File(getFilesDir(), "Games");
         File runtime=new File(getFilesDir(),"runtime");
-        try { if(!runtime.isDirectory()) copyAssets("runtime",runtime); } catch(IOException error) {throw new IllegalStateException(error);}
+        File marker=new File(runtime,".rsxp-runtime");
+        try {
+            if(!marker.isFile()) {
+                deleteTree(runtime);
+                copyAssets("runtime",runtime);
+                if(!marker.createNewFile()) throw new IOException("Cannot mark the runtime as installed");
+            }
+        } catch(IOException error) {throw new IllegalStateException(error);}
         if (!nativeConfigure(library.getAbsolutePath(),runtime.getAbsolutePath())) throw new IllegalStateException("Cannot configure library");
         web = new WebView(this);
         web.getSettings().setJavaScriptEnabled(true);
@@ -67,10 +80,7 @@ public final class MainActivity extends Activity {
                         result.confirm("{\"ok\":null}");return true;
                     }
                     if (op.equals("import")) {
-                        if (!importing) {
-                            importing = true;
-                            startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), 1);
-                        }
+                        chooseGameFolder();
                         result.confirm("{\"ok\":null}");
                     } else {
                         String response=nativeRequest(request);
@@ -87,7 +97,11 @@ public final class MainActivity extends Activity {
         gameImage=new ImageView(this);gameImage.setScaleType(ImageView.ScaleType.FIT_CENTER);gameImage.setVisibility(View.GONE);
         container.addView(gameImage,new FrameLayout.LayoutParams(1,1));
         setContentView(container);
-        web.loadUrl("https://rsxp.local/index.html");
+        String url="https://rsxp.local/index.html";
+        String game=getIntent()==null?null:getIntent().getStringExtra("game");
+        if(game!=null&&!game.isEmpty()) url+="?game="+Uri.encode(game);
+        else if(getIntent()!=null&&getIntent().getBooleanExtra("demo",false)) url+="?demo=1";
+        web.loadUrl(url);
     }
     private boolean trusted(Uri uri) { return "https".equals(uri.getScheme()) && "rsxp.local".equals(uri.getHost()); }
     private void presentFrame() {
@@ -101,50 +115,95 @@ public final class MainActivity extends Activity {
         if(children!=null&&children.length>0) {if(!destination.mkdirs()&&!destination.isDirectory()) throw new IOException("Cannot create runtime directory");for(String child:children)copyAssets(source+"/"+child,new File(destination,child));}
         else try(InputStream input=getAssets().open(source)){Files.copy(input,destination.toPath());}
     }
+    private void chooseGameFolder() {
+        if (importing) return;
+        if (Build.VERSION.SDK_INT >= 23
+                && checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE},
+                    REQUEST_STORAGE);
+            return;
+        }
+        openTreePicker();
+    }
+    private void openTreePicker() {
+        if (importing) return;
+        importing = true;
+        startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), REQUEST_TREE);
+    }
+    @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(request, permissions, results);
+        if (request != REQUEST_STORAGE) return;
+        if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) openTreePicker();
+        else imported("Storage access is required to run a game in place");
+    }
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request,result,data);
-        if (request != 1) return;
+        if (request != REQUEST_TREE) return;
         if (result != RESULT_OK || data == null || data.getData() == null) { imported(null); return; }
         Uri tree = data.getData();
-        new Thread(() -> {
-            File temporary = new File(library, ".import-" + java.util.UUID.randomUUID());
-            try {
-                Uri root = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree));
-                String name;
-                try (Cursor cursor = getContentResolver().query(root, new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME}, null,null,null)) {
-                    if (cursor == null || !cursor.moveToFirst()) throw new IOException("Folder unavailable");
-                    name = cursor.getString(0);
-                }
-                if (!safeName(name)) throw new IOException("Invalid game folder name");
-                File destination = new File(library,name);
-                if (destination.exists()) throw new IOException("A game with this name is already imported");
-                copyFolder(tree, DocumentsContract.getDocumentId(root), temporary);
-                if (!temporary.renameTo(destination)) throw new IOException("Could not finish import");
-                runOnUiThread(() -> imported(null));
-            } catch (Exception error) {
-                deleteTree(temporary);
-                runOnUiThread(() -> imported(error.toString()));
+        try {
+            getContentResolver().takePersistableUriPermission(
+                    tree, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch (Exception ignored) {
+            // The selected filesystem path is still usable for this session.
+        }
+        new Thread(() -> linkTree(tree), "rsxp-link").start();
+    }
+    /**
+     * Links the selected game folder into the library without copying it. The
+     * folder must expose a real filesystem path (Documents, Downloads or a
+     * storage volume); cloud-only document providers cannot be used in place.
+     */
+    private void linkTree(Uri tree) {
+        String error = null;
+        try {
+            File source = treePath(tree);
+            if (source == null || !source.isDirectory()) {
+                throw new IOException("This folder provider has no filesystem path. "
+                        + "Choose a folder under Documents, Downloads or a storage volume.");
             }
-        }, "rsxp-import").start();
+            if (!source.canRead()) {
+                throw new IOException("Cannot read " + source.getAbsolutePath()
+                        + ". Allow storage access and choose the folder again.");
+            }
+            String name = source.getName();
+            if (!safeName(name) || "0".equals(name)) {
+                throw new IOException("The selected folder has an invalid name");
+            }
+            File link = new File(library, name);
+            if (link.exists() || Files.isSymbolicLink(link.toPath())) {
+                throw new IOException("A game named \"" + name + "\" is already in the library");
+            }
+            Os.symlink(source.getAbsolutePath(), link.getAbsolutePath());
+        } catch (Exception failure) {
+            error = failure.getMessage() == null ? failure.toString() : failure.getMessage();
+        }
+        String message = error;
+        runOnUiThread(() -> imported(message));
+    }
+    private File treePath(Uri tree) {
+        String id = DocumentsContract.getTreeDocumentId(tree);
+        if (id == null) return null;
+        int colon = id.indexOf(':');
+        if (colon < 0) return null;
+        String volume = id.substring(0, colon);
+        String relative = id.substring(colon + 1);
+        if ("raw".equalsIgnoreCase(volume)) return new File(relative);
+        relative = relative.replaceFirst("^/+", "");
+        File base;
+        if ("primary".equalsIgnoreCase(volume)) {
+            base = Environment.getExternalStorageDirectory();
+        } else if ("home".equalsIgnoreCase(volume)) {
+            base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS);
+        } else if ("downloads".equalsIgnoreCase(volume)) {
+            base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+        } else {
+            base = new File("/storage/" + volume);
+        }
+        return new File(base, relative);
     }
     private static boolean safeName(String name) { return name != null && !name.isEmpty() && !name.startsWith(".") && !name.contains("/") && !name.contains("\\"); }
-    private void copyFolder(Uri tree, String id, File directory) throws IOException {
-        if (!directory.mkdirs()) throw new IOException("Cannot create import directory");
-        Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(tree,id);
-        try (Cursor cursor = getContentResolver().query(children,new String[]{DocumentsContract.Document.COLUMN_DOCUMENT_ID,DocumentsContract.Document.COLUMN_DISPLAY_NAME,DocumentsContract.Document.COLUMN_MIME_TYPE},null,null,null)) {
-            if (cursor == null) throw new IOException("Cannot read game folder");
-            while (cursor.moveToNext()) {
-                String childId=cursor.getString(0), name=cursor.getString(1), mime=cursor.getString(2);
-                if (!safeName(name)) continue;
-                File destination=new File(directory,name);
-                if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) copyFolder(tree,childId,destination);
-                else try (InputStream input=getContentResolver().openInputStream(DocumentsContract.buildDocumentUriUsingTree(tree,childId))) {
-                    if (input == null) throw new IOException("Cannot read " + name);
-                    Files.copy(input,destination.toPath());
-                }
-            }
-        }
-    }
     private void deleteTree(File path) { File[] children=path.listFiles(); if(children!=null) for(File child:children) deleteTree(child); path.delete(); }
     private void imported(String error) { importing=false; web.evaluateJavascript("globalThis.RSXPMobileImported?.(" + (error == null ? "null" : JSONObject.quote(error)) + ")",null); }
     @Override protected void onPause() { super.onPause(); web.evaluateJavascript("window.dispatchEvent(new Event('blur'))",null); web.onPause(); }

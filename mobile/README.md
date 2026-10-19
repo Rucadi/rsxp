@@ -10,6 +10,8 @@ renderer, and responds to the D-pad and A button. Import a game folder from
 Files on iOS or the system document picker on Android, then tap its library card.
 Import copies the folder into the application's private library; it does not
 modify the source. Choose the folder containing Game.ini and Data, not its parent.
+Both compiled `Data/Scripts.*` bundles and MKXP-style extracted `Data/Scripts`
+directories of `.rb` files are supported.
 
 ## Develop on an Apple Silicon Mac
 
@@ -49,23 +51,32 @@ imported games there. Keep the server local; it exposes a development native API
 
 ## Android
 
-Install Android Studio with SDK 35, a side-by-side NDK, CMake 3.22.1, and JDK 17.
-Set `ANDROID_HOME` and optionally `ANDROID_NDK_HOME`. Android also needs a
-cross-compiled native MRI Ruby 4.0 distribution: set `RSXP_RUBY_PREFIX` to its
-prefix containing `include/ruby.h` (and platform configuration headers),
-`lib/libruby-static.a`, and `lib/ruby/4.0.0`. This repository does not yet provision
-that Android interpreter, and the Android app has not been built or tested. The
-build stops if native MRI is missing; it never falls back to WASM/WASI. Then:
+Android uses the same Rust core and shared touch interface as iOS. The native
+MRI runtime is the Termux-patched Ruby 3.3 build published by
+[jekyllex/ruby-android](https://github.com/jekyllex/ruby-android); the build
+helper downloads the pinned arm64 archive and stages it into the APK. No WASM
+or WASI interpreter is used.
+
+The development environment is in `shell-droid.nix` at the repository root. It
+provides Android Studio, the Android SDK 35, NDK r28, CMake 3.22.1, Gradle 8,
+JDK 17, the arm64 emulator image and the required Rust tooling. Unfree packages
+and Android SDK licences are accepted by the shell expression.
 
 ```sh
+nix-shell shell-droid.nix
 python3 mobile/build.py android
 ```
 
-The helper compiles the same core for `aarch64-linux-android` and stages the exact
-same UI used by iOS. With Gradle 8.9 on PATH it also builds the debug APK; otherwise
-open `mobile/android` in Android Studio and choose **Build APK** after staging.
-The APK is at `mobile/android/app/build/outputs/apk/debug/app-debug.apk`.
-The current Android configuration supports ARM64 devices, not x86 emulators.
+The debug APK is written to
+`mobile/android/app/build/outputs/apk/debug/app-debug.apk`. The build stages the
+Rust core, Ruby shared library and the Ruby standard library; the app copies the
+stdlib out of its assets on first launch. The app currently supports arm64
+devices and Apple Silicon emulators. See [android.md](android.md) for emulator
+setup, installation and game transfer commands.
+
+The import button opens Android's Storage Access Framework folder picker. The
+selected folder (the one directly containing `Game.ini` and `Data`) is copied
+into the app's private `files/Games` library; the source folder is not modified.
 
 ## Where to work
 
@@ -83,11 +94,14 @@ Image/font services live in `rust/portable_media.rs`, shared with the browser.
 The core uses the existing runtime, archives, patches, graphics, and input modules.
 Only the OS shells differ. Touch UI changes need no platform-specific layout work.
 
-Ruby scripts execute in native MRI, linked statically into the Rust core. Apple
-builds use Ruby 4.0.7 from the pinned, SHA-256 verified [CRuby 4.0.701
-distribution](https://github.com/xord/cruby/releases/tag/v4.0.701). Its headers,
-interpreter, static extensions, and standard library target macOS, iOS device,
-and iOS Simulator separately. JIT compilation is disabled. The C adapter keeps
+Ruby scripts execute in native MRI, linked into the Rust core. Apple builds use
+Ruby 4.0.7 from the pinned, SHA-256 verified [CRuby 4.0.701
+distribution](https://github.com/xord/cruby/releases/tag/v4.0.701). Android uses
+the SHA-256 verified Termux-patched Ruby 3.3.4 bootstrap from
+[jekyllex/ruby-android](https://github.com/jekyllex/ruby-android/releases/tag/v0.1.5).
+Its headers, interpreter, static extensions, and standard library target
+macOS, iOS device, and iOS Simulator separately on Apple, and arm64 Android on
+mobile. JIT compilation is disabled. The C adapter keeps
 Ruby exception unwinding inside C, then returns errors to Rust. Game fibers
 yield after Graphics.update so the shell stays responsive between frames.
 The same `rust/rgss.rb` compatibility layer calls the native Rust renderer and

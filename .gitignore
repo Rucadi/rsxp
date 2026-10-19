@@ -7,7 +7,7 @@
 ericlostie
 rsxp
 xxd+
-
+mobile/android/app/.cxx
 /res
 /build
 /builddir
@@ -92,3 +92,6 @@ pokemonz
 
 # Default standalone player export
 /player.html
+/mobile/android/build/
+/mobile/android/app/.cxx/
+*.hprof

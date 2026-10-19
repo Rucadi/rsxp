@@ -129,6 +129,16 @@ module RSXP
   ResourceRef = WeakRef.dup
   ERROR_OUTPUT = STDERR.method(:write)
   ERROR_FORMAT = Exception.instance_method(:full_message)
+  # Mobile shells expose this hook so the UI can report a Ruby exception
+  # instead of the game silently returning to the library.
+  def self.report_error(error)
+    message=ERROR_FORMAT.bind_call(error,highlight:false)
+    begin
+      __rsxp_mri_error(message)
+    rescue NameError
+      ERROR_OUTPUT.call(message)
+    end
+  end
   SYNC_QUEUE = []
   def self.call(op, *args, payload: ''.b)
     flush_sync unless op == 'sync_batch'
@@ -2656,14 +2666,25 @@ begin
     RSXP.publish_top_level_methods
     RSXP.startup_yield
   else
-    $RGSS_SCRIPTS=load_data(ENV.fetch('RSXP_SCRIPTS'))
-    raise TypeError, 'script bundle must contain an Array' unless $RGSS_SCRIPTS.is_a?(Array)
-    # Decompress all sections first, as the original engine does. Keep decoded
-    # source in slot 3 for scripts that inspect $RGSS_SCRIPTS.
-    $RGSS_SCRIPTS.each_with_index do |section,index|
-      raise TypeError, "invalid script section #{index}" unless section.is_a?(Array) && section.size>=3 && section[1].is_a?(String) && section[2].is_a?(String)
-      section[3]=Zlib::Inflate.inflate(section[2]).force_encoding(Encoding::UTF_8)
-      RSXP.startup_yield
+    scripts=ENV.fetch('RSXP_SCRIPTS')
+    if File.directory?(scripts)
+      # MKXP-style extracted script directories are ordered by their numeric
+      # prefixes, matching the order stored in the original script bundle.
+      files=Dir.glob(File.join(scripts,'**','*.rb')).sort
+      $RGSS_SCRIPTS=files.each_with_index.map do |file,index|
+        name=file.delete_prefix(scripts).sub(%r{\A/+},'')
+        [index,name,'',File.binread(file).force_encoding(Encoding::UTF_8)]
+      end
+    else
+      $RGSS_SCRIPTS=load_data(scripts)
+      raise TypeError, 'script bundle must contain an Array' unless $RGSS_SCRIPTS.is_a?(Array)
+      # Decompress all sections first, as the original engine does. Keep decoded
+      # source in slot 3 for scripts that inspect $RGSS_SCRIPTS.
+      $RGSS_SCRIPTS.each_with_index do |section,index|
+        raise TypeError, "invalid script section #{index}" unless section.is_a?(Array) && section.size>=3 && section[1].is_a?(String) && section[2].is_a?(String)
+        section[3]=Zlib::Inflate.inflate(section[2]).force_encoding(Encoding::UTF_8)
+        RSXP.startup_yield
+      end
     end
     $RGSS_SCRIPTS.each do |section|
       RSXP::ERROR_OUTPUT.call("Loading #{section[1]}\n") if ENV['RSXP_TRACE']=='1'

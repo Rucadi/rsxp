@@ -30,13 +30,29 @@ static VALUE dispatch(VALUE self, VALUE request) {
 }
 static void before_prelude(void) {
     VALUE paths=rb_gv_get("$LOAD_PATH");
-    const char *suffixes[]={"/lib/ruby/4.0.0","/lib/ruby/vendor_ruby","/lib/ruby/site_ruby","/lib/ruby/rbconfig",NULL};
+    const char *suffixes[]={
+        "/lib/ruby/4.0.0","/lib/ruby/3.3.0/aarch64-linux-android","/lib/ruby/3.3.0",
+        "/lib/ruby/vendor_ruby","/lib/ruby/site_ruby","/lib/ruby/rbconfig",NULL
+    };
     for(int i=0;suffixes[i];i++) {
         VALUE path=rb_str_new_cstr(runtime_path); rb_str_cat_cstr(path,suffixes[i]); rb_ary_unshift(paths,path);
     }
     rb_define_const(rb_cObject,"CRUBY_BUILD_SDK_AND_ARCH",rb_str_new_cstr(RSXP_RUBY_PLATFORM));
 }
 static VALUE exception_message(VALUE exception) { return rb_funcall(exception,rb_intern("full_message"),0); }
+static VALUE report_error(VALUE self, VALUE text) {
+    (void)self;
+    StringValue(text);
+    size_t used=strlen(error_text);
+    if(used<sizeof(error_text)-1) {
+        size_t available=sizeof(error_text)-used-1;
+        size_t length=(size_t)RSTRING_LEN(text);
+        if(length>available) length=available;
+        memcpy(error_text+used,RSTRING_PTR(text),length);
+        error_text[used+length]='\0';
+    }
+    return Qnil;
+}
 static int capture(int state) {
     if(!state) return 0;
     VALUE exception=rb_errinfo();
@@ -64,6 +80,7 @@ int rsxp_mri_initialize(const char *path) {
 #endif
     rb_define_global_function("__rsxp_native",dispatch,1);
     rb_define_global_function("__mkxp_native",dispatch,1);
+    rb_define_global_function("__rsxp_mri_error",report_error,1);
     game_fiber=Qnil; rb_global_variable(&game_fiber);
     initialized=true;
     return 0;
@@ -91,6 +108,7 @@ static VALUE start_game(VALUE argument) {
     return Qnil;
 }
 int rsxp_mri_start(const char *source,const char *root,const char *scripts,const char *script,const char *title,const char *saves) {
+    error_text[0]='\0';
     struct Start start={source,root,scripts,script,title,saves};
     int state=0; rb_protect(start_game,(VALUE)&start,&state); return capture(state);
 }
@@ -102,7 +120,9 @@ static VALUE resume_game(VALUE unused) {
 }
 int rsxp_mri_step(void) {
     int state=0; VALUE alive=rb_protect(resume_game,Qnil,&state);
-    return capture(state) ? -1 : RTEST(alive) ? 0 : 1;
+    if(capture(state)) return -1;
+    if(!RTEST(alive) && error_text[0]) return -1;
+    return RTEST(alive) ? 0 : 1;
 }
 static VALUE stop_game(VALUE unused) { (void)unused; game_fiber=Qnil; rb_gc_start(); return Qnil; }
 void rsxp_mri_stop(void) { if(initialized) { int state=0; rb_protect(stop_game,Qnil,&state); capture(state); } }

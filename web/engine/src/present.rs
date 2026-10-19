@@ -46,6 +46,15 @@ fn call_global(name: &str) {
     }
 }
 
+fn copy_to_browser_clipboard(text: &str) {
+    if let Some(function) = web_sys::window()
+        .and_then(|window| window.get("__rsxp_copyText"))
+        .and_then(|value| value.dyn_into::<js_sys::Function>().ok())
+    {
+        let _ = function.call1(&JsValue::NULL, &JsValue::from_str(text));
+    }
+}
+
 #[derive(Default)]
 struct InputState {
     pointer: Option<egui::Pos2>,
@@ -287,7 +296,13 @@ impl Presenter {
     }
     pub(crate) fn log(&mut self, text: &str) {
         self.workspace.logs.push(text.into());
-        if self.workspace.logs.len() > 2000 { self.workspace.logs.drain(..1000); }
+        if self.workspace.logs.len() > 2000 {
+            self.workspace.logs.drain(..1000);
+        }
+    }
+
+    pub(crate) fn copy_logs(&self) {
+        copy_to_browser_clipboard(&self.workspace.logs.join("\n"));
     }
 
     pub(crate) fn adapter_name(&self) -> &str {
@@ -399,6 +414,11 @@ impl Presenter {
         };
 
         let (mut output, ui) = self.run_ui((frame.width(), frame.height()));
+        for command in &output.platform_output.commands {
+            if let egui::OutputCommand::CopyText(text) = command {
+                copy_to_browser_clipboard(text);
+            }
+        }
         if ui.export_saves {
             call_global("__rsxp_exportSaves");
         }
@@ -505,9 +525,6 @@ impl Presenter {
                 .is_some_and(|document| document.fullscreen_element().is_some()),
             show_fullscreen: false,
             show_save_buttons: true,
-            // The browser host has no per-frame Ruby/bridge timings.
-            show_profile_details: false,
-            profile: None,
         };
         let context = self.context.clone();
         let workspace = &mut self.workspace;

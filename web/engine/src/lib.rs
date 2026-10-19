@@ -7,7 +7,7 @@
 //! pure-Rust `image` crate, and rasterizes text with `fontdue`. Ruby runs
 //! separately under ruby.wasm in the page and calls [`web_native_call`].
 //!
-//! This module exposes runtime, input, profiling and framebuffer operations.
+//! This module exposes runtime, input and framebuffer operations.
 //! `host` implements platform services and `files` owns virtual file access;
 //! file exports are re-exported here to preserve the frontend API.
 //!
@@ -17,8 +17,7 @@
 //! view of the CPU frame for the canvas path. When the page opts into the
 //! wgpu/egui workspace, `web_init_gpu`/`web_present_gpu` upload and draw frames
 //! (see `present`) and the `web_ui_*` functions forward pointer, keyboard,
-//! resize, loading and diagnostic events into that workspace. `web_profile_*`
-//! accumulate native/graphics timings for the FPS overlay.
+//! resize and loading events into that workspace.
 use js_sys::Uint8Array;
 mod audio;
 mod files;
@@ -38,23 +37,6 @@ thread_local! {
     // Retained storage keeps the frame conversion allocation-free after the
     // first frame at each screen size.
     static FRAMEBUFFER: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
-    static PROFILE: RefCell<WebProfile> = RefCell::new(WebProfile::default());
-}
-
-#[derive(Default)]
-struct WebProfile {
-    enabled: bool,
-    native_ms: f64,
-    native_calls: u32,
-    graphics_ms: f64,
-    graphics_calls: u32,
-}
-
-fn profile_now() -> f64 {
-    web_sys::window()
-        .and_then(|window| window.performance())
-        .map(|performance| performance.now())
-        .unwrap_or_else(js_sys::Date::now)
 }
 
 /// Creates the engine runtime. Call after adding files and archives.
@@ -88,62 +70,12 @@ pub fn web_init(
 /// Dispatches one native command. Returns `null` for a clean stop.
 #[wasm_bindgen]
 pub fn web_native_call(request: &[u8]) -> Result<Option<Box<[u8]>>, JsValue> {
-    let operation = request
-        .split(|byte| *byte == b'\t' || *byte == b'\n')
-        .next()
-        .unwrap_or_default();
-    let started = PROFILE.with(|profile| profile.borrow().enabled.then(profile_now));
     let result = engine::native_call_bytes(request);
-    if let Some(started) = started {
-        let elapsed = profile_now() - started;
-        PROFILE.with(|profile| {
-            let mut profile = profile.borrow_mut();
-            profile.native_ms += elapsed;
-            profile.native_calls += 1;
-            if operation == b"graphics_update" {
-                profile.graphics_ms += elapsed;
-                profile.graphics_calls += 1;
-            }
-        });
-    }
     match result {
         Ok(Some(bytes)) => Ok(Some(bytes.into_boxed_slice())),
         Ok(None) => Ok(None),
         Err(message) => Err(JsValue::from_str(&message)),
     }
-}
-
-/// Enables or disables per-frame profiling for the browser FPS overlay.
-#[wasm_bindgen]
-pub fn web_profile_set_enabled(enabled: bool) {
-    PROFILE.with(|profile| {
-        let mut profile = profile.borrow_mut();
-        profile.enabled = enabled;
-        profile.native_ms = 0.0;
-        profile.native_calls = 0;
-        profile.graphics_ms = 0.0;
-        profile.graphics_calls = 0;
-    });
-}
-
-/// Returns `[native_ms, native_calls, graphics_update_ms, graphics_update_calls]`
-/// since the previous take, then resets the counters.
-#[wasm_bindgen]
-pub fn web_profile_take() -> Vec<f64> {
-    PROFILE.with(|profile| {
-        let mut profile = profile.borrow_mut();
-        let result = vec![
-            profile.native_ms,
-            f64::from(profile.native_calls),
-            profile.graphics_ms,
-            f64::from(profile.graphics_calls),
-        ];
-        profile.native_ms = 0.0;
-        profile.native_calls = 0;
-        profile.graphics_ms = 0.0;
-        profile.graphics_calls = 0;
-        result
-    })
 }
 
 /// A synchronous zero-copy view of the current framebuffer's RGBA bytes.
@@ -238,6 +170,12 @@ pub fn web_present_gpu() -> Result<(), JsValue> {
         Some(Some(Err(error))) => Err(JsValue::from_str(&error)),
         _ => Ok(()),
     }
+}
+
+/// Copies the browser runtime output log to the system clipboard.
+#[wasm_bindgen]
+pub fn web_copy_runtime_output() {
+    present::with_presenter(|presenter| presenter.copy_logs());
 }
 
 #[wasm_bindgen]

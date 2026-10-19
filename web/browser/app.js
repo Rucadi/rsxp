@@ -14,10 +14,35 @@ import { createGamePump, captureRubyOutput } from './game-pump.js';
 
 const canvas = document.getElementById('screen');
 
-// The workspace UI (toolbar, panels, profiler, runtime patches, save
+// The workspace UI (toolbar, panels, performance, runtime patches, save
 // export/import) is drawn by egui inside the engine. The page only hosts the
 // canvas and the Ruby VM, so there is no HTML chrome to keep in sync.
 const status = (text) => { console.log(text); globalThis.RSXP_PLAYER?.status?.(text); };
+
+function fallbackCopyText(text) {
+  const field = document.createElement('textarea');
+  field.value = text;
+  field.setAttribute('readonly', '');
+  Object.assign(field.style, { position: 'fixed', left: '-9999px', top: '0' });
+  document.body.appendChild(field);
+  field.select();
+  let copied = false;
+  try { copied = document.execCommand('copy'); } catch { /* clipboard denied */ }
+  field.remove();
+  return copied;
+}
+
+globalThis.__rsxp_copyText = (text) => {
+  const value = String(text);
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(value).then(
+      () => status('Runtime output copied.'),
+      () => status(fallbackCopyText(value) ? 'Runtime output copied.' : 'Could not access the clipboard.'),
+    );
+  } else {
+    status(fallbackCopyText(value) ? 'Runtime output copied.' : 'Could not access the clipboard.');
+  }
+};
 const setStatus = status;
 const nextAnimationFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
 
@@ -509,6 +534,11 @@ function canvasPoint(event) {
 // toggles pacing even while the workspace UI is hidden.
 const workspaceKeys = new Set(['F1', 'F2', 'F3', 'F10']);
 window.addEventListener('keydown', (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.code === 'KeyC' && !textInput) {
+    event.preventDefault();
+    engine.web_copy_runtime_output();
+    return;
+  }
   engine.web_ui_key(event.code, true);
   if (workspaceKeys.has(event.code)) {
     event.preventDefault();
@@ -523,6 +553,10 @@ window.addEventListener('keydown', (event) => {
   }
 });
 window.addEventListener('keyup', (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.code === 'KeyC' && !textInput) {
+    event.preventDefault();
+    return;
+  }
   engine.web_ui_key(event.code, false);
   if (workspaceKeys.has(event.code)) {
     event.preventDefault();

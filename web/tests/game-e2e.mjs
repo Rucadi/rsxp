@@ -99,6 +99,13 @@ const { vm } = await DefaultRubyVM(await WebAssembly.compile(rubyWasm), {
 });
 
 vm.eval(PRELUDE);
+const binaryReader = vm.eval(`
+  io = StringIO.new([0x78, 0x56, 0x34, 0x12, 0xCD, 0xAB, 0x89].pack('C*'))
+  [io.fgetb, io.fgetw, io.fgetdw].inspect
+`).toString();
+if (binaryReader !== '[120, 13398, 2309737746]') {
+  throw new Error(`StringIO RGSS binary reader mismatch: ${binaryReader}`);
+}
 vm.eval('$rsxp_source = JS.global[:RSXP][:source].to_s');
 vm.eval('$rsxp_fiber = Fiber.new { eval($rsxp_source, TOPLEVEL_BINDING, "rgss.rb", 1) }');
 const gameFiber = vm.eval('$rsxp_fiber');

@@ -30,7 +30,7 @@ set as the desktop). The page contributes only a `<canvas>`; there is no HTML
 chrome and no 2D `putImageData` presenter. The engine uploads the finished frame
 to a texture, draws it letterboxed, and runs the egui workspace (toolbar with
 panel toggles, uncapped mode, FPS, reset, save export/import; runtime-patches
-panel; profiler) on top. Gameplay starts with the workspace hidden. F1 toggles
+panel; performance panel) on top. Gameplay starts with the workspace hidden. F1 toggles
 all workspace UI, F2 Tools, F3 Runtime output and F10 Performance. The presenter
 requests the WebGL backend. Availability depends on the browser
 and its graphics configuration; software emulation is browser-dependent. Game
@@ -125,12 +125,8 @@ The page shows a scrolling log of everything Ruby writes to stdout/stderr
 game stops, the real error appears here — for example a missing asset or a Ruby
 exception — instead of only the fiber ending.
 
-The `FPS (F10)` control toggles a rolling browser profiler overlay. It reports
-presented FPS, Ruby VM time, total bridge time, an estimate of JS marshalling
-time (bridge minus Rust native dispatch), Rust native time with `Graphics.update`
-broken out, presenter/canvas time, and native calls per frame. Ruby VM time also
-includes Ruby-side bridge encoding. Detailed timers run only while the overlay
-is visible.
+The `FPS (F10)` control toggles the performance panel, which shows the current
+frame rate and frame count.
 
 ## How frames advance
 

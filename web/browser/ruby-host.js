@@ -3,6 +3,28 @@
 export const PRELUDE = `
 require 'js'
 require 'stringio'
+# RGSS FileInputMixin binary helpers are normally available on files returned
+# by pbRgssOpen. Browser asset opens return StringIO instead, so provide the
+# same little-endian readers on that adapter.
+class StringIO
+  def fgetb
+    read(1)&.getbyte(0)
+  end unless method_defined?(:fgetb)
+
+  def fgetw
+    low = fgetb
+    high = fgetb
+    return nil unless low && high
+    low | (high << 8)
+  end unless method_defined?(:fgetw)
+
+  def fgetdw
+    low = fgetw
+    high = fgetw
+    return nil unless low && high
+    low | (high << 16)
+  end unless method_defined?(:fgetdw)
+end
 # ruby.wasm omits some C-extension stdlibs. Plugins only need the require to
 # succeed at load time, so mark unavailable features as loaded.
 %w[socket io/wait openssl].each do |feature|

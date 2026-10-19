@@ -106,8 +106,19 @@ module RSXP::Retained
       __rsxp_dirty_resources.each { |id| @pending[id] = true }
       # Only compatibility objects are polled. Native snapshots remain retained
       # until a setter, nested value mutation, or dependency invalidates them.
-      ids = @pending.keys.select { |id| @resources[id]&.first == base }
-      @compatibility.each_key { |id| ids << id if @resources[id]&.first == base && !@pending[id] }
+      # Collect matching ids directly. `keys.select` materialized both the
+      # entire pending key list and a second filtered list on every class flush.
+      ids = []
+      @pending.each_key do |id|
+        entry = @resources[id]
+        ids << id if entry && entry[0] == base
+      end
+      unless @compatibility.empty?
+        @compatibility.each_key do |id|
+          entry = @resources[id]
+          ids << id if entry && entry[0] == base && !@pending[id]
+        end
+      end
       ids.each do |id|
         @pending.delete(id)
         entry = @resources[id]

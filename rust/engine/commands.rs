@@ -184,9 +184,9 @@ impl Runtime {
             }
             "rpg" => {
                 return Ok(match self.version {
-                    1 => include_bytes!(concat!(env!("OUT_DIR"), "/rpg1.rb")).to_vec(),
-                    2 => include_bytes!(concat!(env!("OUT_DIR"), "/rpg2.rb")).to_vec(),
-                    _ => include_bytes!(concat!(env!("OUT_DIR"), "/rpg3.rb")).to_vec(),
+                    1 => include_bytes!("../ruby/rgss/rpg1.rb").to_vec(),
+                    2 => include_bytes!("../ruby/rgss/rpg2.rb").to_vec(),
+                    _ => include_bytes!("../ruby/rgss/rpg3.rb").to_vec(),
                 })
             }
             "read" => {

@@ -296,7 +296,7 @@ separate relay services, not a general HTTP implementation for game scripts.
 | CPU types, pixels and effects | `rust/graphics/` |
 | GPU setup, resources, commands, batching, submission and transport | `rust/gpu/` |
 | Archive decryption and Table storage | `rust/data/` |
-| Ruby compatibility classes and game loader | `rust/ruby/`, `binding/module_rpg*.rb.xxd` |
+| Ruby compatibility classes and game loader | `rust/ruby/`; `rpg1.rb`, `rpg2.rb`, and `rpg3.rb` are taken from mkxp-z |
 | Desktop entry and runtime lifecycle | `rust/desktop/main.rs`, `rust/desktop/runtime/` |
 | Dashboard, transport, library and save backups | `rust/desktop/{dashboard,session,library,saves}.rs` |
 | Platform services | `rust/desktop/{host,window,gpu_present,media,audio}.rs` |

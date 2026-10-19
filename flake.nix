@@ -45,9 +45,7 @@
                       || relative == "desktop" || pkgs.lib.hasPrefix "desktop/" relative
                       || relative == "ruby_rgss_core" || pkgs.lib.hasPrefix "ruby_rgss_core/" relative
                       || builtins.elem relative [ "api/game_bridge.rb" "api/openapi.json" ]
-                      || relative == "binding" || builtins.elem relative [
-                        "binding/module_rpg1.rb.xxd" "binding/module_rpg2.rb.xxd" "binding/module_rpg3.rb.xxd"
-                      ] || builtins.elem relative [ "Cargo.toml" "Cargo.lock" "build.rs" "COPYING" ];
+                      || builtins.elem relative [ "Cargo.toml" "Cargo.lock" "COPYING" ];
                 };
                 cargoLock.lockFile = ./Cargo.lock;
                 cargoBuildFlags = [ "-p" "rsxp-desktop" "--bin" "rsxp" "--target" "x86_64-pc-windows-gnu" ];

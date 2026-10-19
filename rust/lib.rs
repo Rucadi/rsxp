@@ -53,6 +53,8 @@ pub mod gpu;
 pub mod graphics;
 pub mod media;
 pub mod patches;
+#[cfg(feature = "portable-media")]
+pub mod portable_media;
 pub mod runtime_settings;
 /// Shared egui workspace used by both the native and browser frontends.
 #[cfg(feature = "ui")]

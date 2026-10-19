@@ -10,7 +10,7 @@ description = "Browser (WebAssembly) frontend for the rsxp engine"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-rsxp = { path = "../..", default-features = false, features = ["ui", "game-api"] }
+rsxp = { path = "../..", default-features = false, features = ["ui", "game-api", "portable-media"] }
 # The browser workspace renders through wgpu's WebGL2 backend, which the browser
 # software-emulates when the GPU is disabled, so no GPU is required.
 wgpu = { version = "27.0.1", default-features = false, features = ["webgl", "webgpu", "wgsl", "std"] }

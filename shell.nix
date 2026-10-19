@@ -20,7 +20,7 @@ pkgs.mkShell {
     pkgs.nodejs
   ] ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.mold ];
   # Keep dynamically linked cargo binaries runnable outside the build phase.
-  buildInputs = linuxLibraries;
+  buildInputs = linuxLibraries ++ [ pkgs.zlib pkgs.libffi ];
   LD_LIBRARY_PATH = pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux
     (pkgs.lib.makeLibraryPath (linuxLibraries ++ [ pkgs.ruby ]));
   # WebAssembly builds need a wasm-capable linker (rust-lld is not shipped here).

@@ -71,6 +71,14 @@ updated. Platform declarations alone are not evidence of successful builds.
 
 ## How the project fits together
 
+The experimental [mobile app](mobile/README.md) shares one touch interface between
+iOS and Android, with a native Rust core and native MRI Ruby for game execution.
+The iOS Simulator prototype runs; Android still requires a native MRI build.
+Start with
+`python3 mobile/build.py ios --run` inside `nix-shell` after completing Xcode's
+first-launch setup. The mobile README covers the native host preview and current
+compatibility limits.
+
 - [Architecture](docs/architecture.md): startup flowcharts, frame sequence,
   desktop rendering paths, browser scheduling, ownership and a source map.
 - [Runtime and compatibility](docs/rust-port.md): startup, RGSS behavior,

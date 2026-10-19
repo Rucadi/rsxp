@@ -30,6 +30,7 @@ theora-rs = "0.1"
 gilrs = { version = "0.11.2", optional = true }
 
 [features]
+portable-media = ["dep:fontdue", "dep:image"]
 default = ["desktop", "gpu"]
 gpu = ["ui", "dep:wgpu", "dep:pollster", "dep:bytemuck", "dep:egui-wgpu", "dep:egui-winit"]
 # The shared egui workspace, used by the native and browser frontends.

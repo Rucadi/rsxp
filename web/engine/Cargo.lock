@@ -802,6 +802,7 @@ name = "rsxp"
 version = "0.1.0"
 dependencies = [
  "egui",
+ "fontdue",
  "gif",
  "image",
  "ogg",

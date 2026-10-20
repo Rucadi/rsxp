@@ -43,5 +43,15 @@ Dir.mktmpdir('rsxp-load-data') do |dir|
   raise 'raw binary load' unless raw==bytes && raw.encoding==Encoding::BINARY
   File.binwrite(path,'')
   raise 'empty raw load' unless load_data(path,true)==''
+  begin
+    load_data(File.join(dir,'missing.rxdata'))
+    raise 'missing load accepted'
+  rescue Errno::ENOENT
+  end
+  begin
+    load_data(File.join(dir,'missing.rxdata'),true)
+    raise 'missing raw load accepted'
+  rescue Errno::ENOENT
+  end
 end
 puts 'KERNEL_GAME_HELPERS_OK'

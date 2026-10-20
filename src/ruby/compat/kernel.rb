@@ -1,7 +1,15 @@
 module Kernel
   # mkxp-z's optional raw flag bypasses Marshal for archive-backed file reads.
   def load_data(path, raw=false)
-    bytes=RSXP.call('read',payload:String(path))
+    bytes=begin
+      RSXP.call('read',payload:String(path))
+    rescue RuntimeError => error
+      # mkxp reports a missing asset through the filesystem error that games
+      # rescue while probing optional files (Essentials' pbGetFileChar uses
+      # load_data and expects Errno::ENOENT for absent graphics).
+      raise Errno::ENOENT,path.to_s if error.message.start_with?('asset not found: ')
+      raise
+    end
     return bytes if raw
     data=Marshal.load(bytes)
     # Modern Ruby rejects `class Foo < Foo` (superclass mismatch) and would raise

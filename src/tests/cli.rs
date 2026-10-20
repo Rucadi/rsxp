@@ -837,12 +837,27 @@ fn isolated_runner_transport(renderer: &str) {
         time::{Duration, Instant},
     };
     fn read(stream: &mut TcpStream) -> serde_json::Value {
+        fn read_exact_with_retry(stream: &mut TcpStream, mut bytes: &mut [u8]) {
+            let deadline = Instant::now() + Duration::from_secs(30);
+            while !bytes.is_empty() {
+                match stream.read(bytes) {
+                    Ok(0) => panic!("runner transport closed while reading"),
+                    Ok(read) => bytes = &mut bytes[read..],
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                        ) && Instant::now() < deadline => {}
+                    Err(error) => panic!("runner transport read failed: {error}"),
+                }
+            }
+        }
         let mut length = [0; 4];
-        stream.read_exact(&mut length).unwrap();
+        read_exact_with_retry(stream, &mut length);
         let length = u32::from_le_bytes(length) as usize;
         assert!(length < 16 * 1024 * 1024);
         let mut bytes = vec![0; length];
-        stream.read_exact(&mut bytes).unwrap();
+        read_exact_with_retry(stream, &mut bytes);
         serde_json::from_slice(&bytes).unwrap()
     }
     fn write(stream: &mut TcpStream, value: serde_json::Value) {
@@ -895,10 +910,31 @@ fn isolated_runner_transport(renderer: &str) {
                 Err(e) => panic!("{e}"),
             }
         };
+        let mut control_stream = loop {
+            match listener.accept() {
+                Ok((s, _)) => break s,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(
+                        start.elapsed() < Duration::from_secs(15),
+                        "runner failed to open its control connection"
+                    );
+                    assert!(
+                        child.try_wait().unwrap().is_none(),
+                        "runner exited before control connection"
+                    );
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(e) => panic!("{e}"),
+            }
+        };
         stream
             .set_read_timeout(Some(Duration::from_secs(10)))
             .unwrap();
+        control_stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
         assert_eq!(read(&mut stream)["token"], "session-test-token");
+        assert_eq!(read(&mut control_stream)["token"], "session-test-token");
         let mut frames = 0;
         let mut polls = 0;
         let mut replied = false;
@@ -908,7 +944,7 @@ fn isolated_runner_transport(renderer: &str) {
                 polls += 1;
                 let paused = polls <= 2;
                 write(
-                    &mut stream,
+                    &mut control_stream,
                     serde_json::json!({"paused":paused,"keys":[40],"downs":if polls==3{vec![40]}else{vec![]},"rate":120,"api":if polls==3{"91\tgame_status\n"}else{""}}),
                 );
             } else {

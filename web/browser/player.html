@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rsxp player</title>
+<style>
+:root{color-scheme:dark;--ink:#f5f4ee;--muted:#a9b2b0;--line:#33403d;--panel:#161f20;--mint:#a6f0c6}*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;background:#0b1011;color:var(--ink);font:15px/1.5 Inter,ui-sans-serif,system-ui,sans-serif}#screen{display:block;width:100%;height:100%;background:#000}#launcher[hidden],[hidden]{display:none!important}#launcher{position:fixed;inset:0;overflow:auto;background:radial-gradient(ellipse at 75% 0%,#263a35 0,transparent 45%),#0b1011;padding:clamp(18px,4vw,56px)}.shell{max-width:1120px;margin:auto}.topbar{display:flex;justify-content:space-between;margin-bottom:clamp(35px,7vh,75px)}.brand{font-weight:750;letter-spacing:.04em}.mark{display:inline-grid;place-items:center;width:36px;height:36px;margin-right:10px;border-radius:11px;background:var(--mint);color:#102017}.top-note,.sub,.footer{color:var(--muted)}.hero{max-width:700px;margin-bottom:32px}.eyebrow{color:var(--mint);font-size:12px;font-weight:750;letter-spacing:.16em;text-transform:uppercase}.hero h1{font-size:clamp(38px,7vw,72px);line-height:.98;letter-spacing:-.055em;margin:14px 0}.hero p{max-width:580px;color:#bac3c0;font-size:17px}.layout{display:grid;grid-template-columns:1.15fr .85fr;gap:18px}.panel{background:#161f20;border:1px solid var(--line);border-radius:20px;padding:24px}.panel h2{font-size:17px;margin:0 0 5px}.sub{margin:0 0 20px;font-size:13px}.pickers{display:grid;grid-template-columns:1fr 1fr;gap:12px}.pick-card{min-height:142px;text-align:left;padding:18px;border:1px solid #3d4a46;border-radius:15px;background:#1b2725;color:var(--ink);cursor:pointer;transition:.16s}.pick-card:hover,.pick-card:focus-visible{border-color:var(--mint);transform:translateY(-2px);outline:none}.pick-card .icon{display:block;font-size:23px;color:var(--mint);margin-bottom:15px}.pick-card strong,.pick-card span:last-child{display:block}.pick-card span:last-child{color:var(--muted);font-size:12px;margin-top:4px}.drop{margin-top:14px;padding:13px;border:1px dashed #53635d;border-radius:13px;color:var(--muted);text-align:center;font-size:13px;cursor:pointer}.drop.dragover{border-color:var(--mint);background:#1d3027}.torrent label{display:block;font-size:13px;margin:12px 0 6px}.torrent input{width:100%;padding:12px;border:1px solid #3b4945;border-radius:10px;background:#0e1515;color:var(--ink);font:inherit}.button{width:100%;margin-top:10px;padding:12px;border:0;border-radius:10px;background:var(--mint);color:#102017;font-weight:700;cursor:pointer}.button:disabled{opacity:.55;cursor:wait}#launch-status{min-height:40px;white-space:pre-wrap;color:var(--mint);font-size:13px;margin:18px 0}.hint{border-top:1px solid var(--line);margin-top:18px;padding-top:14px;color:var(--muted);font-size:12px}.hint b{color:#e7eee9}.footer{display:flex;justify-content:space-between;gap:12px;margin-top:22px;font-size:12px}.keys{color:#b3bfba}@media(max-width:740px){#launcher{padding:18px}.topbar{margin-bottom:38px}.top-note{display:none}.layout{grid-template-columns:1fr}.panel{padding:18px}.hero h1{font-size:46px}.footer{display:block}.keys{margin-top:6px}}@media(max-width:420px){.pickers{grid-template-columns:1fr}.pick-card{min-height:108px}.hero h1{font-size:39px}}
+</style>
+<canvas id="screen" width="640" height="480" aria-label="Game and workspace. F1 opens controls; F2 opens tools."></canvas>
+<section id="launcher"><div class="shell">
+<header class="topbar"><div class="brand"><span class="mark">R</span>RSXP <span style="color:#92a09a;font-weight:500">PLAYER</span></div><span class="top-note">Your games, ready to play</span></header>
+<section class="hero"><div class="eyebrow">RPG Maker · Browser Edition</div><h1>Pick a game.<br>Step inside.</h1><p>Bring a game folder or archive. Your files stay on this device while rsxp prepares a private play session.</p></section>
+<div class="layout"><section class="panel"><h2>Choose your game</h2><p class="sub">Select a local game source to get started.</p><div class="pickers"><button class="pick-card" id="choose-game"><span class="icon">▤</span><strong>Game folder</strong><span>Choose a folder with Game.ini and Data</span></button><button class="pick-card" id="choose-zip"><span class="icon">▣</span><strong>ZIP archive</strong><span>Open a packaged game archive</span></button></div><input id="game-folder" type="file" webkitdirectory multiple hidden><div class="drop" id="drop-zone">Drop a game ZIP here, or tap to browse</div><div class="hint"><b>Local and private</b><br>Folder and ZIP files are read in your browser. No upload required.</div></section>
+<section class="panel torrent" id="source-options"><h2>From a link</h2><p class="sub">Load a WebTorrent magnet or .torrent URL.</p><label for="torrent-url">Magnet link or torrent URL</label><input id="torrent-url" type="url" placeholder="magnet:?xt=urn:btih:…" spellcheck="false"><button class="button" id="download-torrent">Download game</button><button class="button" id="cancel-download" hidden>Cancel</button><p id="launch-status" role="status" aria-live="polite">Ready when you are.</p><div class="hint">Torrents need WebRTC-compatible seeders. Your browser may share pieces with peers while downloading.</div></section></div>
+<footer class="footer"><span>RSXP · A home for classic RPG Maker games</span><span class="keys">F1 workspace · F2 tools · F3 output · F10 performance</span></footer><input id="game-zip" type="file" accept=".zip,application/zip" hidden>
+</div></section>
+<script id="rsxp-payload" type="application/json">__RSXP_PAYLOAD__</script>
+<script type="module">
+const payload = JSON.parse(document.getElementById('rsxp-payload').textContent);
+const urls = new Map();
+function decode(text) {
+  const padding = text.endsWith('==') ? 2 : text.endsWith('=') ? 1 : 0;
+  const bytes = new Uint8Array(text.length / 4 * 3 - padding);
+  let output = 0;
+  for (let offset = 0; offset < text.length; offset += 65536) {
+    const part = atob(text.slice(offset, offset + 65536));
+    for (let i = 0; i < part.length; i += 1) bytes[output++] = part.charCodeAt(i);
+  }
+  return bytes;
+}
+function moduleURL(name) {
+  if (urls.has(name)) return urls.get(name);
+  let source = payload.modules[name];
+  if (source === undefined) throw new Error('Missing embedded module: ' + name);
+  source = source.replace(/(from\s+)(['"])(\.\/[^'"]+)\2/g, (_match, prefix, quote, path) => {
+    const base = name.includes('/') ? name.slice(0, name.lastIndexOf('/') + 1) : '';
+    return prefix + quote + moduleURL(base + path.slice(2)) + quote;
+  });
+  const url = URL.createObjectURL(new Blob([source], {type:'text/javascript'}));
+  urls.set(name, url);
+  return url;
+}
+globalThis.RSXP_BUNDLE = {payload, decode, load: name => import(moduleURL(name))};
+try { await globalThis.RSXP_BUNDLE.load('player-launcher.js'); }
+catch (error) { document.getElementById('launch-status').textContent = String(error); }
+</script>
+</html>

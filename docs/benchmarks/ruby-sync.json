@@ -1,0 +1,120 @@
+{
+  "scene": "Pokemon Anil saved map 2, 50 events, idle",
+  "renderer": "wgpu, NVIDIA GeForce RTX 2080, headless, uncapped",
+  "method": "Three alternating runs of each version, 150 warmup and 1500 measured updates, GPU fenced at both ends. Sampling disabled; no concurrent builds. Game saving disabled.",
+  "original": "Original Ruby sprite synchronization and identity-only Color/Tone comparison.",
+  "first_port": "Typed Magnus synchronization, with property getters called from Rust.",
+  "optimized": "Ruby argument-stack submission to typed Rust synchronization, RGSS value comparison, allocation-reduced value setters.",
+  "medians": {
+    "original": {
+      "ms_per_frame": 6.1588,
+      "cpu_ms_per_frame": 6.1484,
+      "allocations_per_frame": 16938.49,
+      "gc_cycles": 28.0
+    },
+    "first_port": {
+      "ms_per_frame": 4.9046,
+      "cpu_ms_per_frame": 4.8796,
+      "allocations_per_frame": 7535.18,
+      "gc_cycles": 20.0
+    },
+    "optimized": {
+      "ms_per_frame": 2.279,
+      "cpu_ms_per_frame": 2.2734,
+      "allocations_per_frame": 2796.68,
+      "gc_cycles": 24.0
+    }
+  },
+  "runs": [
+    {
+      "frames": 1500.0,
+      "elapsed_s": 9.2979,
+      "ms_per_frame": 6.1986,
+      "cpu_ms_per_frame": 6.1966,
+      "allocations_per_frame": 16936.98,
+      "gc_cycles": 28.0,
+      "mode": "original",
+      "round": 0
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 7.3569,
+      "ms_per_frame": 4.9046,
+      "cpu_ms_per_frame": 4.8796,
+      "allocations_per_frame": 7534.58,
+      "gc_cycles": 20.0,
+      "mode": "first_port",
+      "round": 0
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 3.2958,
+      "ms_per_frame": 2.1972,
+      "cpu_ms_per_frame": 2.1903,
+      "allocations_per_frame": 2797.35,
+      "gc_cycles": 29.0,
+      "mode": "optimized",
+      "round": 0
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 3.4185,
+      "ms_per_frame": 2.279,
+      "cpu_ms_per_frame": 2.2734,
+      "allocations_per_frame": 2795.73,
+      "gc_cycles": 24.0,
+      "mode": "optimized",
+      "round": 1
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 7.3671,
+      "ms_per_frame": 4.9114,
+      "cpu_ms_per_frame": 4.9105,
+      "allocations_per_frame": 7535.18,
+      "gc_cycles": 20.0,
+      "mode": "first_port",
+      "round": 1
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 9.2381,
+      "ms_per_frame": 6.1588,
+      "cpu_ms_per_frame": 6.1484,
+      "allocations_per_frame": 16940.09,
+      "gc_cycles": 28.0,
+      "mode": "original",
+      "round": 1
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 9.1526,
+      "ms_per_frame": 6.1018,
+      "cpu_ms_per_frame": 6.0898,
+      "allocations_per_frame": 16938.49,
+      "gc_cycles": 28.0,
+      "mode": "original",
+      "round": 2
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 6.9068,
+      "ms_per_frame": 4.6045,
+      "cpu_ms_per_frame": 4.6047,
+      "allocations_per_frame": 7535.59,
+      "gc_cycles": 19.0,
+      "mode": "first_port",
+      "round": 2
+    },
+    {
+      "frames": 1500.0,
+      "elapsed_s": 3.573,
+      "ms_per_frame": 2.382,
+      "cpu_ms_per_frame": 2.3659,
+      "allocations_per_frame": 2796.68,
+      "gc_cycles": 9.0,
+      "mode": "optimized",
+      "round": 2
+    }
+  ]
+}

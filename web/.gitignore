@@ -1,0 +1,11 @@
+# Cargo outputs for the native CLI, WASM engine, and build tool.
+target/
+
+# Generated browser runtime and standalone player.
+/dist/
+
+# Optional Ruby runtime provisioning and JavaScript test dependencies.
+/node_modules/
+
+# Player/game exports in this directory. browser/player.html is source.
+/*.html

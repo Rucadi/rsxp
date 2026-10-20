@@ -1,0 +1,730 @@
+{
+  "date": "2026-10-17",
+  "scenario": "Pokemon Z real Continue load, map 3, 47 events; player walks from (21,15) to (25,15) and back",
+  "gpu": "NVIDIA GeForce RTX 2080",
+  "renderer": "wgpu",
+  "yjit": true,
+  "profile_enabled": false,
+  "seed": 0,
+  "warmup_updates": 60,
+  "measured_updates": 180,
+  "input": "100:79:40,170:80:40",
+  "build": "release, default configuration",
+  "save_sha256": "83016669b802cf90d86fac192969f933f628ef58ccd61b955c1f278ac392a143",
+  "game_scripts_sha256": "dbd15b8a3962571c4c7f1d9d6ab869a000a1a607fa49f368ac9a35c204236548",
+  "runs": {
+    "zoom_1": {
+      "before": [
+        {
+          "frames": 180,
+          "ms_per_frame": 13.433757800117341,
+          "cpu_ms_per_frame": 13.432385977777775,
+          "p95_ms": 21.319282008334994,
+          "max_ms": 32.19431603793055,
+          "allocations_per_frame": 61443.294444444444,
+          "final": [
+            3,
+            21,
+            15
+          ],
+          "positions": [
+            [
+              21,
+              15
+            ],
+            [
+              22,
+              15
+            ],
+            [
+              23,
+              15
+            ],
+            [
+              24,
+              15
+            ],
+            [
+              25,
+              15
+            ]
+          ],
+          "retained": {
+            "synced": 51581
+          },
+          "scene": "map=3 events=47 x=21 y=15 width=512 height=384 tilemap=1 classes=[CustomTilemap]",
+          "image_sha256": "d68161a9f63ef9a03882dbe9e63dbe217b5482801f490e89b158c9488a9988d4"
+        },
+        {
+          "frames": 180,
+          "ms_per_frame": 13.523290483539718,
+          "cpu_ms_per_frame": 13.523854072222225,
+          "p95_ms": 23.318858933635056,
+          "max_ms": 36.85882606077939,
+          "allocations_per_frame": 61455.938888888886,
+          "final": [
+            3,
+            21,
+            15
+          ],
+          "positions": [
+            [
+              21,
+              15
+            ],
+            [
+              22,
+              15
+            ],
+            [
+              23,
+              15
+            ],
+            [
+              24,
+              15
+            ],
+            [
+              25,
+              15
+            ]
+          ],
+          "retained": {
+            "synced": 51581
+          },
+          "scene": "map=3 events=47 x=21 y=15 width=512 height=384 tilemap=1 classes=[CustomTilemap]",
+          "image_sha256": "d68161a9f63ef9a03882dbe9e63dbe217b5482801f490e89b158c9488a9988d4"
+        },
+        {
+          "frames": 180,
+          "ms_per_frame": 13.365309377614823,
+          "cpu_ms_per_frame": 13.364037105555555,
+          "p95_ms": 22.083861054852605,
+          "max_ms": 31.169906025752425,
+          "allocations_per_frame": 61470.46111111111,
+          "final": [
+            3,
+            21,
+            15
+          ],
+          "positions": [
+            [
+              21,
+              15
+            ],
+            [
+              22,
+              15
+            ],
+            [
+              23,
+              15
+            ],
+            [
+              24,
+              15
+            ],
+            [
+              25,
+              15
+            ]
+          ],
+          "retained": {
+            "synced": 51581
+          },
+          "scene": "map=3 events=47 x=21 y=15 width=512 height=384 tilemap=1 classes=[CustomTilemap]",
+          "image_sha256": "d68161a9f63ef9a03882dbe9e63dbe217b5482801f490e89b158c9488a9988d4"
+        }
+      ],
+      "after": [
+        {
+          "frames": 180,
+          "ms_per_frame": 2.022537988765786,
+          "cpu_ms_per_frame": 2.0158658944444436,
+          "p95_ms": 4.297134000808001,
+          "max_ms": 18.732517957687378,
+          "allocations_per_frame": 1942.111111111111,
+          "final": [
+            3,
+            21,
+            15
+          ],
+          "positions": [
+            [
+              21,
+              15
+            ],
+            [
+              22,
+              15
+            ],
+            [
+              23,
+              15
+            ],
+            [
+              24,
+              15
+            ],
+            [
+              25,
+              15
+            ]
+          ],
+          "retained": {
+            "synced": 51581
+          },
+          "scene": "map=3 events=47 x=21 y=15 width=512 height=384 tilemap=1 classes=[CustomTilemap]",
+          "image_sha256": "d68161a9f63ef9a03882dbe9e63dbe217b5482801f490e89b158c9488a9988d4"
+        },
+        {
+          "frames": 180,
+          "ms_per_frame": 2.0117894836908414,
+          "cpu_ms_per_frame": 2.007783172222223,
+          "p95_ms": 4.2235099244862795,
+          "max_ms": 18.455396057106555,
+          "allocations_per_frame": 1942.1166666666666,
+          "final": [
+            3,
+            21,
+            15
+          ],
+          "positions": [
+            [
+              21,
+              15
+            ],
+            [
+              22,
+              15
+            ],
+            [
+              23,
+              15
+            ],
+            [
+              24,
+              15
+            ],
+            [
+              25,
+              15
+            ]
+          ],
+          "retained": {
+            "synced": 51581
+          },
+          "scene": "map=3 events=47 x=21 y=15 width=512 height=384 tilemap=1 classes=[CustomTilemap]",
+          "image_sha256": "d68161a9f63ef9a03882dbe9e63dbe217b5482801f490e89b158c9488a9988d4"
+        },
+        {
+          "frames": 180,
+          "ms_per_frame": 2.0426845559591635,
+          "cpu_ms_per_frame": 2.035456805555555,
+          "p95_ms": 4.784021992236376,
+          "max_ms": 18.75914796255529,
+          "allocations_per_frame": 1942.1166666666666,
+          "final": [
+            3,
+            21,
+            15
+          ],
+          "positions": [
+            [
+              21,
+              15
+            ],
+            [
+              22,
+              15
+            ],
+            [
+              23,
+              15
+            ],
+            [
+              24,
+              15
+            ],
+            [
+              25,
+              15
+            ]
+          ],
+          "retained": {
+            "synced": 51581
+          },
+          "scene": "map=3 events=47 x=21 y=15 width=512 height=384 tilemap=1 classes=[CustomTilemap]",
+          "image_sha256": "d68161a9f63ef9a03882dbe9e63dbe217b5482801f490e89b158c9488a9988d4"
+        }
+      ]
+    },
+    "zoom_3": {
+      "before": [
+        {
+          "frames": 180,
+          "ms_per_frame": 48.6802299390547,
+          "cpu_ms_per_frame": 48.690557133333336,
+          "p95_ms": 58.52204607799649,
+          "max_ms": 75.48363402020186,
+          "allocations_per_frame": 74099.63888888889,
+          "final": [
+            3,
+            21,
+            15
+          ],
+          "positions": [
+            [
+              21,
+              15
+            ],
+            [
+              22,
+              15
+            ],
+            [
+              23,
+              15
+            ],
+            [
+              24,
+              15
+            ],
+            [
+              25,
+              15
+            ]
+          ],
+          "retained": {
+            "synced": 943099
+          },
+          "scene": "map=3 events=47 x=21 y=15 width=1536 height=1152 tilemap=1 classes=[SynchronizedTilemap]",
+          "image_sha256": "034a3fa030552a2567ef40431922a8ddab653f0be0090d5163074e76a259ae38"
+        },
+        {
+          "frames": 180,
+          "ms_per_frame": 47.58386055537913,
+          "cpu_ms_per_frame": 47.54611918888889,
+          "p95_ms": 55.886378046125174,
+          "max_ms": 63.02170001436025,
+          "allocations_per_frame": 74111.68333333333,
+          "final": [
+            3,
+            21,
+            15
+          ],
+          "positions": [
+            [
+              21,
+              15
+            ],
+            [
+              22,
+              15
+            ],
+            [
+              23,
+              15
+            ],
+            [
+              24,
+              15
+            ],
+            [
+              25,
+              15
+            ]
+          ],
+          "retained": {
+            "synced": 943099
+          },
+          "scene": "map=3 events=47 x=21 y=15 width=1536 height=1152 tilemap=1 classes=[SynchronizedTilemap]",
+          "image_sha256": "034a3fa030552a2567ef40431922a8ddab653f0be0090d5163074e76a259ae38"
+        },
+        {
+          "frames": 180,
+          "ms_per_frame": 47.971919244284635,
+          "cpu_ms_per_frame": 47.98633775,
+          "p95_ms": 56.52581108734012,
+          "max_ms": 70.63958502840251,
+          "allocations_per_frame": 74126.16111111111,
+          "final": [
+            3,
+            21,
+            15
+          ],
+          "positions": [
+            [
+              21,
+              15
+            ],
+            [
+              22,
+              15
+            ],
+            [
+              23,
+              15
+            ],
+            [
+              24,
+              15
+            ],
+            [
+              25,
+              15
+            ]
+          ],
+          "retained": {
+            "synced": 943099
+          },
+          "scene": "map=3 events=47 x=21 y=15 width=1536 height=1152 tilemap=1 classes=[SynchronizedTilemap]",
+          "image_sha256": "034a3fa030552a2567ef40431922a8ddab653f0be0090d5163074e76a259ae38"
+        }
+      ],
+      "after": [
+        {
+          "frames": 180,
+          "ms_per_frame": 5.781912216399279,
+          "cpu_ms_per_frame": 5.7691016,
+          "p95_ms": 25.528960046358407,
+          "max_ms": 51.83608899824321,
+          "allocations_per_frame": 3799.4666666666667,
+          "final": [
+            3,
+            21,
+            15
+          ],
+          "positions": [
+            [
+              21,
+              15
+            ],
+            [
+              22,
+              15
+            ],
+            [
+              23,
+              15
+            ],
+            [
+              24,
+              15
+            ],
+            [
+              25,
+              15
+            ]
+          ],
+          "retained": {
+            "synced": 57140,
+            "legacy_tilemap_rebuilt": 19,
+            "legacy_tilemap_reused": 212
+          },
+          "scene": "map=3 events=47 x=21 y=15 width=1536 height=1152 tilemap=1 classes=[SynchronizedTilemap]",
+          "image_sha256": "034a3fa030552a2567ef40431922a8ddab653f0be0090d5163074e76a259ae38"
+        },
+        {
+          "frames": 180,
+          "ms_per_frame": 5.7960490773742395,
+          "cpu_ms_per_frame": 5.789505205555555,
+          "p95_ms": 25.34643397666514,
+          "max_ms": 51.846644026227295,
+          "allocations_per_frame": 3799.4666666666667,
+          "final": [
+            3,
+            21,
+            15
+          ],
+          "positions": [
+            [
+              21,
+              15
+            ],
+            [
+              22,
+              15
+            ],
+            [
+              23,
+              15
+            ],
+            [
+              24,
+              15
+            ],
+            [
+              25,
+              15
+            ]
+          ],
+          "retained": {
+            "synced": 57140,
+            "legacy_tilemap_rebuilt": 19,
+            "legacy_tilemap_reused": 212
+          },
+          "scene": "map=3 events=47 x=21 y=15 width=1536 height=1152 tilemap=1 classes=[SynchronizedTilemap]",
+          "image_sha256": "034a3fa030552a2567ef40431922a8ddab653f0be0090d5163074e76a259ae38"
+        },
+        {
+          "frames": 180,
+          "ms_per_frame": 5.747319710725504,
+          "cpu_ms_per_frame": 5.741425105555556,
+          "p95_ms": 25.28613491449505,
+          "max_ms": 52.864124067127705,
+          "allocations_per_frame": 3799.4666666666667,
+          "final": [
+            3,
+            21,
+            15
+          ],
+          "positions": [
+            [
+              21,
+              15
+            ],
+            [
+              22,
+              15
+            ],
+            [
+              23,
+              15
+            ],
+            [
+              24,
+              15
+            ],
+            [
+              25,
+              15
+            ]
+          ],
+          "retained": {
+            "synced": 57140,
+            "legacy_tilemap_rebuilt": 19,
+            "legacy_tilemap_reused": 212
+          },
+          "scene": "map=3 events=47 x=21 y=15 width=1536 height=1152 tilemap=1 classes=[SynchronizedTilemap]",
+          "image_sha256": "034a3fa030552a2567ef40431922a8ddab653f0be0090d5163074e76a259ae38"
+        }
+      ]
+    }
+  },
+  "medians": {
+    "zoom_1": {
+      "before_ms": 13.433757800117341,
+      "after_ms": 2.022537988765786,
+      "speedup": 6.642029902397545,
+      "reduction_percent": 84.94436166812447,
+      "before_p95_ms": 22.083861054852605,
+      "after_p95_ms": 4.297134000808001
+    },
+    "zoom_3": {
+      "before_ms": 47.971919244284635,
+      "after_ms": 5.781912216399279,
+      "speedup": 8.296895118577126,
+      "reduction_percent": 87.94729852904909,
+      "before_p95_ms": 56.52581108734012,
+      "after_p95_ms": 25.34643397666514
+    }
+  },
+  "initial_profiles": {
+    "normal": {
+      "samples": 507,
+      "gc_samples": 75,
+      "allocated_objects": 8908341,
+      "gc_cycles": 76,
+      "elapsed_wall_seconds": 2.0350865100044757,
+      "top_self_samples": [
+        {
+          "name": "Dir.children",
+          "file": "<cfunc>",
+          "line": null,
+          "self_samples": 179,
+          "total_samples": 181
+        },
+        {
+          "name": "String#casecmp?",
+          "file": "<cfunc>",
+          "line": null,
+          "self_samples": 119,
+          "total_samples": 119
+        },
+        {
+          "name": "(sweeping)",
+          "file": "",
+          "line": null,
+          "self_samples": 66,
+          "total_samples": 66
+        },
+        {
+          "name": "Enumerable#find",
+          "file": "<cfunc>",
+          "line": null,
+          "self_samples": 22,
+          "total_samples": 157
+        },
+        {
+          "name": "Array#each",
+          "file": "<internal:array>",
+          "line": 219,
+          "self_samples": 10,
+          "total_samples": 417
+        },
+        {
+          "name": "RSXP.case_insensitive_path",
+          "file": "eval",
+          "line": 79,
+          "self_samples": 9,
+          "total_samples": 342
+        },
+        {
+          "name": "(marking)",
+          "file": "",
+          "line": null,
+          "self_samples": 9,
+          "total_samples": 9
+        },
+        {
+          "name": "Sprite#__sync",
+          "file": "eval",
+          "line": 1149,
+          "self_samples": 7,
+          "total_samples": 11
+        },
+        {
+          "name": "RSXP::Retained.flush",
+          "file": "rsxp/retained.rb",
+          "line": 86,
+          "self_samples": 5,
+          "total_samples": 25
+        },
+        {
+          "name": "Kernel#__rsxp_dirty_resources",
+          "file": "<cfunc>",
+          "line": null,
+          "self_samples": 3,
+          "total_samples": 3
+        },
+        {
+          "name": "Game_Map#bush?",
+          "file": "Game_Map",
+          "line": 349,
+          "self_samples": 3,
+          "total_samples": 6
+        },
+        {
+          "name": "Integer#==",
+          "file": "<cfunc>",
+          "line": null,
+          "self_samples": 3,
+          "total_samples": 3
+        }
+      ]
+    },
+    "zoom_3": {
+      "samples": 1939,
+      "gc_samples": 79,
+      "allocated_objects": 10930355,
+      "gc_cycles": 69,
+      "elapsed_wall_seconds": 7.763526498922147,
+      "top_self_samples": [
+        {
+          "name": "Dir.children",
+          "file": "<cfunc>",
+          "line": null,
+          "self_samples": 215,
+          "total_samples": 215
+        },
+        {
+          "name": "Kernel#instance_variable_get",
+          "file": "<cfunc>",
+          "line": null,
+          "self_samples": 158,
+          "total_samples": 158
+        },
+        {
+          "name": "UnboundMethod#bind_call",
+          "file": "<cfunc>",
+          "line": null,
+          "self_samples": 154,
+          "total_samples": 583
+        },
+        {
+          "name": "RSXP::Retained.flush",
+          "file": "rsxp/retained.rb",
+          "line": 86,
+          "self_samples": 139,
+          "total_samples": 538
+        },
+        {
+          "name": "Sprite#__sync",
+          "file": "eval",
+          "line": 1149,
+          "self_samples": 111,
+          "total_samples": 208
+        },
+        {
+          "name": "String#casecmp?",
+          "file": "<cfunc>",
+          "line": null,
+          "self_samples": 92,
+          "total_samples": 92
+        },
+        {
+          "name": "Comparable#clamp",
+          "file": "<cfunc>",
+          "line": null,
+          "self_samples": 79,
+          "total_samples": 86
+        },
+        {
+          "name": "(sweeping)",
+          "file": "",
+          "line": null,
+          "self_samples": 69,
+          "total_samples": 69
+        },
+        {
+          "name": "Kernel#__rsxp_native",
+          "file": "<cfunc>",
+          "line": null,
+          "self_samples": 65,
+          "total_samples": 65
+        },
+        {
+          "name": "Kernel#__rsxp_touch",
+          "file": "<cfunc>",
+          "line": null,
+          "self_samples": 63,
+          "total_samples": 63
+        },
+        {
+          "name": "block (2 levels) in <main>",
+          "file": "rsxp/retained.rb",
+          "line": 151,
+          "self_samples": 51,
+          "total_samples": 552
+        },
+        {
+          "name": "BasicObject#!=",
+          "file": "<cfunc>",
+          "line": null,
+          "self_samples": 50,
+          "total_samples": 61
+        }
+      ]
+    }
+  },
+  "notes": [
+    "Three alternating before/after runs per zoom, separate processes with the same save and seed.",
+    "All final images match exactly per zoom, and all player trajectories match.",
+    "At zoom 3 total sprite synchronizations fell from 943099 to 57140; counters include setup and warmup.",
+    "Normal zoom uses CustomTilemap; panoramic zoom uses SynchronizedTilemap.",
+    "Largest remaining after frames are about 52 ms during full layout refreshes. Median p95 is about 25 ms. Continuous per-frame costs were removed, not every refresh spike.",
+    "Headless uncapped benchmark results do not guarantee interactive FPS on every map.",
+    "The benchmark uses a temporary save directory. Original game script and save hashes remained unchanged."
+  ]
+}

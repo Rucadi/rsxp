@@ -1,0 +1,181 @@
+{
+  "date": "2026-10-17",
+  "scenario": "Ericlostie save map 28, 26 events; panoramic zoom 3, 1536x1152, scripted walking",
+  "renderer": "wgpu",
+  "gpu": "NVIDIA GeForce RTX 2080",
+  "build": "release, default configuration",
+  "yjit": true,
+  "frames": 600,
+  "warmup_frames": 150,
+  "measured_frames": 450,
+  "input": "200:79:100,350:80:100",
+  "fixed_clock": true,
+  "seed": 0,
+  "save_sha256": "63817b905e0d828b8aab979f00fce5bfc4f7cbdbe4ba2ec5955907e785ef12aa",
+  "comparison": "Previous native bulk scrolling and GPU batch culling vs world camera plus retained/prefetched chunks",
+  "runs": {
+    "before": [
+      {
+        "frames": 450,
+        "elapsed_s": 0.8588,
+        "ms_per_frame": 1.9084,
+        "cpu_ms_per_frame": 1.904,
+        "allocations_per_frame": 842.13,
+        "gc_cycles": 0,
+        "chunk_stats": {
+          "builds": 0,
+          "hits": 0,
+          "checks": 0,
+          "evictions": 0,
+          "resident": 0
+        },
+        "retained_counts": {
+          "map_changed_cells": 9186,
+          "synced": 27309,
+          "bulk_scrolls": 84,
+          "resources": 5507,
+          "compatibility": 30
+        },
+        "final_position": "map=28 x=25 y=10",
+        "output_sha256": "a2f4dd0957e6fce29ca98eac85cd2460ebef9de2cd8800223b2ff22640b5eb19"
+      },
+      {
+        "frames": 450,
+        "elapsed_s": 0.7274,
+        "ms_per_frame": 1.6164,
+        "cpu_ms_per_frame": 1.6127,
+        "allocations_per_frame": 842.13,
+        "gc_cycles": 0,
+        "chunk_stats": {
+          "builds": 0,
+          "hits": 0,
+          "checks": 0,
+          "evictions": 0,
+          "resident": 0
+        },
+        "retained_counts": {
+          "map_changed_cells": 9186,
+          "synced": 27309,
+          "bulk_scrolls": 84,
+          "resources": 5507,
+          "compatibility": 30
+        },
+        "final_position": "map=28 x=25 y=10",
+        "output_sha256": "a2f4dd0957e6fce29ca98eac85cd2460ebef9de2cd8800223b2ff22640b5eb19"
+      },
+      {
+        "frames": 450,
+        "elapsed_s": 0.7942,
+        "ms_per_frame": 1.765,
+        "cpu_ms_per_frame": 1.761,
+        "allocations_per_frame": 842.13,
+        "gc_cycles": 0,
+        "chunk_stats": {
+          "builds": 0,
+          "hits": 0,
+          "checks": 0,
+          "evictions": 0,
+          "resident": 0
+        },
+        "retained_counts": {
+          "map_changed_cells": 9186,
+          "synced": 27309,
+          "bulk_scrolls": 84,
+          "resources": 5507,
+          "compatibility": 30
+        },
+        "final_position": "map=28 x=25 y=10",
+        "output_sha256": "a2f4dd0957e6fce29ca98eac85cd2460ebef9de2cd8800223b2ff22640b5eb19"
+      }
+    ],
+    "after": [
+      {
+        "frames": 450,
+        "elapsed_s": 0.6353,
+        "ms_per_frame": 1.4117,
+        "cpu_ms_per_frame": 1.4003,
+        "allocations_per_frame": 862.38,
+        "gc_cycles": 0,
+        "chunk_stats": {
+          "builds": 9,
+          "hits": 117,
+          "checks": 9,
+          "evictions": 0,
+          "resident": 9
+        },
+        "retained_counts": {
+          "map_changed_cells": 9186,
+          "synced": 27309,
+          "world_camera_frames": 583,
+          "bulk_scrolls": 84,
+          "resources": 5507,
+          "compatibility": 30
+        },
+        "final_position": "map=28 x=25 y=10",
+        "output_sha256": "a2f4dd0957e6fce29ca98eac85cd2460ebef9de2cd8800223b2ff22640b5eb19"
+      },
+      {
+        "frames": 450,
+        "elapsed_s": 0.6756,
+        "ms_per_frame": 1.5013,
+        "cpu_ms_per_frame": 1.4854,
+        "allocations_per_frame": 862.38,
+        "gc_cycles": 0,
+        "chunk_stats": {
+          "builds": 9,
+          "hits": 117,
+          "checks": 9,
+          "evictions": 0,
+          "resident": 9
+        },
+        "retained_counts": {
+          "map_changed_cells": 9186,
+          "synced": 27309,
+          "world_camera_frames": 583,
+          "bulk_scrolls": 84,
+          "resources": 5507,
+          "compatibility": 30
+        },
+        "final_position": "map=28 x=25 y=10",
+        "output_sha256": "a2f4dd0957e6fce29ca98eac85cd2460ebef9de2cd8800223b2ff22640b5eb19"
+      },
+      {
+        "frames": 450,
+        "elapsed_s": 0.6133,
+        "ms_per_frame": 1.363,
+        "cpu_ms_per_frame": 1.3252,
+        "allocations_per_frame": 862.38,
+        "gc_cycles": 0,
+        "chunk_stats": {
+          "builds": 9,
+          "hits": 117,
+          "checks": 9,
+          "evictions": 0,
+          "resident": 9
+        },
+        "retained_counts": {
+          "map_changed_cells": 9186,
+          "synced": 27309,
+          "world_camera_frames": 583,
+          "bulk_scrolls": 84,
+          "resources": 5507,
+          "compatibility": 30
+        },
+        "final_position": "map=28 x=25 y=10",
+        "output_sha256": "a2f4dd0957e6fce29ca98eac85cd2460ebef9de2cd8800223b2ff22640b5eb19"
+      }
+    ]
+  },
+  "median_ms_per_frame": {
+    "before": 1.765,
+    "after": 1.4117,
+    "reduction_percent": 20.02
+  },
+  "notes": [
+    "Alternating before/after runs, all after runs faster; short headless benchmark, not an interactive FPS guarantee.",
+    "All output image hashes and final player positions match.",
+    "Visible cell refresh and sprite submission counts remain identical. Camera removes per-tile coordinate writes; chunk data prefetch does not cache complete GPU commands.",
+    "Allocations per frame increased slightly (842.13 to 862.38); no measured GC cycles in either version.",
+    "Hidden tile-ID chunks are retained under a 128-chunk budget; active viewport/prefetch working sets are preserved even if larger."
+  ]
+}

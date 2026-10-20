@@ -1,0 +1,298 @@
+{
+  "date": "2026-10-18",
+  "scenario": "Pokemon Z map 3, 47 events, panoramic zoom 3, 1536x1152, saved-game scripted walking",
+  "renderer": "wgpu",
+  "gpu": "NVIDIA GeForce RTX 2080",
+  "yjit": true,
+  "warmup_frames": 60,
+  "measured_frames": 180,
+  "input": "100:79:40,170:80:40",
+  "comparison": "Previous retained tilemap release vs synchronized scroll snapshots, animated-only updates and native property batches",
+  "runs": {
+    "before": [
+      {
+        "frames": 180,
+        "ms_per_frame": 6.298202900345334,
+        "cpu_ms_per_frame": 6.293003933333334,
+        "p95_ms": 25.993891060352325,
+        "max_ms": 61.32495799101889,
+        "allocations_per_frame": 3801.461111111111,
+        "final": [
+          3,
+          21,
+          15
+        ],
+        "positions": [
+          [
+            21,
+            15
+          ],
+          [
+            22,
+            15
+          ],
+          [
+            23,
+            15
+          ],
+          [
+            24,
+            15
+          ],
+          [
+            25,
+            15
+          ]
+        ],
+        "retained": {
+          "synced": 57140,
+          "legacy_tilemap_rebuilt": 19,
+          "legacy_tilemap_reused": 212
+        },
+        "output_sha256": "034a3fa030552a2567ef40431922a8ddab653f0be0090d5163074e76a259ae38"
+      },
+      {
+        "frames": 180,
+        "ms_per_frame": 5.989404472186127,
+        "cpu_ms_per_frame": 5.985154661111111,
+        "p95_ms": 25.632743956521153,
+        "max_ms": 51.99409800115973,
+        "allocations_per_frame": 3801.461111111111,
+        "final": [
+          3,
+          21,
+          15
+        ],
+        "positions": [
+          [
+            21,
+            15
+          ],
+          [
+            22,
+            15
+          ],
+          [
+            23,
+            15
+          ],
+          [
+            24,
+            15
+          ],
+          [
+            25,
+            15
+          ]
+        ],
+        "retained": {
+          "synced": 57140,
+          "legacy_tilemap_rebuilt": 19,
+          "legacy_tilemap_reused": 212
+        },
+        "output_sha256": "034a3fa030552a2567ef40431922a8ddab653f0be0090d5163074e76a259ae38"
+      },
+      {
+        "frames": 180,
+        "ms_per_frame": 6.221683827849726,
+        "cpu_ms_per_frame": 6.217759522222223,
+        "p95_ms": 26.66443504858762,
+        "max_ms": 57.3213379830122,
+        "allocations_per_frame": 3801.461111111111,
+        "final": [
+          3,
+          21,
+          15
+        ],
+        "positions": [
+          [
+            21,
+            15
+          ],
+          [
+            22,
+            15
+          ],
+          [
+            23,
+            15
+          ],
+          [
+            24,
+            15
+          ],
+          [
+            25,
+            15
+          ]
+        ],
+        "retained": {
+          "synced": 57140,
+          "legacy_tilemap_rebuilt": 19,
+          "legacy_tilemap_reused": 212
+        },
+        "output_sha256": "034a3fa030552a2567ef40431922a8ddab653f0be0090d5163074e76a259ae38"
+      }
+    ],
+    "after": [
+      {
+        "frames": 180,
+        "ms_per_frame": 4.551516966764918,
+        "cpu_ms_per_frame": 4.5429434,
+        "p95_ms": 8.111421018838882,
+        "max_ms": 28.133722953498363,
+        "allocations_per_frame": 2104.822222222222,
+        "final": [
+          3,
+          21,
+          15
+        ],
+        "positions": [
+          [
+            21,
+            15
+          ],
+          [
+            22,
+            15
+          ],
+          [
+            23,
+            15
+          ],
+          [
+            24,
+            15
+          ],
+          [
+            25,
+            15
+          ]
+        ],
+        "retained": {
+          "synced": 33311,
+          "legacy_tilemap_rebuilt": 5,
+          "legacy_tilemap_reused": 226,
+          "legacy_tilemap_animated_tiles": 84
+        },
+        "output_sha256": "034a3fa030552a2567ef40431922a8ddab653f0be0090d5163074e76a259ae38"
+      },
+      {
+        "frames": 180,
+        "ms_per_frame": 4.101978272147891,
+        "cpu_ms_per_frame": 4.096128266666667,
+        "p95_ms": 7.603164995089173,
+        "max_ms": 27.646900969557464,
+        "allocations_per_frame": 2104.8277777777776,
+        "final": [
+          3,
+          21,
+          15
+        ],
+        "positions": [
+          [
+            21,
+            15
+          ],
+          [
+            22,
+            15
+          ],
+          [
+            23,
+            15
+          ],
+          [
+            24,
+            15
+          ],
+          [
+            25,
+            15
+          ]
+        ],
+        "retained": {
+          "synced": 33311,
+          "legacy_tilemap_rebuilt": 5,
+          "legacy_tilemap_reused": 226,
+          "legacy_tilemap_animated_tiles": 84
+        },
+        "output_sha256": "034a3fa030552a2567ef40431922a8ddab653f0be0090d5163074e76a259ae38"
+      },
+      {
+        "frames": 180,
+        "ms_per_frame": 3.6595648277499198,
+        "cpu_ms_per_frame": 3.6564775555555546,
+        "p95_ms": 7.219204097054899,
+        "max_ms": 26.38217608910054,
+        "allocations_per_frame": 2104.8277777777776,
+        "final": [
+          3,
+          21,
+          15
+        ],
+        "positions": [
+          [
+            21,
+            15
+          ],
+          [
+            22,
+            15
+          ],
+          [
+            23,
+            15
+          ],
+          [
+            24,
+            15
+          ],
+          [
+            25,
+            15
+          ]
+        ],
+        "retained": {
+          "synced": 33311,
+          "legacy_tilemap_rebuilt": 5,
+          "legacy_tilemap_reused": 226,
+          "legacy_tilemap_animated_tiles": 84
+        },
+        "output_sha256": "034a3fa030552a2567ef40431922a8ddab653f0be0090d5163074e76a259ae38"
+      }
+    ]
+  },
+  "medians": {
+    "before": {
+      "ms_per_frame": 6.221683827849726,
+      "p95_ms": 25.993891060352325,
+      "max_ms": 57.3213379830122,
+      "allocations_per_frame": 3801.461111111111
+    },
+    "after": {
+      "ms_per_frame": 4.101978272147891,
+      "p95_ms": 7.603164995089173,
+      "max_ms": 27.646900969557464,
+      "allocations_per_frame": 2104.8277777777776
+    }
+  },
+  "per_frame_reference": {
+    "frames": 101,
+    "first_frame": 60,
+    "last_frame": 160,
+    "input": "70:79:30,110:80:30",
+    "identical_pixels_and_positions": true,
+    "trace_sha256": "c6bd801f012216e250a3db035f5228f64256acc1f0291a0c132abdc136d0a16a",
+    "note": "Pixel trace uses CPU snapshot composition and is excluded from performance timings. Separate GPU tests cover reversal, animation and viewport frames."
+  },
+  "save_sha256": "83016669b802cf90d86fac192969f933f628ef58ccd61b955c1f278ac392a143",
+  "scripts_sha256": "dbd15b8a3962571c4c7f1d9d6ab869a000a1a607fa49f368ac9a35c204236548",
+  "notes": [
+    "Three alternating before/after release runs; all trajectories and final image hashes match.",
+    "A failing regression reproduced stale geometry when a bulk-only scroll was followed by a refresh at the last submitted position.",
+    "Full map rebuilds dropped from 19 to 5 per run; animation steps update only animated source rectangles.",
+    "Five boundary/coverage rebuilds remain in the measured workload. Native property application reduces their cost but does not remove all frame-time spikes.",
+    "This headless saved-map workload does not guarantee identical interactive latency on every map."
+  ]
+}

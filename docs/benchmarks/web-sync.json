@@ -1,0 +1,220 @@
+{
+  "description": "Actual Ruby WASM -> JavaScript -> Rust WASM, Node headless synthetic benchmark; no DOM/canvas/assets; 256 sprites, 160x120 target, 10 warmup updates, 80 iterations per measured mode, 3 alternating runs per variant, builds and replay stopped during measurement.",
+  "runs": [
+    {
+      "run": 1,
+      "variant": "before",
+      "results": [
+        {
+          "mode": "static-sync",
+          "frames": 80,
+          "ms_per_frame": 4.9657644875,
+          "allocations_per_frame": 5376.4375,
+          "bridge_calls": 0
+        },
+        {
+          "mode": "changing-sync",
+          "frames": 80,
+          "ms_per_frame": 6.742214575000001,
+          "allocations_per_frame": 8314.375,
+          "bridge_calls": 79
+        },
+        {
+          "mode": "render",
+          "frames": 80,
+          "ms_per_frame": 7.934349512500001,
+          "allocations_per_frame": 8398.475,
+          "bridge_calls": 160
+        }
+      ],
+      "framebuffer_sha256": "6d97b7835b4828004a680394449ed01c8cd1fb99ade8cf602bd7580d27bb186a"
+    },
+    {
+      "run": 1,
+      "variant": "after",
+      "results": [
+        {
+          "mode": "static-sync",
+          "frames": 80,
+          "ms_per_frame": 1.2596839499999988,
+          "allocations_per_frame": 0.4375,
+          "bridge_calls": 0
+        },
+        {
+          "mode": "changing-sync",
+          "frames": 80,
+          "ms_per_frame": 3.656578775,
+          "allocations_per_frame": 3064.775,
+          "bridge_calls": 79
+        },
+        {
+          "mode": "render",
+          "frames": 80,
+          "ms_per_frame": 4.3955821375,
+          "allocations_per_frame": 3150.475,
+          "bridge_calls": 160
+        }
+      ],
+      "framebuffer_sha256": "6d97b7835b4828004a680394449ed01c8cd1fb99ade8cf602bd7580d27bb186a"
+    },
+    {
+      "run": 2,
+      "variant": "after",
+      "results": [
+        {
+          "mode": "static-sync",
+          "frames": 80,
+          "ms_per_frame": 1.24660035,
+          "allocations_per_frame": 0.4375,
+          "bridge_calls": 0
+        },
+        {
+          "mode": "changing-sync",
+          "frames": 80,
+          "ms_per_frame": 3.733921025000001,
+          "allocations_per_frame": 3064.775,
+          "bridge_calls": 79
+        },
+        {
+          "mode": "render",
+          "frames": 80,
+          "ms_per_frame": 4.4764140999999995,
+          "allocations_per_frame": 3150.475,
+          "bridge_calls": 160
+        }
+      ],
+      "framebuffer_sha256": "6d97b7835b4828004a680394449ed01c8cd1fb99ade8cf602bd7580d27bb186a"
+    },
+    {
+      "run": 2,
+      "variant": "before",
+      "results": [
+        {
+          "mode": "static-sync",
+          "frames": 80,
+          "ms_per_frame": 5.011590425,
+          "allocations_per_frame": 5376.4375,
+          "bridge_calls": 0
+        },
+        {
+          "mode": "changing-sync",
+          "frames": 80,
+          "ms_per_frame": 6.8974335374999995,
+          "allocations_per_frame": 8314.375,
+          "bridge_calls": 79
+        },
+        {
+          "mode": "render",
+          "frames": 80,
+          "ms_per_frame": 8.040283775,
+          "allocations_per_frame": 8398.475,
+          "bridge_calls": 160
+        }
+      ],
+      "framebuffer_sha256": "6d97b7835b4828004a680394449ed01c8cd1fb99ade8cf602bd7580d27bb186a"
+    },
+    {
+      "run": 3,
+      "variant": "before",
+      "results": [
+        {
+          "mode": "static-sync",
+          "frames": 80,
+          "ms_per_frame": 4.5901347125,
+          "allocations_per_frame": 5376.4375,
+          "bridge_calls": 0
+        },
+        {
+          "mode": "changing-sync",
+          "frames": 80,
+          "ms_per_frame": 6.4547768250000015,
+          "allocations_per_frame": 8314.375,
+          "bridge_calls": 79
+        },
+        {
+          "mode": "render",
+          "frames": 80,
+          "ms_per_frame": 7.3755566125000005,
+          "allocations_per_frame": 8398.475,
+          "bridge_calls": 160
+        }
+      ],
+      "framebuffer_sha256": "6d97b7835b4828004a680394449ed01c8cd1fb99ade8cf602bd7580d27bb186a"
+    },
+    {
+      "run": 3,
+      "variant": "after",
+      "results": [
+        {
+          "mode": "static-sync",
+          "frames": 80,
+          "ms_per_frame": 1.147969562499999,
+          "allocations_per_frame": 0.4375,
+          "bridge_calls": 0
+        },
+        {
+          "mode": "changing-sync",
+          "frames": 80,
+          "ms_per_frame": 3.5961181624999994,
+          "allocations_per_frame": 3064.775,
+          "bridge_calls": 79
+        },
+        {
+          "mode": "render",
+          "frames": 80,
+          "ms_per_frame": 4.330656899999999,
+          "allocations_per_frame": 3150.475,
+          "bridge_calls": 160
+        }
+      ],
+      "framebuffer_sha256": "6d97b7835b4828004a680394449ed01c8cd1fb99ade8cf602bd7580d27bb186a"
+    }
+  ],
+  "source_sha256": {
+    "before_rgss": "a14d9884f2cc13c6755c7b7b060e3241e28d7510825fcb5175dfcab6db2971bc",
+    "after_rgss": "1020c44bee71ef9aff1ea880a16b4119693e7c3563fee65115d75c235ad37f34",
+    "before_engine_wasm": "7bf0b0d487fe72f9086b1ac1bc9b68dc9ab356ede39ddb151afc8184bb092f5a",
+    "after_engine_wasm": "806beedd4a5a45da22efa6fa9d270595434673cdcc58732614a188dceae161db"
+  },
+  "medians": {
+    "static-sync": {
+      "before": {
+        "ms_per_frame": 4.9657644875,
+        "allocations_per_frame": 5376.4375,
+        "bridge_calls": 0
+      },
+      "after": {
+        "ms_per_frame": 1.24660035,
+        "allocations_per_frame": 0.4375,
+        "bridge_calls": 0
+      },
+      "time_reduction_percent": 74.89610405128985
+    },
+    "changing-sync": {
+      "before": {
+        "ms_per_frame": 6.742214575000001,
+        "allocations_per_frame": 8314.375,
+        "bridge_calls": 79
+      },
+      "after": {
+        "ms_per_frame": 3.656578775,
+        "allocations_per_frame": 3064.775,
+        "bridge_calls": 79
+      },
+      "time_reduction_percent": 45.76590919312296
+    },
+    "render": {
+      "before": {
+        "ms_per_frame": 7.934349512500001,
+        "allocations_per_frame": 8398.475,
+        "bridge_calls": 160
+      },
+      "after": {
+        "ms_per_frame": 4.3955821375,
+        "allocations_per_frame": 3150.475,
+        "bridge_calls": 160
+      },
+      "time_reduction_percent": 44.60059856734223
+    }
+  }
+}

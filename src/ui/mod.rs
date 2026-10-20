@@ -381,6 +381,7 @@ pub struct Workspace {
     panels_output: bool,
     view_mode: ViewMode,
     controls_visible: bool,
+    controller_settings_open: bool,
     was_global_fullscreen: bool,
     reset_confirm: bool,
     #[cfg(feature = "game-api")]
@@ -508,6 +509,7 @@ impl Default for Workspace {
             panels_output: false,
             view_mode: ViewMode::default(),
             controls_visible: false,
+            controller_settings_open: false,
             was_global_fullscreen: false,
             reset_confirm: false,
             #[cfg(feature = "game-api")]
@@ -720,14 +722,33 @@ impl Workspace {
         if !fullscreen && self.panels_top {
             context.root_ui(|root_ui| {
                 egui::Panel::top("workspace-top-panel")
-                    .resizable(true)
-                    .default_size(62.0)
+                    .resizable(false)
                     .show(root_ui, |ui| {
-                        ui.heading("Workspace");
-                        ui.label(format!(
-                            "Game output · {} × {} · F10 toggles performance",
-                            info.logical_size.0, info.logical_size.1
-                        ));
+                        ui.add_space(8.0);
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label(egui::RichText::new("Dashboard").size(24.0).strong());
+                            ui.separator();
+                            ui.weak(format!(
+                                "{} × {} native resolution",
+                                info.logical_size.0, info.logical_size.1
+                            ));
+                            if info.fps > 0.0 {
+                                ui.label(
+                                    egui::RichText::new(format!("{:.0} FPS", info.fps))
+                                        .color(egui::Color32::from_rgb(127, 231, 200)),
+                                );
+                            }
+                        });
+                        ui.add_space(6.0);
+                        ui.horizontal_wrapped(|ui| {
+                            ui.toggle_value(&mut self.panels_left, "Game tools · F2");
+                            ui.toggle_value(&mut self.panels_output, "Activity · F3");
+                            ui.toggle_value(&mut self.panels_performance, "Performance · F10");
+                            if ui.button("Controller settings").clicked() {
+                                self.controller_settings_open = true;
+                            }
+                        });
+                        ui.add_space(8.0);
                     })
             });
         }
@@ -752,6 +773,7 @@ impl Workspace {
         self.draw_world_map_window(context);
 
         self.draw_game_view(context, &mut output);
+        self.draw_controller_settings(context);
 
         if self.reset_confirm {
             egui::Window::new("Reset game?")
@@ -892,6 +914,20 @@ mod workspace_tests {
             .run_pass(input, |context| result = workspace.draw(context, &info))
             .drop_without_applying_deltas();
         result
+    }
+
+    #[test]
+    fn fullscreen_workspace_keeps_controller_settings_and_dashboard_visible() {
+        let mut workspace = Workspace::new();
+        workspace.controls_visible = true;
+        workspace.view_mode = ViewMode::WorkspaceFullscreen;
+        workspace.controller_settings_open = true;
+        for _ in 0..3 {
+            draw_frame(&mut workspace, None, false);
+            assert!(workspace.controls_visible);
+            assert!(workspace.controller_settings_open);
+            assert_eq!(workspace.view_mode, ViewMode::WorkspaceFullscreen);
+        }
     }
 
     #[test]

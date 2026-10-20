@@ -53,6 +53,10 @@ pub struct SessionPanel {
     pub recent: Vec<String>,
     pub save_directory: String,
     pub backup_directory: String,
+    pub(super) library_query: String,
+    pub(super) library_selected: Option<String>,
+    pub(super) library_sort_title: bool,
+    pub(super) library_compact: bool,
     confirm_stop: bool,
     confirm_restart: bool,
 }
@@ -95,11 +99,20 @@ impl SessionPanel {
                     }
                 });
                 ui.horizontal_wrapped(|ui| {
-                    if ui.button("Library").clicked() {
+                    if ui
+                        .selectable_label(
+                            !self.show_saves && (!self.active || self.open),
+                            "Library",
+                        )
+                        .clicked()
+                    {
                         self.open = !self.open || self.show_saves;
                         self.show_saves = false;
                     }
-                    if ui.button("Saves").clicked() {
+                    if ui
+                        .selectable_label(self.show_saves && (!self.active || self.open), "Saves")
+                        .clicked()
+                    {
                         self.open = !self.open || !self.show_saves;
                         self.show_saves = true;
                     }
@@ -125,7 +138,7 @@ impl SessionPanel {
             context.root_ui(|root_ui| {
                 egui::CentralPanel::default().show(root_ui, |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| {
-                        ui.add_space(20.0);
+                        ui.add_space(8.0);
                         if self.show_saves {
                             self.draw_saves(ui, &mut actions);
                         } else {
@@ -141,7 +154,7 @@ impl SessionPanel {
                 "Library"
             })
             .id(egui::Id::unique("session-library"))
-            .default_width(520.0)
+            .default_width(860.0)
             .collapsible(false)
             .show(context, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {

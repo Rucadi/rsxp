@@ -17,15 +17,19 @@
 //!   networking is unavailable.
 use super::*;
 impl Workspace {
-    pub(super) fn draw_patches_panel(&mut self, context: &egui::Context, info: &WorkspaceInfo) {
+    pub(super) fn draw_patches_panel(&mut self, context: &egui::Context, _info: &WorkspaceInfo) {
         context.root_ui(|root_ui| {
             egui::Panel::left("workspace-game-panel")
                 .resizable(true)
                 .default_size(280.0)
                 .size_range(230.0..=500.0)
                 .show(root_ui, |ui| {
-                    ui.heading("Tools");
-                    ui.horizontal_wrapped(|ui| {
+                    ui.add_space(8.0);
+                    ui.heading("Game tools");
+                    ui.weak("Customize your session");
+                    ui.add_space(12.0);
+                    ui.vertical(|ui| {
+                        ui.style_mut().spacing.button_padding = egui::vec2(12.0, 8.0);
                         ui.selectable_value(&mut self.tool, Tool::Runtime, "Runtime");
                         ui.selectable_value(&mut self.tool, Tool::Essentials, "Pokémon Essentials");
                         #[cfg(feature = "game-api")]
@@ -33,12 +37,10 @@ impl Workspace {
                         #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
                         ui.selectable_value(&mut self.tool, Tool::OnlinePlay, "Online play");
                     });
+                    ui.add_space(12.0);
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         ui.separator();
-                        ui.label("Game view");
-                        ui.label(format!("{} × {}", info.logical_size.0, info.logical_size.1));
                         ui.add_space(8.0);
-                        ui.separator();
                         match self.tool {
                             Tool::Runtime => self.draw_patch_catalog(ui, true),
                             #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
@@ -77,31 +79,39 @@ impl Workspace {
             .filter(|patch| patch.id.starts_with("user/") == user_patches)
         {
             count += 1;
-            let mut enabled = self.backend.patch_enabled(&patch.id);
-            if ui.checkbox(&mut enabled, patch.name.as_ref()).changed() {
-                self.backend.set_patch_enabled(&patch.id, enabled);
-            }
-            if let Some(parameter) = &patch.parameter {
-                let mut value = self
-                    .backend
-                    .patch_value(&patch.id)
-                    .unwrap_or(parameter.default);
-                ui.add_enabled_ui(enabled, |ui| {
-                    let slider = egui::Slider::new(&mut value, parameter.min..=parameter.max)
-                        .step_by(parameter.step)
-                        .text(parameter.label)
-                        .suffix(parameter.suffix);
-                    if ui.add(slider).changed() {
-                        self.backend.set_patch_value(&patch.id, value);
+            egui::Frame::new()
+                .fill(ui.visuals().faint_bg_color)
+                .corner_radius(10)
+                .inner_margin(12.0)
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    let mut enabled = self.backend.patch_enabled(&patch.id);
+                    if ui.checkbox(&mut enabled, patch.name.as_ref()).changed() {
+                        self.backend.set_patch_enabled(&patch.id, enabled);
                     }
+                    if let Some(parameter) = &patch.parameter {
+                        let mut value = self
+                            .backend
+                            .patch_value(&patch.id)
+                            .unwrap_or(parameter.default);
+                        ui.add_enabled_ui(enabled, |ui| {
+                            let slider =
+                                egui::Slider::new(&mut value, parameter.min..=parameter.max)
+                                    .step_by(parameter.step)
+                                    .text(parameter.label)
+                                    .suffix(parameter.suffix);
+                            if ui.add(slider).changed() {
+                                self.backend.set_patch_value(&patch.id, value);
+                            }
+                        });
+                    }
+                    ui.label(
+                        egui::RichText::new(patch.description.as_ref())
+                            .small()
+                            .weak(),
+                    );
                 });
-            }
-            ui.label(
-                egui::RichText::new(patch.description.as_ref())
-                    .small()
-                    .weak(),
-            );
-            ui.add_space(2.0);
+            ui.add_space(8.0);
         }
         if count == 0 {
             ui.weak("No patches found.");

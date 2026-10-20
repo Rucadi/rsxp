@@ -4,24 +4,24 @@
 //! `apply` installs the dark visual style — panel and window fills, the green
 //! selection/active accents, tighter item spacing, button padding, and window
 //! margins — and enables selectable labels. It is idempotent per
-//! `egui::Context`: a `"rsxp-theme-v1"` temp flag in the context's data cache
+//! `egui::Context`: a `"rsxp-theme-v2"` temp flag in the context's data cache
 //! makes later frames a no-op, so callers may invoke it unconditionally each
 //! frame (`Workspace::draw` does).
 pub(super) fn apply(context: &egui::Context) {
-    let id = egui::Id::unique("rsxp-theme-v1");
+    let id = egui::Id::unique("rsxp-theme-v2");
     if context.data_mut(|d| d.get_temp::<bool>(id).unwrap_or(false)) {
         return;
     }
     let mut visuals = egui::Visuals::dark();
-    visuals.panel_fill = egui::Color32::from_rgb(25, 22, 33);
-    visuals.window_fill = egui::Color32::from_rgb(34, 29, 43);
-    visuals.extreme_bg_color = egui::Color32::from_rgb(18, 16, 25);
-    visuals.faint_bg_color = egui::Color32::from_rgb(39, 34, 49);
-    visuals.selection.bg_fill = egui::Color32::from_rgb(115, 82, 143);
-    visuals.widgets.active.bg_fill = egui::Color32::from_rgb(128, 91, 155);
-    visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(65, 54, 78);
-    visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(47, 40, 57);
-    visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(30, 26, 39);
+    visuals.panel_fill = egui::Color32::from_rgb(14, 23, 28);
+    visuals.window_fill = egui::Color32::from_rgb(22, 34, 40);
+    visuals.extreme_bg_color = egui::Color32::from_rgb(10, 17, 21);
+    visuals.faint_bg_color = egui::Color32::from_rgb(29, 43, 49);
+    visuals.selection.bg_fill = egui::Color32::from_rgb(38, 100, 89);
+    visuals.widgets.active.bg_fill = egui::Color32::from_rgb(45, 119, 103);
+    visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(44, 67, 73);
+    visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(30, 47, 54);
+    visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(20, 32, 38);
     visuals.widgets.active.corner_radius = egui::CornerRadius::same(10);
     visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(10);
     visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(10);

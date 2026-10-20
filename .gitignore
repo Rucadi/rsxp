@@ -14,12 +14,11 @@ JUEGO
 /builddir
 /target
 /mobile/build/
-/mobile/core/target/
-/mobile/android/.gradle/
-/mobile/android/app/build/
-/mobile/android/local.properties
-!/mobile/android/app/src/main/java/org/rsxp/
-!/mobile/ios/RSXP/
+/mobile/target/
+/mobile/gen/
+/mobile/.cargo/
+/mobile/assets/runtime/
+/mobile/assets/.import-*
 /profiles/
 /result
 /result-*

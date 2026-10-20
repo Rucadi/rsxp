@@ -35,11 +35,24 @@
         }
       );
 
-      devShells = forAllSystems (system: {
-        default = import ./nix/shell.nix {
+      devShells = forAllSystems (
+        system:
+        let
           pkgs = nixpkgs.legacyPackages.${system};
-        };
-      });
+          androidPkgs = import nixpkgs {
+            inherit system;
+            config = {
+              allowUnfree = true;
+              android_sdk.accept_license = true;
+            };
+          };
+        in
+        {
+          default = import ./nix/shell.nix { inherit pkgs; };
+          # Reproducible Android SDK/NDK/JDK shell for the cargo-mobile2 app.
+          android = import ./android-shell.nix { pkgs = androidPkgs; };
+        }
+      );
 
       formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt);
     };

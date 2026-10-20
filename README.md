@@ -79,10 +79,13 @@ updated. Platform declarations alone are not evidence of successful builds.
 The experimental [mobile app](mobile/README.md) shares one touch interface between
 iOS and Android, with a native Rust core and native MRI Ruby for game execution.
 The iOS Simulator prototype runs; Android still requires a native MRI build.
-Start with
-`python3 mobile/build.py ios --run` inside `nix-shell` after completing Xcode's
-first-launch setup. The mobile README covers the native host preview and current
-compatibility limits.
+Mobile projects are generated and driven by
+[cargo-mobile2](https://github.com/tauri-apps/cargo-mobile2): run
+`cargo mobile init` once in `mobile/`, then `cargo apple run` or
+`cargo android run` inside `nix-shell` after completing Xcode's first-launch
+setup. Android development can use the reproducible `android-shell.nix`, which
+provides the SDK, NDK, JDK, and cargo-mobile2. The mobile README covers
+prerequisites and current compatibility limits.
 
 - [Architecture](docs/architecture.md): startup flowcharts, frame sequence,
   desktop rendering paths, browser scheduling, ownership and a source map.

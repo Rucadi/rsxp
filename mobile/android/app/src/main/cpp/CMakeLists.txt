@@ -1,7 +1,0 @@
-cmake_minimum_required(VERSION 3.22.1)
-project(rsxp_jni LANGUAGES CXX)
-add_library(rsxp_mobile SHARED IMPORTED)
-set_target_properties(rsxp_mobile PROPERTIES IMPORTED_LOCATION "${RSXP_CORE}")
-add_library(rsxp_jni SHARED bridge.cpp)
-target_compile_features(rsxp_jni PRIVATE cxx_std_17)
-target_link_libraries(rsxp_jni PRIVATE rsxp_mobile)

@@ -2,16 +2,38 @@
 import { createTouchInput } from './input.js';
 const $ = id => document.getElementById(id);
 const decode = value => Uint8Array.from(atob(value), c => c.charCodeAt(0));
+const encode = bytes => {
+  let text = '';
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    text += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return btoa(text);
+};
+// cargo-mobile2 hosts the UI in a system WebView. Requests go over wry IPC and
+// responses arrive asynchronously through `__rsxpResponse`.
+const pending = new Map();
+let nextRequest = 0;
+globalThis.__rsxpResponse = (id, payload) => {
+  const entry = pending.get(id);
+  if (!entry) return;
+  pending.delete(id);
+  if (payload && payload.error) entry.reject(new Error(payload.error));
+  else entry.resolve(payload ? payload.ok : null);
+};
 function native(request) {
-  const raw = prompt('rsxp:' + JSON.stringify(request), '');
-  if (!raw) throw new Error('Native Rust bridge is unavailable. Open this interface in the iOS or Android app.');
-  const response = JSON.parse(raw);
-  if (response.error) throw new Error(response.error);
-  return response.ok;
+  return new Promise((resolve, reject) => {
+    if (!globalThis.ipc?.postMessage) {
+      reject(new Error('Native Rust bridge is unavailable. Run the cargo-mobile2 app.'));
+      return;
+    }
+    const id = ++nextRequest;
+    pending.set(id, { resolve, reject });
+    globalThis.ipc.postMessage(JSON.stringify({ id, request }));
+  });
 }
 let running = false, paused = false, generation = 0;
 let logs = [];
-let nativePresentation=false;
+let nativePresentation = false;
 let currentGame = null;
 let hudVisible = true;
 try { hudVisible = localStorage.getItem('rsxp.hud') !== '0'; } catch { /* Custom schemes may block storage. */ }
@@ -31,7 +53,9 @@ function setPacing(value) {
   try { localStorage.setItem('rsxp.rate', value); } catch { /* Optional. */ }
   renderHud();
 }
-const touch = createTouchInput((code, down) => { if (running) native({ op: 'key', code, down }); });
+const touch = createTouchInput((code, down) => {
+  if (running) native({ op: 'key', code, down }).catch(() => {});
+});
 function releaseControls() {
   touch.releaseAll();
   document.querySelectorAll('.held').forEach(button => button.classList.remove('held'));
@@ -44,17 +68,17 @@ function failure(error) {
   $('error-message').textContent = String(error.message || error) + (logs.length ? '\n\n' + logs.slice(-20).join('\n') : '');
   $('error').showModal();
 }
-function stop() {
+async function stop() {
   releaseControls();
   running = false; paused = false; generation++; currentGame = null;
   perf.frames = 0; perf.fps = 0; perf.frameTime = 0; perf.windowStart = 0;
   if ($('game-menu').open) $('game-menu').close();
   setFrameVisible(true);
-  try { native({ op: 'stop' }); } catch { /* Initial bridge errors are reported separately. */ }
+  try { await native({ op: 'stop' }); } catch { /* Initial bridge errors are reported separately. */ }
   $('player').hidden = true; $('library').hidden = false; status('');
 }
-function refresh() {
-  const games = native({ op: 'games' });
+async function refresh() {
+  const games = await native({ op: 'games' });
   $('games').replaceChildren(...games.map(game => {
     const button = document.createElement('button'); button.className = 'game';
     const icon = document.createElement('span'); icon.className = 'game-icon'; icon.textContent = game.demo ? '✦' : '▧';
@@ -108,7 +132,7 @@ async function start(game) {
   if (running) return;
   status('Starting native Rust engine…'); logs = [];
   await nextFrame();
-  const config = native({ op: 'init', id: game.id });
+  const config = await native({ op: 'init', id: game.id });
   status('Starting native Ruby scripts…'); await nextFrame();
   running = true; paused = false; currentGame = game; const current = ++generation;
   perf.frames = 0; perf.fps = 0; perf.frameTime = 0; perf.windowStart = 0; hudUpdated = 0;
@@ -116,48 +140,49 @@ async function start(game) {
   $('title').textContent = config.title; $('library').hidden = true; $('player').hidden = false;
   $('menu-hud-toggle').checked = hudVisible;
   renderHud();
-  const context = nativePresentation ? null : $('screen').getContext('2d', {alpha:false});
-  if(nativePresentation) positionFrame();
+  const context = nativePresentation ? null : $('screen').getContext('2d', { alpha: false });
+  if (nativePresentation) positionFrame();
   let deadline = 0;
-  function step(now) {
+  async function step(now) {
     try {
-      const stats = native({op:'step'});
+      const stats = await native({ op: 'step' });
       if (!stats.running) { stop(); return false; }
       samplePerformance(stats, now);
       if (!nativePresentation) {
-        const frame = native({op:'frame'});
+        const frame = await native({ op: 'frame' });
         if ($('screen').width !== frame.width || $('screen').height !== frame.height) {
           $('screen').width = frame.width; $('screen').height = frame.height;
         }
-        context.putImageData(new ImageData(new Uint8ClampedArray(decode(frame.rgba).buffer),frame.width,frame.height),0,0);
+        context.putImageData(new ImageData(new Uint8ClampedArray(decode(frame.rgba).buffer), frame.width, frame.height), 0, 0);
       }
     } catch (error) { failure(error); return false; }
     return true;
   }
-  function pump(now) {
+  async function pump(now) {
     if (!running || current !== generation) return;
-    if (!paused) {
-      const target = pacing === 'uncapped' ? 0 : pacing === 'default' ? config.rate : Number(pacing);
-      if (target > 0) {
-        // Preserve the cadence: adding a period to `now` caps 40 fps games at
-        // 30 fps on a 60 Hz display. Discard backlog after a pause or slow frame.
-        if (now >= deadline) {
-          if (!deadline) deadline = now;
-          deadline = Math.max(deadline + 1000 / target, now);
-          if (!step(now)) return;
+    try {
+      if (!paused) {
+        const target = pacing === 'uncapped' ? 0 : pacing === 'default' ? config.rate : Number(pacing);
+        if (target > 0) {
+          // Preserve the cadence: adding a period to `now` caps 40 fps games at
+          // 30 fps on a 60 Hz display. Discard backlog after a pause or slow frame.
+          if (now >= deadline) {
+            if (!deadline) deadline = now;
+            deadline = Math.max(deadline + 1000 / target, now);
+            if (!(await step(now))) return;
+          }
+        } else {
+          // Uncapped: run several updates per display refresh until the budget
+          // is spent, so the engine can exceed the screen refresh rate.
+          const start = performance.now();
+          let steps = 0;
+          do {
+            if (!(await step(performance.now()))) return;
+          } while (++steps < 64 && performance.now() - start < 12);
         }
-      } else {
-        // Uncapped: run several updates per display refresh until the budget
-        // is spent, so the engine can exceed the screen refresh rate. Native
-        // presentation shows the newest frame each time.
-        const start = performance.now();
-        let steps = 0;
-        do {
-          if (!step(performance.now())) return;
-        } while (++steps < 64 && performance.now() - start < 12);
       }
-    }
-    requestAnimationFrame(pump);
+    } catch (error) { failure(error); return; }
+    if (running && current === generation) requestAnimationFrame(pump);
   }
   requestAnimationFrame(pump);
 }
@@ -169,7 +194,7 @@ viewport.onpointerdown = event => {
   try { viewport.setPointerCapture(event.pointerId); } catch { /* Best effort. */ }
   touch.press(event.pointerId, 29);
 };
-for (const type of ['pointerup','pointercancel','lostpointercapture']) viewport.addEventListener(type, event => {
+for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) viewport.addEventListener(type, event => {
   touch.release(event.pointerId);
 });
 for (const button of document.querySelectorAll('[data-key]')) {
@@ -181,7 +206,7 @@ for (const button of document.querySelectorAll('[data-key]')) {
     button.classList.add('held');
     touch.press(event.pointerId, Number(button.dataset.key));
   };
-  for (const type of ['pointerup','pointercancel','lostpointercapture']) button.addEventListener(type,event => {
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(type, event => {
     touch.release(event.pointerId); button.classList.remove('held');
   });
 }
@@ -193,14 +218,14 @@ document.addEventListener('visibilitychange', () => {
   else if (!$('game-menu').open) paused = false;
 });
 window.addEventListener('blur', releaseControls);
-const keys = {ArrowUp:82,ArrowDown:81,ArrowLeft:80,ArrowRight:79,KeyZ:29,Enter:40,KeyX:27,Escape:41,ShiftLeft:225};
-window.addEventListener('keydown',event => { if (keys[event.code] && running && !paused) { event.preventDefault(); touch.press(event.code,keys[event.code]); } });
-window.addEventListener('keyup',event => touch.release(event.code));
+const keys = { ArrowUp: 82, ArrowDown: 81, ArrowLeft: 80, ArrowRight: 79, KeyZ: 29, Enter: 40, KeyX: 27, Escape: 41, ShiftLeft: 225 };
+window.addEventListener('keydown', event => { if (keys[event.code] && running && !paused) { event.preventDefault(); touch.press(event.code, keys[event.code]); } });
+window.addEventListener('keyup', event => touch.release(event.code));
 function setFrameVisible(visible) {
   // The native game surface is layered above the WebView on mobile. Hide it
   // while a dialog covers the screen so the interface stays readable.
   if (!nativePresentation) return;
-  try { native({ op: 'frameVisibility', visible }); } catch { /* Best effort. */ }
+  native({ op: 'frameVisibility', visible }).catch(() => {});
 }
 function openMenu() {
   if (!running) return;
@@ -215,33 +240,70 @@ $('game-menu').addEventListener('close', () => { if (running) { paused = false; 
 $('menu-resume').onclick = closeMenu;
 $('menu-restart').onclick = () => {
   const game = currentGame; closeMenu(); if (!game) return;
-  stop(); start(game).catch(failure);
+  stop().then(() => start(game)).catch(failure);
 };
 $('menu-library').onclick = () => { closeMenu(); stop(); };
 $('menu-hud-toggle').onchange = event => setHud(event.target.checked);
 for (const button of document.querySelectorAll('#game-menu [data-rate]')) {
   button.onclick = () => setPacing(button.dataset.rate);
 }
-$('back').onclick = stop;
-$('dismiss').onclick = () => { $('error').close(); refresh(); };
-$('refresh').onclick = () => { try { refresh(); } catch(error) { failure(error); } };
-$('import').onclick = () => { try { status('Choose the game folder in Files…'); native({op:'import'}); } catch(error) { failure(error); } };
-globalThis.RSXPMobileImported = error => { status(''); if (error) failure(new Error(error)); else refresh(); };
-try {
-  const info = native({op:'info'}); nativePresentation=info.nativePresentation;
-  $('platform').textContent = `${info.engine} · ${info.platform} / ${info.arch}`; refresh();
-  const parameters = new URL(location.href).searchParams;
-  if (parameters.has('game')) {
-    start({id:parameters.get('game')}).catch(failure);
-  } else if (parameters.get('demo') === '1') {
-    start({id:'.demo'}).catch(failure);
+$('back').onclick = () => { stop(); };
+$('dismiss').onclick = () => { $('error').close(); refresh().catch(failure); };
+$('refresh').onclick = () => { refresh().catch(failure); };
+
+// Folder import uses the WebView's native directory picker. Each file is
+// streamed to Rust in chunks so large games never sit in one IPC message.
+const picker = $('import-picker');
+async function importFiles(files) {
+  if (!files || !files.length) return;
+  const first = (files[0].webkitRelativePath || '').replaceAll('\\', '/');
+  const name = first.split('/')[0];
+  if (!name || !first.includes('/')) throw new Error('Choose a game folder, not individual files.');
+  status(`Importing ${name}…`);
+  try {
+    await native({ op: 'importBegin', name });
+    for (let index = 0; index < files.length; index++) {
+      const file = files[index];
+      const path = (file.webkitRelativePath || '').replaceAll('\\', '/').split('/').slice(1).join('/');
+      if (!path) continue;
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const chunk = 512 * 1024;
+      if (bytes.length === 0) {
+        await native({ op: 'importChunk', path, offset: 0, data: '' });
+      } else {
+        for (let offset = 0; offset < bytes.length; offset += chunk) {
+          await native({ op: 'importChunk', path, offset, data: encode(bytes.subarray(offset, offset + chunk)) });
+        }
+      }
+      status(`Importing ${name}… ${index + 1}/${files.length}`);
+    }
+    await native({ op: 'importEnd' });
+    status('');
+    await refresh();
+  } catch (error) {
+    try { await native({ op: 'importCancel' }); } catch { /* Best effort. */ }
+    throw error;
   }
 }
-catch(error) { failure(error); }
+$('import').onclick = () => { picker.value = ''; picker.click(); };
+picker.onchange = () => { importFiles(picker.files).catch(failure); };
 
 function positionFrame() {
-  if(!nativePresentation) return;
-  const r=$('viewport').getBoundingClientRect();
-  native({op:'viewport',x:r.x,y:r.y,width:r.width,height:r.height});
+  if (!nativePresentation) return;
+  const r = $('viewport').getBoundingClientRect();
+  native({ op: 'viewport', x: r.x, y: r.y, width: r.width, height: r.height }).catch(() => {});
 }
-window.addEventListener('resize',()=>{if(running) requestAnimationFrame(positionFrame);});
+window.addEventListener('resize', () => { if (running) requestAnimationFrame(positionFrame); });
+
+(async () => {
+  const info = await native({ op: 'info' });
+  nativePresentation = info.nativePresentation;
+  $('platform').textContent = `${info.engine} · ${info.platform} / ${info.arch}`;
+  await refresh();
+  const parameters = new URL(location.href).searchParams;
+  if (parameters.has('game')) {
+    start({ id: parameters.get('game') }).catch(failure);
+  } else if (parameters.get('demo') === '1') {
+    start({ id: '.demo' }).catch(failure);
+  }
+})().catch(failure);

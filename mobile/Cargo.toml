@@ -1,0 +1,77 @@
+[package]
+# cargo-mobile2 passes `--package <app.name>` and expects the Cargo package to
+# match `[app].name` in mobile.toml; the library keeps its platform-facing name.
+name = "mobile"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.95"
+license = "GPL-2.0-or-later"
+description = "Native Rust engine for RPG Maker RGSS games on iOS and Android"
+
+# `cargo-mobile2` manages `gen/android` and `gen/apple`. Keep this crate out of
+# the desktop workspace so mobile cargo invocations do not build the whole tree.
+[workspace]
+
+[lib]
+name = "rsxp_mobile"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "rsxp-mobile-desktop"
+path = "src/desktop.rs"
+
+[[test]]
+name = "native_mri"
+path = "tests/native_mri.rs"
+harness = false
+
+[package.metadata.cargo-android]
+app-activity-name = "org.rsxp.mobile.MainActivity"
+app-dependencies = [
+    "androidx.webkit:webkit:1.6.1",
+    "androidx.appcompat:appcompat:1.7.1",
+    "com.google.android.material:material:1.12.0",
+    "androidx.activity:activity-ktx:1.10.1",
+    "androidx.lifecycle:lifecycle-process:2.10.0",
+]
+app-permissions = []
+app-theme-parent = "Theme.MaterialComponents.DayNight.NoActionBar"
+vulkan-validation = false
+
+[package.metadata.cargo-android.env-vars]
+WRY_ANDROID_PACKAGE = "org.rsxp.mobile"
+WRY_ANDROID_LIBRARY = "rsxp_mobile"
+WRY_ANDROID_KOTLIN_FILES_OUT_DIR = "<android-project-dir>/app/src/main/kotlin/org/rsxp/mobile"
+
+[package.metadata.cargo-apple.ios]
+frameworks = ["WebKit"]
+# The desktop preview binary has no iOS entry point; the app consumes the
+# static library through `start_app` instead.
+cargo-args = ["--lib"]
+
+[dependencies]
+rsxp = { path = "..", default-features = false, features = ["game-api", "portable-media"] }
+ruby_rgss_core = { path = "../ruby_rgss_core", default-features = false, features = ["mobile"] }
+serde_json = "1"
+base64 = "0.22"
+anyhow = "1"
+
+# cargo-mobile2's wry template uses tao for the window/event loop and wry for
+# the system WebView on iOS and Android. The desktop binary reuses the same
+# code path, which also replaces the old host preview server.
+tao = "0.37"
+wry = "0.57"
+
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger = "0.13"
+jni = "0.21"
+ndk = "0.9"
+ndk-sys = "0.6"
+ndk-context = "0.1"
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+env_logger = "0.11"
+
+[build-dependencies]
+cc = "1"
+sha2 = "0.10"

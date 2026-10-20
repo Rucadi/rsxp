@@ -47,7 +47,9 @@ See [workspace](dashboard.md) and [transport measurements](session-performance.m
 
 The root `rsxp` package points the library at `src/lib.rs`; `desktop/` is the
 desktop application package and points its binary at `src/desktop/main.rs`.
-`ruby_rgss_core/` owns MRI and all Magnus bindings. The MCP binary remains in
+`ruby_rgss_core/` owns MRI and all Magnus bindings. Its `mobile` feature exposes
+the fiber-pumped MRI lifecycle used by the cargo-mobile2 shell without pulling
+Magnus into mobile builds. The MCP binary remains in
 the root package at `api/main.rs`. The browser crate
 has its own manifest in `web/engine/`.
 
@@ -301,6 +303,7 @@ separate relay services, not a general HTTP implementation for game scripts.
 | Dashboard, transport, library and save backups | `src/desktop/{dashboard,session,library,saves}.rs` |
 | Platform services | `src/desktop/{host,window,gpu_present,media,audio}.rs` |
 | Ruby VM, Magnus and Win32 adapters | `ruby_rgss_core/src/` |
+| Mobile app shell (cargo-mobile2, wry, UI IPC) | `mobile/src/`, `mobile/ui/`, `mobile.toml` |
 | Workspace panels and services | `src/ui/`, `src/workspace_services/`, `src/workspace_services.rs` |
 | Runtime patch catalog and Ruby patch bodies | `src/patches/` |
 | Browser scheduling and Ruby adaptations | `web/browser/app.js` |

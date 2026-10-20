@@ -1,0 +1,28 @@
+# cargo-mobile2 project configuration.
+#
+#   cargo mobile init      # generate gen/apple and gen/android
+#   cargo apple run        # build and run on an iOS device or simulator
+#   cargo android run      # build and run on an Android device or emulator
+#
+# `name` supplies the Android JNI package suffix and generated Xcode scheme,
+# so it must match the last component of the `org.rsxp.mobile` identifier.
+# The native library itself is named by `lib-name`.
+[app]
+name = "mobile"
+lib-name = "rsxp_mobile"
+stylized-name = "RSXP"
+identifier = "org.rsxp.mobile"
+template-pack = "wry"
+
+[apple]
+ios-version = "16.0"
+bundle-version = "1"
+bundle-version-short = "0.1.0"
+# Let other apps and Files see the game library.
+plist-pairs = [
+    { key = "UIFileSharingEnabled", value = true },
+    { key = "LSSupportsOpeningDocumentsInPlace", value = true },
+]
+
+[android]
+min-sdk-version = 26

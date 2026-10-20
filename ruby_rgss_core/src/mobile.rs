@@ -1,9 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Native MRI. Ruby game code never enters a WebView or a WASM interpreter.
+//! Fiber-pumped MRI lifecycle for the cargo-mobile2 shell.
+//!
+//! `mobile_bridge.c` owns every Ruby C API call and exception longjmp boundary.
+//! The Rust side only passes paths and requests, then resumes the game fiber
+//! once per UI step. `Graphics.update` yields after every frame so the WebView
+//! stays responsive without running Ruby on another thread.
 use std::{
     ffi::{c_char, CStr, CString},
     path::Path,
 };
+
 unsafe extern "C" {
     fn rsxp_mri_initialize(path: *const c_char) -> i32;
     fn rsxp_mri_start(
@@ -18,6 +24,7 @@ unsafe extern "C" {
     fn rsxp_mri_error() -> *const c_char;
     fn rsxp_mri_stop();
 }
+
 fn error() -> String {
     unsafe {
         CStr::from_ptr(rsxp_mri_error())
@@ -25,6 +32,12 @@ fn error() -> String {
             .into_owned()
     }
 }
+
+fn cstring(value: &str) -> Result<CString, String> {
+    CString::new(value).map_err(|error| error.to_string())
+}
+
+/// Initialize MRI and prepare the RGSS game fiber.
 pub fn start(
     runtime: &Path,
     root: &Path,
@@ -33,14 +46,13 @@ pub fn start(
     title: &str,
     saves: &Path,
 ) -> Result<(), String> {
-    let c = |value: &str| CString::new(value).map_err(|e| e.to_string());
-    let runtime = c(&runtime.to_string_lossy())?;
-    let root = c(&root.to_string_lossy())?;
-    let source = c(rsxp::ruby::RGSS_SOURCE)?;
-    let scripts = c(scripts)?;
-    let script = script.map(c).transpose()?;
-    let title = c(title)?;
-    let saves = c(&saves.to_string_lossy())?;
+    let runtime = cstring(&runtime.to_string_lossy())?;
+    let root = cstring(&root.to_string_lossy())?;
+    let source = cstring(rsxp::ruby::RGSS_SOURCE)?;
+    let scripts = cstring(scripts)?;
+    let script = script.map(cstring).transpose()?;
+    let title = cstring(title)?;
+    let saves = cstring(&saves.to_string_lossy())?;
     unsafe {
         if rsxp_mri_initialize(runtime.as_ptr()) != 0 {
             return Err(error());
@@ -49,7 +61,9 @@ pub fn start(
             source.as_ptr(),
             root.as_ptr(),
             scripts.as_ptr(),
-            script.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
+            script
+                .as_ref()
+                .map_or(std::ptr::null(), |script| script.as_ptr()),
             title.as_ptr(),
             saves.as_ptr(),
         ) != 0
@@ -59,6 +73,8 @@ pub fn start(
     }
     Ok(())
 }
+
+/// Resume the game fiber. Returns `false` when the script has finished.
 pub fn step() -> Result<bool, String> {
     match unsafe { rsxp_mri_step() } {
         0 => Ok(true),
@@ -66,6 +82,8 @@ pub fn step() -> Result<bool, String> {
         _ => Err(error()),
     }
 }
+
+/// Stop the game fiber and run finalizers even when the shell closes early.
 pub fn stop() {
     unsafe { rsxp_mri_stop() }
 }

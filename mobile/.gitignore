@@ -1,0 +1,17 @@
+# Rust
+target/
+**/*.rs.bk
+
+# cargo-mobile2
+.cargo/
+/gen
+.android/
+.gradle/
+.rustup/
+
+# Staged native Ruby runtime and downloaded prebuilt
+/build/
+/assets/runtime/
+
+# macOS
+.DS_Store

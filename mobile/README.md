@@ -1,135 +1,149 @@
-# RSXP mobile prototype
+# RSXP mobile with cargo-mobile2
 
 One shared touch interface, with the existing Rust engine compiled natively for
-each platform. Both the Rust engine and MRI Ruby interpreter are native machine code. No WASM
-or WASI interpreter is packaged or used for mobile gameplay. The WebView only
-draws the shared library and touch controls; game pixels appear in a native view.
+each platform. Both the Rust engine and the MRI Ruby interpreter are native
+machine code. No WASM or WASI interpreter is packaged or used for mobile
+gameplay. The WebView only draws the shared library, game frames, and touch
+controls.
 
-The built-in demo runs RGSS/Ruby, renders through the native Rust software
-renderer, and responds to the D-pad and A button. Import a game folder from
-Files on iOS or the system document picker on Android, then tap its library card.
-Import copies the folder into the application's private library; it does not
-modify the source. Choose the folder containing Game.ini and Data, not its parent.
+[cargo-mobile2](https://github.com/tauri-apps/cargo-mobile2) owns the platform
+projects. The handwritten Xcode project, Gradle project, JNI bridge, C ABI shell,
+and `build.py` from the earlier prototype have been removed. `mobile.toml` and
+the `[package.metadata.cargo-android]`/`[package.metadata.cargo-apple]` sections
+in `Cargo.toml` describe the app to cargo-mobile2; `gen/apple` and `gen/android`
+are generated on demand and are not committed.
 
-## Develop on an Apple Silicon Mac
+The built-in demo runs RGSS/Ruby, renders through the native Rust renderer, and
+responds to the D-pad and A button. Import a game folder from the system picker,
+then tap its library card. Import copies the folder into the application's
+private library through the WebView's directory picker; it does not modify the
+source. Choose the folder containing Game.ini and Data, not its parent.
 
-Install Xcode, open it once to accept Apple's license and finish installing its
-components. If no iOS Simulator runtime is installed, `--run` downloads Apple's
-ARM64 runtime and creates an iPhone Simulator automatically (a large first-time download).
-Then, from the repository root:
+## Prerequisites
 
-```sh
-nix-shell
-python3 mobile/build.py ios --run
-```
+- Rust and Cargo. A rustup-managed toolchain is recommended because
+  cargo-mobile2 installs the iOS and Android target standard libraries; the
+  repository's `nix-shell` supplies the host compiler and native build
+  dependencies. If the targets are already installed (for example through a
+  separate rustup toolchain), add `--skip-targets-install` to `cargo mobile init`.
+- [cargo-mobile2](https://github.com/tauri-apps/cargo-mobile2):
+  `cargo install --git https://github.com/tauri-apps/cargo-mobile2`
+- iOS: Xcode, its command-line tools, and `xcodegen` on `PATH`. Open Xcode once
+  to finish first-launch installation. Set `DEVELOPER_DIR` to use a non-default
+  Xcode. For a physical device, add your team to `[apple].development-team` in
+  `mobile.toml`.
+- Android: Android Studio with an SDK, a side-by-side NDK, and JDK 17. Set
+  `ANDROID_HOME`, and optionally `ANDROID_NDK_HOME`. The repository also
+  provides a reproducible Nix shell with the SDK, NDK, JDK, `cargo-mobile2`,
+  and Rust target setup:
+  ```sh
+  nix-shell android-shell.nix
+  # or: nix develop .#android
+  ```
+  It accepts Google's Android SDK license and allows the unfree SDK/NDK
+  packages.
+- Android Ruby: a cross-compiled native MRI 4.0 distribution. Set
+  `RSXP_RUBY_PREFIX` to a prefix containing `include/ruby.h`,
+  `lib/libruby-static.a`, and `lib/ruby/4.0.0`. The build stops if native MRI is
+  missing; it never falls back to WASM/WASI. Apple builds instead use the pinned,
+  SHA-256 verified CRuby prebuilt that `build.rs` downloads on the first build.
 
-This prepares the pinned Ruby runtime and shared UI assets, builds the Rust core
-for `aarch64-apple-ios-sim`, builds the app, and installs/launches it in an available
-iPhone Simulator. The script uses `/Applications/Xcode.app` without changing the
-machine's selected developer directory. Set `DEVELOPER_DIR` to use another Xcode.
-First builds require network access. When the current compiler lacks mobile target libraries, the helper provisions
-a minimal Rust toolchain under `mobile/build/rustup/`. Nix supplies `rustup`
-automatically if needed; it does not change your global default Rust toolchain.
-
-For a physical iPhone, run `python3 mobile/build.py ios --device`, open
-`mobile/ios/RSXP.xcodeproj`, set your signing team, select your device, and run.
-Device installation and distribution require Apple signing credentials.
-
-For fast interface/core development without the Simulator:
-
-```sh
-python3 mobile/build.py host
-python3 mobile/preview.py
-```
-
-Open `http://127.0.0.1:8765`. This preview uses the real native Rust dynamic
-library through the same C ABI. It is a host preview, not an iOS emulation.
-Copy a game folder into `mobile/build/preview-games/` and press Refresh to test
-imported games there. Keep the server local; it exposes a development native API.
-
-## Android
-
-Install Android Studio with SDK 35, a side-by-side NDK, CMake 3.22.1, and JDK 17.
-Set `ANDROID_HOME` and optionally `ANDROID_NDK_HOME`. Android also needs a
-cross-compiled native MRI Ruby 4.0 distribution: set `RSXP_RUBY_PREFIX` to its
-prefix containing `include/ruby.h` (and platform configuration headers),
-`lib/libruby-static.a`, and `lib/ruby/4.0.0`. This repository does not yet provision
-that Android interpreter, and the Android app has not been built or tested. The
-build stops if native MRI is missing; it never falls back to WASM/WASI. Then:
+## Generate the platform projects
 
 ```sh
-python3 mobile/build.py android
+cd mobile
+cargo mobile init
 ```
 
-The helper compiles the same core for `aarch64-linux-android` and stages the exact
-same UI used by iOS. With Gradle 8.9 on PATH it also builds the debug APK; otherwise
-open `mobile/android` in Android Studio and choose **Build APK** after staging.
-The APK is at `mobile/android/app/build/outputs/apk/debug/app-debug.apk`.
-The current Android configuration supports ARM64 devices, not x86 emulators.
+This reads `mobile.toml`, writes `gen/apple` and `gen/android`, installs the
+mobile Rust targets, and wires the wry Android activity and Xcode project. Re-run
+it after changing platform metadata.
+
+## Run
+
+```sh
+# From mobile/
+cargo apple run          # iOS device or simulator selected by cargo-mobile2
+cargo android run        # connected Android device or emulator
+cargo run                # desktop preview of the same WebView and Rust core
+```
+
+For Android, enter the shell first (`nix-shell android-shell.nix` from the
+repository root) so `cargo-mobile2`, the SDK/NDK, `adb`, and the Android Rust
+targets are on `PATH`.
+
+`cargo apple open` and `cargo android open` open the generated projects in Xcode
+and Android Studio. The desktop preview is the replacement for the old local
+`preview.py` server: it runs the real native library, Ruby runtime, and touch UI
+in a desktop WebView.
+
+The first build downloads and extracts the pinned Ruby runtime into
+`mobile/assets/runtime/` and links it into the app. cargo-mobile2 symlinks
+`mobile/assets` into the generated Android project and copies it into the iOS
+bundle, so no manual asset staging is required.
 
 ## Where to work
 
 | Location | Responsibility |
 | --- | --- |
+| `mobile.toml` | cargo-mobile2 app, Apple and Android configuration |
+| `Cargo.toml` | App crate, cargo-mobile2 metadata, dependencies |
+| `src/lib.rs`, `src/app.rs` | tao/wry shell, IPC bridge, platform entry points |
+| `src/engine.rs` | Engine requests, game library, import, native-called ABI |
+| `src/platform.rs` | App data paths and Android asset extraction |
+| `../ruby_rgss_core/src/mobile.rs` | Native MRI lifecycle used by the shell |
+| `build.rs` | Ruby download/link, asset staging, inlined touch UI |
 | `ui/` | Shared library, game launch, pause, controller, and errors |
 | `ui/input.js` | Pointer ownership, multitouch, and releasing held inputs |
-| `core/` | Native Rust runtime, safe asset access, saves, framebuffer, C ABI |
-| `ios/` | WKWebView shell, document picker, native-library linkage |
-| `android/` | WebView shell, document-tree import, JNI adapter |
-| `build.py` | Asset preparation and platform build commands |
+| `../ruby_rgss_core/mobile_bridge.c` | C adapter between MRI and Rust |
 | `demo.rb` | Small built-in RGSS game for end-to-end checks |
 
+`gen/` is generated by cargo-mobile2. Do not edit it by hand; change
+`mobile.toml`, the crate metadata, or the wry template instead.
+
 Image/font services live in `src/portable_media.rs`, shared with the browser.
-The core uses the existing runtime, archives, patches, graphics, and input modules.
-Only the OS shells differ. Touch UI changes need no platform-specific layout work.
+The core uses the existing runtime, archives, patches, graphics, and input
+modules. Ruby scripts execute in native MRI, linked statically into the Rust
+core. The C adapter keeps Ruby exception unwinding inside C, then returns errors
+to Rust. Game fibers yield after Graphics.update so the shell stays responsive
+between frames.
 
-Ruby scripts execute in native MRI, linked statically into the Rust core. Apple
-builds use Ruby 4.0.7 from the pinned, SHA-256 verified [CRuby 4.0.701
-distribution](https://github.com/xord/cruby/releases/tag/v4.0.701). Its headers,
-interpreter, static extensions, and standard library target macOS, iOS device,
-and iOS Simulator separately. JIT compilation is disabled. The C adapter keeps
-Ruby exception unwinding inside C, then returns errors to Rust. Game fibers
-yield after Graphics.update so the shell stays responsive between frames.
-The same compile-time RGSS bundle from `src/ruby/` calls the native Rust renderer and
-input engine directly, without JSON/base64 pixel transport through JavaScript.
-Platform-specific Ruby plugins still require a compatible native mobile port.
-
-All engine requests must run on one thread because the shared engine is
-thread-local. Both mobile shells dispatch synchronous prompts on their WebView
-UI thread. Only the bundled interface may navigate or invoke that bridge.
+The same compile-time RGSS bundle from `src/ruby/` calls the native Rust renderer
+and input engine directly. Platform-specific Ruby plugins still require a
+compatible native mobile port.
 
 ## Current limits and verification
 
 This is an experimental development build, not an App Store release. Audio and
-the desktop inspector are not implemented. On iOS the core composites scenes with
-wgpu on Metal and presents directly to a `CAMetalLayer`, with no RGBA readback;
-if Metal is unavailable it falls back to the CPU renderer and UIImageView.
-Android currently uses CPU frames through ImageView. Native execution alone does
-not establish a particular frame rate. Large games and long play sessions need
-device testing.
+the desktop inspector are not implemented.
+
+Frames are read back as RGBA over IPC and drawn on the WebView canvas on every
+target. This keeps one code path and avoids platform view layering, but it gives
+up the earlier iOS `CAMetalLayer` zero-copy presentation. Large games and long
+play sessions need device testing. Native execution alone does not establish a
+particular frame rate.
+
 MRI writes saves directly to native application storage, separately for each game.
 Uninstalling the app removes its private games and saves; save export is pending.
 
 The desktop Magnus bindings (retained sprite state, built-in RGSS1 tilemap
 batching, Win32API) are not compiled into the mobile core. Mobile uses the shared
-`rgss.rb` plus the serialized native-call path instead, so tiles still reach the
-GPU native-tile geometry path but per-tile Ruby updates are not batched as they
-are on desktop.
+`rgss.rb` plus the serialized native-call path instead, so tiles still use the
+native tile geometry path but per-tile Ruby updates are not batched as they are
+on desktop.
 
 The native MRI integration test launches the RGSS demo, renders a frame, sends
 Right input, and checks that the rendered frame changes. The shared touch tests
-check multitouch ownership and release behavior. Build the host runtime first
-to provision MRI before running the tests:
+check multitouch ownership and release behavior. Build the host runtime first to
+provision MRI before running the tests:
 
 ```sh
-python3 mobile/build.py host
-cargo test --manifest-path mobile/core/Cargo.toml
+cargo test --manifest-path mobile/Cargo.toml
 node --test mobile/tests/input.mjs
 cargo check --manifest-path web/engine/Cargo.toml --target wasm32-unknown-unknown
 ```
 
-For a repeatable iOS Simulator smoke test, launch the app with
-`xcrun simctl launch booted org.rsxp.mobile --demo`. This starts the same built-in
-Ruby game through the shared UI in Debug or Release builds. Pass
-`--game 'Game Folder'` to open an imported library game directly. Normal launches
-open the library.
+For a repeatable iOS Simulator smoke test, launch the installed app with
+`xcrun simctl launch booted org.rsxp.mobile --demo` to start the built-in Ruby
+game. Pass `--game 'Game Folder'` the same way to open an imported library game
+directly. Normal launches open the library.

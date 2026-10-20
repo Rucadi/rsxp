@@ -285,7 +285,18 @@ async function importFiles(files) {
     throw error;
   }
 }
-$('import').onclick = () => { picker.value = ''; picker.click(); };
+$('import').onclick = async () => {
+  try {
+    const info = await native({ op: 'info' });
+    if (info.platform === 'linux') {
+      const imported = await native({ op: 'chooseFolder' });
+      if (imported) await refresh();
+    } else {
+      picker.value = '';
+      picker.click();
+    }
+  } catch (error) { failure(error); }
+};
 picker.onchange = () => { importFiles(picker.files).catch(failure); };
 
 function positionFrame() {

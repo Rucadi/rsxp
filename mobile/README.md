@@ -47,6 +47,8 @@ source. Choose the folder containing Game.ini and Data, not its parent.
   `lib/libruby-static.a`, and `lib/ruby/4.0.0`. The build stops if native MRI is
   missing; it never falls back to WASM/WASI. Apple builds instead use the pinned,
   SHA-256 verified CRuby prebuilt that `build.rs` downloads on the first build.
+  Linux desktop previews use the host Ruby from the development shell and link
+  its native library; the Apple prebuilt does not contain a Linux library.
 
 ## Generate the platform projects
 
@@ -68,9 +70,11 @@ cargo android run        # connected Android device or emulator
 cargo run                # desktop preview of the same WebView and Rust core
 ```
 
-For Android, enter the shell first (`nix-shell android-shell.nix` from the
-repository root) so `cargo-mobile2`, the SDK/NDK, `adb`, and the Android Rust
-targets are on `PATH`.
+For Linux desktop previews, enter the repository's development shell first
+(`nix develop` from the repository root); it provides the GTK, WebKitGTK, D-Bus,
+and `pkg-config` dependencies required by Wry. For Android, enter the shell
+first (`nix-shell android-shell.nix` from the repository root) so
+`cargo-mobile2`, the SDK/NDK, `adb`, and the Android Rust targets are on `PATH`.
 
 `cargo apple open` and `cargo android open` open the generated projects in Xcode
 and Android Studio. The desktop preview is the replacement for the old local

@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 use std::{
     cell::RefCell,
     fs,
-    io::{Seek, SeekFrom, Write},
+    io::{Read, Seek, SeekFrom, Write},
     path::{Component, Path, PathBuf},
     sync::OnceLock,
     time::{SystemTime, UNIX_EPOCH},
@@ -259,6 +259,57 @@ fn import_cancel() -> Result<Value, String> {
         let _ = fs::remove_dir_all(session.temporary);
     }
     Ok(Value::Null)
+}
+
+/// Import a directory selected by the Linux desktop's native folder chooser.
+pub fn import_directory(source: &std::path::Path) -> Result<Value, String> {
+    let source = source.canonicalize().map_err(|error| error.to_string())?;
+    if !source.is_dir() {
+        return Err("Choose a game folder, not individual files.".into());
+    }
+    let name = source
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or("Invalid game folder name")?;
+    import_begin(name)?;
+
+    fn copy_tree(source: &std::path::Path, relative: &std::path::Path) -> Result<(), String> {
+        for entry in fs::read_dir(source).map_err(|error| error.to_string())? {
+            let entry = entry.map_err(|error| error.to_string())?;
+            let file_type = entry.file_type().map_err(|error| error.to_string())?;
+            let child = relative.join(entry.file_name());
+            if file_type.is_dir() {
+                copy_tree(&entry.path(), &child)?;
+            } else if file_type.is_file() {
+                let child = child.to_str().ok_or("Invalid file path")?;
+                let safe = safe_relative(child).ok_or("Invalid file path")?;
+                let mut input = fs::File::open(entry.path()).map_err(|error| error.to_string())?;
+                let mut offset = 0;
+                let mut buffer = vec![0; 512 * 1024];
+                loop {
+                    let count = input.read(&mut buffer).map_err(|error| error.to_string())?;
+                    if count == 0 {
+                        if offset == 0 {
+                            import_chunk(safe.to_str().ok_or("Invalid file path")?, 0, "")?;
+                        }
+                        break;
+                    }
+                    let encoded = B64.encode(&buffer[..count]);
+                    import_chunk(safe.to_str().ok_or("Invalid file path")?, offset, &encoded)?;
+                    offset += count as u64;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    match copy_tree(&source, std::path::Path::new("")) {
+        Ok(()) => import_end(),
+        Err(error) => {
+            let _ = import_cancel();
+            Err(error)
+        }
+    }
 }
 
 fn dispatch(request: Value) -> Result<Value, String> {

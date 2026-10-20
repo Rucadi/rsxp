@@ -8,10 +8,17 @@ let
     [
       udev
       alsa-lib
+      dbus.dev
+      dbus
+      glib
+      gtk3
       libx11
       libxkbcommon
+      libsoup_3
+      pkg-config
       vulkan-loader
       wayland
+      webkitgtk_4_1
     ]
   );
 in
@@ -36,7 +43,7 @@ pkgs.mkShell {
   buildInputs = [
     pkgs.zlib
     pkgs.libffi
-  ];
+  ] ++ runtimeLibraries;
   LD_LIBRARY_PATH = lib.optionalString isLinux (
     lib.makeLibraryPath (runtimeLibraries ++ [ pkgs.ruby_4_0 ])
   );

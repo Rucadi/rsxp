@@ -1,13 +1,19 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! cargo-mobile2 shell: one tao window and one system WebView on every target.
 use crate::{engine, platform};
+#[cfg(target_os = "linux")]
+use gtk::prelude::*;
 use serde_json::{json, Value};
 use std::{cell::RefCell, rc::Rc};
+#[cfg(target_os = "linux")]
+use tao::platform::unix::WindowExtUnix;
 use tao::{
     event::{Event, StartCause, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy, EventLoopWindowTarget},
     window::WindowBuilder,
 };
+#[cfg(target_os = "linux")]
+use wry::WebViewBuilderExtUnix;
 use wry::{
     http::{header, Request, Response},
     WebView, WebViewBuilder,
@@ -18,7 +24,14 @@ const UI: &str = include_str!(concat!(env!("OUT_DIR"), "/ui.html"));
 /// IPC arrives on a WebView thread on Android. All engine and MRI work must
 /// run on the event-loop thread, so requests are forwarded as user events.
 enum AppEvent {
-    Ipc { id: Value, request: Value },
+    Ipc {
+        id: Value,
+        request: Value,
+    },
+    FolderSelected {
+        id: Value,
+        path: Option<std::path::PathBuf>,
+    },
 }
 
 #[cfg(target_os = "android")]
@@ -128,11 +141,30 @@ fn build_webview(
             let request = payload.get("request").cloned().unwrap_or(Value::Null);
             let _ = proxy.send_event(AppEvent::Ipc { id, request });
         });
-    *webview.borrow_mut() = Some(builder.build(&window)?);
+    #[cfg(target_os = "linux")]
+    let view = builder.build_gtk(
+        window
+            .default_vbox()
+            .expect("Tao window should have its default GTK box"),
+    )?;
+    #[cfg(not(target_os = "linux"))]
+    let view = builder.build(&window)?;
+    *webview.borrow_mut() = Some(view);
     Ok((window, webview))
 }
 
 pub fn run() {
+    if std::env::args().any(|argument| argument == "--help" || argument == "-h") {
+        println!("RSXP desktop preview\n\nUsage: rsxp-mobile-desktop [--demo] [--game <path>]\n\
+            \nOptions:\n  --demo          Start the built-in demo game\n  --game <path>   Open a game directory\n  -h, --help      Show this help and exit");
+        return;
+    }
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        // Avoid the NVIDIA explicit-sync protocol failure seen with WebKitGTK
+        // on some Wayland compositors. Users can still override this setting.
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
     init_logging();
     match platform::library_dir()
         .and_then(|library| platform::ruby_runtime().map(|runtime| (library, runtime)))
@@ -149,6 +181,8 @@ pub fn run() {
     let proxy = event_loop.create_proxy();
     let mut window = None;
     let mut webview: Option<Rc<RefCell<Option<WebView>>>> = None;
+    #[cfg(target_os = "linux")]
+    let folder_dialog = Rc::new(RefCell::new(None::<gtk::FileChooserNative>));
     event_loop.run(move |event, event_loop, control_flow| {
         *control_flow = ControlFlow::Wait;
         match event {
@@ -160,7 +194,75 @@ pub fn run() {
                 Err(error) => eprintln!("could not create the RSXP window: {error}"),
             },
             Event::UserEvent(AppEvent::Ipc { id, request }) => {
-                let response = engine::request(request);
+                #[cfg(target_os = "linux")]
+                if request["op"] == "chooseFolder" {
+                    if let Some(active_window) = window.as_ref() {
+                        let dialog = gtk::FileChooserNative::new(
+                            Some("Choose game folder"),
+                            Some(active_window.gtk_window()),
+                            gtk::FileChooserAction::SelectFolder,
+                            Some("Import"),
+                            Some("Cancel"),
+                        );
+                        let proxy = proxy.clone();
+                        let folder_dialog_slot = folder_dialog.clone();
+                        dialog.connect_response(move |dialog, response| {
+                            let path = (response == gtk::ResponseType::Accept)
+                                .then(|| dialog.filename())
+                                .flatten();
+                            dialog.hide();
+                            folder_dialog_slot.borrow_mut().take();
+                            let _ = proxy.send_event(AppEvent::FolderSelected {
+                                id: id.clone(),
+                                path,
+                            });
+                        });
+                        // Keep a strong reference while the native dialog is
+                        // presented; otherwise it is dropped with this event.
+                        *folder_dialog.borrow_mut() = Some(dialog.clone());
+                        dialog.show();
+                    } else {
+                        let response = json!({"error": "The desktop window is not ready"});
+                        let script = format!("globalThis.__rsxpResponse({id}, {response});");
+                        if let Some(slot) = webview.as_ref() {
+                            if let Some(webview) = slot.borrow().as_ref() {
+                                let _ = webview.evaluate_script(&script);
+                            }
+                        }
+                    }
+                } else {
+                    let response = engine::request(request);
+                    let response = serde_json::to_string(&response).unwrap_or_else(|_| {
+                        json!({"error": "response encoding failed"}).to_string()
+                    });
+                    let script = format!("globalThis.__rsxpResponse({id}, {response});");
+                    if let Some(slot) = webview.as_ref() {
+                        if let Some(webview) = slot.borrow().as_ref() {
+                            let _ = webview.evaluate_script(&script);
+                        }
+                    }
+                }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    let response = engine::request(request);
+                    let response = serde_json::to_string(&response).unwrap_or_else(|_| {
+                        json!({"error": "response encoding failed"}).to_string()
+                    });
+                    let script = format!("globalThis.__rsxpResponse({id}, {response});");
+                    if let Some(slot) = webview.as_ref() {
+                        if let Some(webview) = slot.borrow().as_ref() {
+                            let _ = webview.evaluate_script(&script);
+                        }
+                    }
+                }
+            }
+            Event::UserEvent(AppEvent::FolderSelected { id, path }) => {
+                let response = match path {
+                    Some(path) => engine::import_directory(&path)
+                        .map(|value| json!({"ok": value}))
+                        .unwrap_or_else(|error| json!({"error": error})),
+                    None => json!({"ok": null}),
+                };
                 let response = serde_json::to_string(&response)
                     .unwrap_or_else(|_| json!({"error": "response encoding failed"}).to_string());
                 let script = format!("globalThis.__rsxpResponse({id}, {response});");

@@ -30,6 +30,34 @@ fn native_ruby(manifest: &Path, target: &str) -> PathBuf {
         return PathBuf::from(supplied);
     }
 
+    // The downloadable CRuby archive contains Apple frameworks and an
+    // Android static library, not a Linux host library. Desktop previews use
+    // the native Ruby supplied by the development environment instead.
+    if target.contains("linux") {
+        let output = Command::new("ruby")
+            .args([
+                "-rrbconfig",
+                "-e",
+                "print [RbConfig::CONFIG['prefix'], RbConfig::CONFIG['rubyhdrdir'], RbConfig::CONFIG['rubyarchhdrdir'], RbConfig::CONFIG['libdir'], RbConfig::CONFIG['LIBRUBYARG']].join(\"\\n\")",
+            ])
+            .output()
+            .unwrap_or_else(|error| panic!("failed to query host Ruby; enter the Nix development shell: {error}"));
+        assert!(output.status.success(), "failed to query host Ruby configuration");
+        let values = String::from_utf8(output.stdout).expect("Ruby config was not UTF-8");
+        let mut values = values.lines();
+        let prefix = PathBuf::from(values.next().expect("missing Ruby prefix"));
+        let header = PathBuf::from(values.next().expect("missing Ruby headers"));
+        let arch_header = PathBuf::from(values.next().expect("missing Ruby arch headers"));
+        let libdir = PathBuf::from(values.next().expect("missing Ruby library directory"));
+        let library = values.next().expect("missing Ruby linker argument");
+        fs::create_dir_all(manifest.join("build")).expect("failed to create build directory");
+        fs::write(
+            manifest.join("build/host-ruby-config"),
+            format!("{}\n{}\n{}\n{}\n{}", prefix.display(), header.display(), arch_header.display(), libdir.display(), library),
+        ).expect("failed to cache host Ruby configuration");
+        return prefix;
+    }
+
     let build = manifest.join("build/cruby-native");
     let prefix = build.join("CRuby");
     if prefix.join("include/ruby.h").is_file() {
@@ -68,6 +96,39 @@ fn native_ruby(manifest: &Path, target: &str) -> PathBuf {
 }
 
 fn link_ruby(manifest: &Path, prefix: &Path, target: &str) {
+    if target.contains("linux") {
+        let config = fs::read_to_string(manifest.join("build/host-ruby-config"))
+            .expect("host Ruby configuration was not captured");
+        let mut values = config.lines();
+        let _prefix = values.next();
+        let header = values.next().expect("missing Ruby headers");
+        let arch_header = values.next().expect("missing Ruby arch headers");
+        let libdir = values.next().expect("missing Ruby library directory");
+        let library = values.next().expect("missing Ruby linker argument");
+        println!("cargo:rustc-link-search=native={libdir}");
+        for flag in library.split_whitespace() {
+            if let Some(name) = flag.strip_prefix("-l") {
+                println!("cargo:rustc-link-lib=dylib={name}");
+            }
+        }
+        println!("cargo:rustc-link-lib=z");
+        let mut bridge = cc::Build::new();
+        bridge.file(manifest.join("../ruby_rgss_core/mobile_bridge.c"));
+        bridge.include(header).include(arch_header);
+        let platform = Path::new(arch_header).file_name().unwrap().to_string_lossy();
+        bridge.define("RSXP_RUBY_PLATFORM", Some(format!("\"{platform}\"").as_str()));
+        bridge.define("RSXP_STOCK_RUBY", None);
+        bridge.cargo_metadata(false);
+        bridge
+            .flag_if_supported("-Wno-unused-parameter")
+            .flag_if_supported("-O2")
+            .compile("rsxp_mri_bridge");
+        println!("cargo:rustc-link-search=native={}", env::var("OUT_DIR").unwrap());
+        println!("cargo:rustc-link-lib=static:+whole-archive=rsxp_mri_bridge");
+        println!("cargo:rustc-env=RSXP_NATIVE_RUBY_DEFAULT={}", prefix.display());
+        println!("cargo:rustc-env=RSXP_RUBY_VERSION={RUBY_VERSION}");
+        return;
+    }
     let apple = target.contains("apple");
     let (directory, platform) = if target.contains("ios-sim") {
         ("ios-arm64_x86_64-simulator", "iphonesimulator-arm64")
@@ -134,8 +195,12 @@ fn link_ruby(manifest: &Path, prefix: &Path, target: &str) {
         bridge.define("RSXP_STOCK_RUBY", None);
     }
     bridge
+        .cargo_metadata(false)
         .flag_if_supported("-Wno-unused-parameter")
+        .flag_if_supported("-O2")
         .compile("rsxp_mri_bridge");
+    println!("cargo:rustc-link-search=native={}", env::var("OUT_DIR").unwrap());
+    println!("cargo:rustc-link-lib=static:+whole-archive=rsxp_mri_bridge");
     println!(
         "cargo:rustc-env=RSXP_NATIVE_RUBY_DEFAULT={}",
         prefix.display()
@@ -179,10 +244,12 @@ fn stage_runtime(manifest: &Path, prefix: &Path, target: &str) {
         .unwrap_or_else(|error| panic!("failed to stage the Ruby runtime: {error}"));
     let notices = runtime.join("licenses");
     fs::create_dir_all(&notices).unwrap();
-    for entry in fs::read_dir(manifest.join("ruby")).unwrap() {
-        let entry = entry.unwrap();
-        if entry.file_name() != "bridge.c" && entry.file_type().unwrap().is_file() {
-            fs::copy(entry.path(), notices.join(entry.file_name())).unwrap();
+    if let Ok(entries) = fs::read_dir(manifest.join("ruby")) {
+        for entry in entries {
+            let entry = entry.unwrap();
+            if entry.file_name() != "bridge.c" && entry.file_type().unwrap().is_file() {
+                fs::copy(entry.path(), notices.join(entry.file_name())).unwrap();
+            }
         }
     }
     fs::write(marker, wanted).unwrap();

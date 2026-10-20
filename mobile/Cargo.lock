@@ -1457,6 +1457,7 @@ dependencies = [
  "base64",
  "cc",
  "env_logger 0.11.11",
+ "gtk",
  "jni",
  "ndk",
  "ndk-context",

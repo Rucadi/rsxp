@@ -7,8 +7,8 @@
 //! - a local windowed session with a winit [`Window`], a wgpu surface and a
 //!   [`crate::gpu_present::GpuDisplay`];
 //! - a headless session (no window, silent audio) for scripted runs;
-//! - a remote *runner* connected back to the dashboard over TCP when
-//!   `RSXP_SESSION_ADDR` is set (see [`crate::session::Runner`]), in which case
+//! - a remote *runner* connected back to the dashboard over the platform's
+//!   session transport (see [`crate::session::Runner`]), in which case
 //!   it owns no window and streams frames to the dashboard.
 //!
 //! The `renderer` argument (`auto`, `wgpu`, or `software`) selects composition:

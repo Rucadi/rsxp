@@ -38,6 +38,33 @@ jobs:
       - name: Build and test desktop with Nix
         run: nix build --print-build-logs .#rsxp
 
+  windows-nix:
+    name: Windows / Nix cross-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v17
+        with:
+          name: rsxp
+          authToken: '${{ secrets.CACHIX_KEY }}'
+      - name: Build Windows bundle with Nix and upload it to Cachix
+        run: nix build --print-build-logs --print-out-paths .#windows | tee windows-store-path.txt
+      - name: Create portable ZIP with bin contents at its root
+        run: |
+          store_path="$(tail -n 1 windows-store-path.txt)"
+          test -d "$store_path/bin"
+          mkdir -p artifacts
+          (cd "$store_path/bin" && zip -qr "$GITHUB_WORKSPACE/artifacts/rsxp-windows-x86_64-nix.zip" .)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rsxp-windows-x86_64-nix
+          path: artifacts/rsxp-windows-x86_64-nix.zip
+          if-no-files-found: error
+
   appimage:
     name: Linux / AppImage (Debian 11)
     runs-on: ubuntu-24.04
@@ -459,19 +486,84 @@ jobs:
 
   release-assets:
     name: Attach build artifacts to GitHub Release
-    if: github.event_name == 'release'
-    needs: [appimage, desktop, browser, web-player]
+    if: always() && github.event_name == 'release'
+    needs: [appimage, desktop, windows-nix, browser, web-player]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - name: Download build artifacts
+      - name: Download Linux AppImage
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
+          pattern: rsxp-linux-x86_64
+          path: release-assets
+          merge-multiple: true
+      - name: Download Windows Nix bundle
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: rsxp-windows-x86_64-nix
+          path: release-assets
+          merge-multiple: true
+      - name: Download Windows portable bundle
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: rsxp-windows-x86_64
+          path: release-assets
+          merge-multiple: true
+      - name: Download macOS disk image
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: rsxp-macos-arm64
+          path: release-assets
+          merge-multiple: true
+      - name: Download standalone browser player
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: rsxp.html
+          path: release-assets
+          merge-multiple: true
+      - name: Download Linux web player
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: rsxp-web-linux-x86_64
+          path: release-assets
+          merge-multiple: true
+      - name: Download Windows web player
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: rsxp-web-windows-x86_64
+          path: release-assets
+          merge-multiple: true
+      - name: Download macOS web player
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: rsxp-web-macos-arm64
           path: release-assets
           merge-multiple: true
       - name: Upload files to the release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$RELEASE_TAG" release-assets/* --clobber
+        run: |
+          mapfile -d '' assets < <(find release-assets -type f -print0 | sort -z)
+          if ((${#assets[@]} == 0)); then
+            echo "No build artifacts were downloaded for release $RELEASE_TAG" >&2
+            exit 1
+          fi
+          upload_failed=0
+          for asset in "${assets[@]}"; do
+            echo "Uploading ${asset#release-assets/}"
+            if ! gh release upload "$RELEASE_TAG" "$asset" --clobber; then
+              echo "Failed to upload ${asset#release-assets/}" >&2
+              upload_failed=1
+            fi
+          done
+          exit "$upload_failed"

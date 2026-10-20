@@ -3,61 +3,44 @@
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
-  outputs = { self, nixpkgs }:
+  outputs =
+    { self, nixpkgs }:
     let
-      linuxSystems = [ "x86_64-linux" "aarch64-linux" ];
-      darwinSystems = [ "x86_64-darwin" "aarch64-darwin" ];
-      windowsSystem = "x86_64-windows";
-      eachSystem = systems: nixpkgs.lib.genAttrs systems;
-
-      mkLinux = system:
-        let pkgs = import nixpkgs { inherit system; };
-        in import ./default.nix { inherit pkgs; };
-
-    in {
-      packages = eachSystem linuxSystems (system:
+      lib = nixpkgs.lib;
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "aarch64-darwin"
+      ];
+      forAllSystems = lib.genAttrs systems;
+    in
+    {
+      packages = forAllSystems (
+        system:
         let
-          pkgs = import nixpkgs { inherit system; };
-          app = mkLinux system;
-        in {
-          default = app;
-          rsxp = app;
-        }) // eachSystem darwinSystems (system:
-          let
-            pkgs = import nixpkgs { inherit system; };
-            app = import ./default.nix { inherit pkgs; doCheck = false; };
-          in {
-            default = app;
-            rsxp = app;
-          }) // {
-          ${windowsSystem} = let
-              pkgs = import nixpkgs { system = "x86_64-linux"; };
-              app = pkgs.pkgsCross.mingwW64.rustPlatform.buildRustPackage {
-                pname = "rsxp";
-                version = "0.1.0";
-                src = ./.;
-                cargoLock.lockFile = ./Cargo.lock;
-                cargoBuildFlags = [ "-p" "rsxp-desktop" "--bin" "rsxp" "--target" "x86_64-pc-windows-gnu" ];
-                cargoInstallFlags = [ "-p" "rsxp-desktop" "--bin" "rsxp" ];
-                doCheck = false;
-                CARGO_BUILD_TARGET = "x86_64-pc-windows-gnu";
-                buildInputs = with pkgs.pkgsCross.mingwW64; [ windows.pthreads ];
-                nativeBuildInputs = with pkgs.buildPackages; [ pkg-config rustPlatform.bindgenHook ];
-                postInstall = ''
-                  mkdir -p $out/bin
-                  cp target/x86_64-pc-windows-gnu/release/rsxp.exe $out/bin/
-                '';
-                meta.platforms = [ "x86_64-windows" ];
-              };
-            in { default = app; rsxp = app; };
+          pkgs = nixpkgs.legacyPackages.${system};
+          package = import ./nix/package.nix {
+            inherit pkgs;
+            doCheck = pkgs.stdenv.hostPlatform.isLinux;
           };
+        in
+        {
+          default = package;
+          rsxp = package;
+        }
+        // lib.optionalAttrs (system == "x86_64-linux") {
+          windows = import ./nix/windows.nix {
+            pkgs = nixpkgs.legacyPackages.x86_64-linux;
+          };
+        }
+      );
 
-      devShells = eachSystem (linuxSystems ++ darwinSystems) (system:
-        let pkgs = import nixpkgs { inherit system; };
-        in {
-          default = import ./shell.nix { inherit pkgs; };
-        });
+      devShells = forAllSystems (system: {
+        default = import ./nix/shell.nix {
+          pkgs = nixpkgs.legacyPackages.${system};
+        };
+      });
 
-      formatter = eachSystem (linuxSystems ++ darwinSystems) (system: nixpkgs.legacyPackages.${system}.nixfmt);
+      formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt);
     };
 }

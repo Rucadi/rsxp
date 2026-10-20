@@ -12,8 +12,35 @@
 //! corresponding [`SessionActions`] field is set. The actual library and save
 //! widgets are defined in `library.rs` / `saves.rs`
 //! (`SessionPanel::draw_library` and `SessionPanel::draw_saves`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RubyJit {
+    #[default]
+    Yjit,
+    Zjit,
+    Disabled,
+}
+
+impl RubyJit {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Yjit => "yjit",
+            Self::Zjit => "zjit",
+            Self::Disabled => "off",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Yjit => "YJIT",
+            Self::Zjit => "ZJIT",
+            Self::Disabled => "Disabled",
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct SessionPanel {
+    pub ruby_jit: RubyJit,
     pub source: String,
     pub title: String,
     pub status: String,

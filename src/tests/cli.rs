@@ -51,6 +51,57 @@ fn run(args: &[&str]) -> Output {
 }
 
 #[test]
+fn ruby_jit_selection_reaches_the_embedded_vm() {
+    let dir = TempDir::new();
+    let script = dir.0.join("jit.rb");
+    fs::write(
+        &script,
+        r##"
+mode = ENV.fetch('EXPECTED_JIT')
+%w[YJIT ZJIT].each do |name|
+  next unless RubyVM.const_defined?(name)
+  engine = RubyVM.const_get(name)
+  if name.downcase != mode
+    raise "#{name} unexpectedly enabled" if engine.enabled?
+  else
+    # Builds without a working JIT can expose its module but leave it disabled.
+    expected = engine.enabled?
+    engine.enable
+    raise "#{name} was not enabled at startup" if engine.enabled? != expected
+  end
+end
+puts 'JIT_SELECTION_OK'
+"##,
+    )
+    .unwrap();
+    for (selection, legacy, expected) in [
+        (None, "1", "yjit"),
+        (None, "0", "off"),
+        (Some("yjit"), "0", "yjit"),
+        (Some("zjit"), "0", "zjit"),
+        (Some("off"), "1", "off"),
+    ] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_rsxp"));
+        command
+            .args(["run", "--headless", "--script", script.to_str().unwrap()])
+            .env_remove("RUBYOPT")
+            .env_remove("RSXP_JIT")
+            .env("RSXP_YJIT", legacy)
+            .env("EXPECTED_JIT", expected);
+        if let Some(selection) = selection {
+            command.env("RSXP_JIT", selection);
+        }
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{selection:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("JIT_SELECTION_OK"));
+    }
+}
+
+#[test]
 fn headless_framebuffer_is_deterministic() {
     let dir = TempDir::new();
     let mut outputs = Vec::new();
@@ -450,10 +501,7 @@ fn sprite_cache_preserves_lifecycle_and_pixels() {
 
 #[test]
 fn ruby_rgss_values_gc_and_rendering_all_versions() {
-    let script = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../src/testdata/rgss_smoke.rb"
-    );
+    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/testdata/rgss_smoke.rb");
     let dir = TempDir::new();
     for version in ["1", "2", "3"] {
         let output = dir.0.join(format!("ruby-{version}.ppm"));
@@ -578,10 +626,7 @@ fn media_demo_reports_animated_gif_metadata() {
         }
     }
     fs::write(&gif, bytes).unwrap();
-    let script = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../src/testdata/media_demo.rb"
-    );
+    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/testdata/media_demo.rb");
     let result = Command::new(env!("CARGO_BIN_EXE_rsxp"))
         .args(["run", "--script", script, "--headless", "--frames", "5"])
         .env("RSXP_GIF", &gif)
@@ -601,10 +646,7 @@ fn media_demo_reports_animated_gif_metadata() {
 
 #[test]
 fn kgl2_compatibility_functions_run_headless() {
-    let script = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../src/testdata/kgl2_smoke.rb"
-    );
+    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/testdata/kgl2_smoke.rb");
     let result = run(&["run", "--script", script, "--headless"]);
     assert!(
         result.status.success(),
@@ -846,12 +888,27 @@ fn isolated_runner_transport(renderer: &str) {
         time::{Duration, Instant},
     };
     fn read(stream: &mut TcpStream) -> serde_json::Value {
+        fn read_exact_with_retry(stream: &mut TcpStream, mut bytes: &mut [u8]) {
+            let deadline = Instant::now() + Duration::from_secs(30);
+            while !bytes.is_empty() {
+                match stream.read(bytes) {
+                    Ok(0) => panic!("runner transport closed while reading"),
+                    Ok(read) => bytes = &mut bytes[read..],
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                        ) && Instant::now() < deadline => {}
+                    Err(error) => panic!("runner transport read failed: {error}"),
+                }
+            }
+        }
         let mut length = [0; 4];
-        stream.read_exact(&mut length).unwrap();
+        read_exact_with_retry(stream, &mut length);
         let length = u32::from_le_bytes(length) as usize;
         assert!(length < 16 * 1024 * 1024);
         let mut bytes = vec![0; length];
-        stream.read_exact(&mut bytes).unwrap();
+        read_exact_with_retry(stream, &mut bytes);
         serde_json::from_slice(&bytes).unwrap()
     }
     fn write(stream: &mut TcpStream, value: serde_json::Value) {
@@ -904,10 +961,31 @@ fn isolated_runner_transport(renderer: &str) {
                 Err(e) => panic!("{e}"),
             }
         };
+        let mut control_stream = loop {
+            match listener.accept() {
+                Ok((s, _)) => break s,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(
+                        start.elapsed() < Duration::from_secs(15),
+                        "runner failed to open its control connection"
+                    );
+                    assert!(
+                        child.try_wait().unwrap().is_none(),
+                        "runner exited before control connection"
+                    );
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(e) => panic!("{e}"),
+            }
+        };
         stream
             .set_read_timeout(Some(Duration::from_secs(10)))
             .unwrap();
+        control_stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
         assert_eq!(read(&mut stream)["token"], "session-test-token");
+        assert_eq!(read(&mut control_stream)["token"], "session-test-token");
         let mut frames = 0;
         let mut polls = 0;
         let mut replied = false;
@@ -917,7 +995,7 @@ fn isolated_runner_transport(renderer: &str) {
                 polls += 1;
                 let paused = polls <= 2;
                 write(
-                    &mut stream,
+                    &mut control_stream,
                     serde_json::json!({"paused":paused,"keys":[40],"downs":if polls==3{vec![40]}else{vec![]},"rate":120,"api":if polls==3{"91\tgame_status\n"}else{""}}),
                 );
             } else {

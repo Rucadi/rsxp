@@ -20,11 +20,16 @@ impl RubyCore {
     pub fn new() -> Result<Self, String> {
         // SAFETY: one VM is initialized on the desktop main thread per process.
         let ruby = unsafe { magnus::embed::init() };
-        let _ = Self::eval::<Value>(
-            &ruby,
-            "RubyVM::YJIT.enable if defined?(RubyVM::YJIT) && ENV.fetch('RSXP_YJIT', '1') != '0'",
-            "<rsxp-yjit>",
-        );
+        // The Windows dashboard uses stdout for framed runner IPC. Keep Ruby's
+        // normal `puts`/`print` output on stderr so game scripts cannot corrupt
+        // that byte stream; the dashboard already captures stderr as runtime logs.
+        if std::env::var_os("RSXP_SESSION_STDIO").is_some() {
+            Self::eval::<Value>(&ruby, "$stdout = $stderr", "<rsxp-session-stdio>")
+                .map_err(|error| error.to_string())?;
+        }
+        if let Err(error) = Self::eval::<Value>(&ruby, include_str!("jit.rb"), "<rsxp-jit>") {
+            eprintln!("Could not configure Ruby JIT: {error}");
+        }
         bindings::bind(&ruby).map_err(|error| error.to_string())?;
         ruby.define_global_function("__rsxp_native", function!(bridge::native_call, 1))
             .map_err(|error| error.to_string())?;

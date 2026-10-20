@@ -26,7 +26,7 @@
 use std::{
     collections::HashMap,
     io::{BufRead, BufReader, Read, Write},
-    net::{TcpListener, TcpStream},
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, TcpStream},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex, OnceLock,
@@ -59,6 +59,7 @@ struct ServerHandle {
     stop: Arc<AtomicBool>,
     thread: thread::JoinHandle<()>,
     status: Arc<Mutex<ServerStatus>>,
+    wake_address: SocketAddr,
 }
 
 static SERVER: OnceLock<Mutex<Option<ServerHandle>>> = OnceLock::new();
@@ -79,13 +80,21 @@ pub fn start(bind: &str, port: u16) -> Result<(), String> {
     }
     let listener = TcpListener::bind((bind, port))
         .map_err(|error| format!("cannot listen on {bind}:{port}: {error}"))?;
-    listener
-        .set_nonblocking(true)
-        .map_err(|error| format!("cannot configure Cable Club listener: {error}"))?;
-    let address = listener
+    let bound_address = listener
         .local_addr()
-        .map(|address| address.to_string())
-        .unwrap_or_else(|_| format!("{bind}:{port}"));
+        .map_err(|error| format!("cannot inspect Cable Club listener: {error}"))?;
+    let wake_address = match bound_address {
+        SocketAddr::V4(mut address) if address.ip().is_unspecified() => {
+            address.set_ip(Ipv4Addr::LOCALHOST);
+            SocketAddr::V4(address)
+        }
+        SocketAddr::V6(mut address) if address.ip().is_unspecified() => {
+            address.set_ip(Ipv6Addr::LOCALHOST);
+            SocketAddr::V6(address)
+        }
+        address => address,
+    };
+    let address = bound_address.to_string();
     let stop = Arc::new(AtomicBool::new(false));
     let status = Arc::new(Mutex::new(ServerStatus {
         address: Some(address.clone()),
@@ -102,6 +111,7 @@ pub fn start(bind: &str, port: u16) -> Result<(), String> {
         stop,
         thread,
         status,
+        wake_address,
     });
     Ok(())
 }
@@ -112,6 +122,9 @@ pub fn stop() {
     let handle = server.lock().ok().and_then(|mut active| active.take());
     if let Some(handle) = handle {
         handle.stop.store(true, Ordering::Release);
+        // Wake the blocking accept so shutdown does not depend on nonblocking
+        // Winsock ioctls, which are unreliable in some Wine environments.
+        let _ = TcpStream::connect_timeout(&handle.wake_address, Duration::from_millis(100));
         let _ = handle.thread.join();
     }
 }
@@ -144,6 +157,9 @@ fn accept_loop(listener: TcpListener, stop: Arc<AtomicBool>, status: Arc<Mutex<S
     while !stop.load(Ordering::Acquire) {
         match listener.accept() {
             Ok((stream, address)) => {
+                if stop.load(Ordering::Acquire) {
+                    break;
+                }
                 let id = NEXT_CLIENT.fetch_add(1, Ordering::Relaxed);
                 let writer = match stream.try_clone() {
                     Ok(writer) => Arc::new(Mutex::new(writer)),
@@ -184,10 +200,10 @@ fn accept_loop(listener: TcpListener, stop: Arc<AtomicBool>, status: Arc<Mutex<S
                     .name(format!("rsxp-cable-client-{id}"))
                     .spawn(move || client_loop(id, stream, clients_thread, status_thread));
             }
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                thread::sleep(Duration::from_millis(30));
-            }
             Err(error) => {
+                if stop.load(Ordering::Acquire) {
+                    break;
+                }
                 if let Ok(mut current) = status.lock() {
                     current.error = Some(format!("listener error: {error}"));
                 }

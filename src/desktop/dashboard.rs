@@ -4,9 +4,9 @@
 //! This is what `rsxp` (no subcommand) and an interactive `rsxp run` open. It
 //! is a control-plane process only: it never embeds Ruby. It launches itself
 //! again as a child with the `run` subcommand, which acts as the actual game
-//! runner, and talks to it over a loopback TCP socket using the length-prefixed
-//! JSON framing in [`crate::session`]. Wire details live there; this module
-//! relies on `read_message`/`write_message`.
+//! runner, and talks to it using the length-prefixed JSON framing in
+//! [`crate::session`]: process pipes on Windows and loopback TCP elsewhere.
+//! Wire details live there; this module relies on `read_message`/`write_message`.
 //!
 //! Main types and flow:
 //! - [`Exchange`] is the shared state between the UI thread and the blocking
@@ -15,10 +15,9 @@
 //!   error, frame rate/frame counters, performance state, and text-input/cursor
 //!   requests. It is guarded by a `Mutex` inside an `Arc`.
 //! - [`Session`] owns the child process, the shared [`Exchange`], a stop flag,
-//!   and the stdout/stderr drain threads. Dropping it kills and reaps the
-//!   child. `Session::start` binds an ephemeral loopback listener, generates a
-//!   32-byte hex nonce, spawns the child with `RSXP_SESSION_ADDR`,
-//!   `RSXP_API=0`, and `RSXP_SESSION_TOKEN`, and spawns the I/O thread.
+//!   the selected transport, and output drain threads. Dropping it kills and
+//!   reaps the child. `Session::start` selects process pipes on Windows and
+//!   authenticated loopback TCP elsewhere, then spawns the runner and I/O thread.
 //! - [`forward_output`] copies a child pipe verbatim to the launching terminal
 //!   while also pushing a bounded (300-entry), lossy UTF-8 view into
 //!   `Exchange::logs` for the embedded output panel. A closed terminal must
@@ -31,9 +30,9 @@
 //!   or a reset requested through `rsxp::runtime_settings`; save backup/restore
 //!   runs on a detached thread and reports through a channel.
 //!
-//! Protocol notes enforced here: the handshake and 30 s connect timeout, a
-//! token check on the first message, and then a 5 s write timeout. Poll replies
-//! carry `control`; frame messages carry `width`/`height` plus either a
+//! Protocol notes enforced here: TCP sessions use a handshake, 30 s connect
+//! timeout, token check, and 5 s write timeout. Poll replies carry `control`;
+//! frame messages carry `width`/`height` plus either a
 //! `gpu_bytes` packet (bounded to 512 MiB, decoded via `GpuFrame::decode`) or
 //! raw ARGB pixels (bounded to 16,777,216 pixels per frame). GPU packets are
 //! merged into a pending frame and, once queued upload bytes exceed 64 MiB,
@@ -46,8 +45,9 @@ use crate::{
 };
 use rsxp::{graphics::Bitmap, input::Input};
 use serde_json::{json, Value};
+#[cfg(not(windows))]
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::{
-    net::{TcpListener, TcpStream},
     process::{Child, Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -74,11 +74,13 @@ struct Session {
     child: Child,
     exchange: Arc<Mutex<Exchange>>,
     stopping: Arc<AtomicBool>,
+    transport: Arc<PlatformTransport>,
     output_threads: Vec<std::thread::JoinHandle<()>>,
 }
 impl Drop for Session {
     fn drop(&mut self) {
         self.stopping.store(true, Ordering::Relaxed);
+        self.transport.wake();
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
@@ -126,41 +128,126 @@ fn forward_output(
     }
 }
 
-fn accept_runner(listener: &TcpListener) -> std::io::Result<TcpStream> {
-    let (stream, _) = listener.accept()?;
-    // BSD/macOS inherits O_NONBLOCK from the listener. The framed protocol
-    // uses blocking read_exact/write_all on its dedicated transport thread.
-    stream.set_nonblocking(false)?;
-    Ok(stream)
+#[cfg(not(windows))]
+fn accept_runner(
+    listener: TcpListener,
+    address: SocketAddr,
+    stopping: &AtomicBool,
+    timeout: Duration,
+) -> std::io::Result<Option<(TcpStream, TcpStream)>> {
+    // Keep the listener in its default blocking mode. In particular, avoid
+    // Winsock's nonblocking ioctlsocket path, which can fail under Wine.
+    let (send, receive) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let result = listener
+            .accept()
+            .map_err(|error| {
+                std::io::Error::new(
+                    error.kind(),
+                    format!("dashboard IPC listener.accept (data socket) failed: {error}"),
+                )
+            })
+            .and_then(|(data, _)| {
+                listener
+                    .accept()
+                    .map(|(control, _)| (data, control))
+                    .map_err(|error| {
+                        std::io::Error::new(
+                            error.kind(),
+                            format!(
+                                "dashboard IPC listener.accept (control socket) failed: {error}"
+                            ),
+                        )
+                    })
+            });
+        let _ = send.send(result);
+    });
+    let start = std::time::Instant::now();
+    loop {
+        if stopping.load(Ordering::Relaxed) {
+            return Ok(None);
+        }
+        let elapsed = start.elapsed();
+        if elapsed >= timeout {
+            // The accept thread owns the listener. Connect twice to release
+            // both accepts, just as Session::drop does when stopping a game.
+            for _ in 0..2 {
+                let _ = TcpStream::connect_timeout(&address, Duration::from_millis(100));
+            }
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("Game did not connect within {} seconds", timeout.as_secs()),
+            ));
+        }
+        match receive.recv_timeout(Duration::from_millis(10).min(timeout - elapsed)) {
+            Ok(result) => return result.map(Some),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(std::io::Error::other("runner accept thread stopped"));
+            }
+        }
+    }
 }
 
-impl Session {
-    fn start(args: &[String]) -> Result<Self, String> {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(|e| e.to_string())?;
-        listener.set_nonblocking(true).map_err(|e| e.to_string())?;
-        // A per-launch nonce prevents accidental attachment to another runner.
+type ProtocolReader = Box<dyn std::io::Read + Send>;
+type ProtocolWriter = Box<dyn std::io::Write + Send>;
+
+trait SessionTransport: Send + Sync {
+    fn new() -> Result<Self, String>
+    where
+        Self: Sized;
+    fn configure(&self, command: &mut Command);
+    fn attach_output(
+        &self,
+        child: &mut Child,
+        exchange: &Arc<Mutex<Exchange>>,
+    ) -> Result<Vec<std::thread::JoinHandle<()>>, String>;
+    fn streams(
+        &self,
+        stopping: &AtomicBool,
+    ) -> Result<Option<(ProtocolReader, ProtocolWriter)>, String>;
+    fn wake(&self);
+}
+
+#[cfg(not(windows))]
+struct TcpTransport {
+    listener: Mutex<Option<TcpListener>>,
+    address: SocketAddr,
+    token: String,
+}
+
+#[cfg(not(windows))]
+impl SessionTransport for TcpTransport {
+    fn new() -> Result<Self, String> {
+        let listener = TcpListener::bind(("127.0.0.1", 0))
+            .map_err(|e| format!("dashboard IPC listener bind failed: {e}"))?;
+        let address = listener
+            .local_addr()
+            .map_err(|e| format!("dashboard IPC listener local_addr failed: {e}"))?;
         let mut nonce = [0u8; 32];
         getrandom::fill(&mut nonce).map_err(|e| e.to_string())?;
-        let token: String = nonce.iter().map(|b| format!("{b:02x}")).collect();
-        let mut child = Command::new(std::env::current_exe().map_err(|e| e.to_string())?)
-            .arg("run")
-            .args(args)
-            .env(
-                "RSXP_SESSION_ADDR",
-                listener
-                    .local_addr()
-                    .map_err(|e| e.to_string())?
-                    .to_string(),
-            )
-            .env("RSXP_API", "0")
-            .env("RSXP_SESSION_TOKEN", &token)
+        let token = nonce.iter().map(|b| format!("{b:02x}")).collect();
+        Ok(Self {
+            listener: Mutex::new(Some(listener)),
+            address,
+            token,
+        })
+    }
+
+    fn configure(&self, command: &mut Command) {
+        command
+            .env("RSXP_SESSION_ADDR", self.address.to_string())
+            .env("RSXP_SESSION_TOKEN", &self.token)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| e.to_string())?;
-        let exchange = Arc::new(Mutex::new(Exchange::default()));
-        let stopping = Arc::new(AtomicBool::new(false));
-        let mut output_threads = Vec::new();
+            .stderr(Stdio::piped());
+    }
+
+    fn attach_output(
+        &self,
+        child: &mut Child,
+        exchange: &Arc<Mutex<Exchange>>,
+    ) -> Result<Vec<std::thread::JoinHandle<()>>, String> {
+        let mut threads = Vec::new();
         for (stderr, pipe) in [
             child
                 .stdout
@@ -176,7 +263,7 @@ impl Session {
         .filter_map(|(index, pipe)| pipe.map(|pipe| (index == 1, pipe)))
         {
             let logs = exchange.clone();
-            output_threads.push(std::thread::spawn(move || {
+            threads.push(std::thread::spawn(move || {
                 let reader = std::io::BufReader::new(pipe);
                 if stderr {
                     forward_output(reader, std::io::stderr(), &logs);
@@ -185,39 +272,175 @@ impl Session {
                 }
             }));
         }
+        Ok(threads)
+    }
+
+    fn streams(
+        &self,
+        stopping: &AtomicBool,
+    ) -> Result<Option<(ProtocolReader, ProtocolWriter)>, String> {
+        let listener = self
+            .listener
+            .lock()
+            .map_err(|_| "dashboard IPC listener lock is unavailable")?
+            .take()
+            .ok_or("dashboard IPC listener was already consumed")?;
+        let Some((mut data, mut control)) =
+            accept_runner(listener, self.address, stopping, Duration::from_secs(30))
+                .map_err(|e| e.to_string())?
+        else {
+            return Ok(None);
+        };
+        data.set_nodelay(true)
+            .map_err(|e| format!("dashboard IPC data socket set_nodelay failed: {e}"))?;
+        data.set_read_timeout(Some(Duration::from_secs(30)))
+            .map_err(|e| format!("dashboard IPC data socket set_read_timeout failed: {e}"))?;
+        let handshake = read_message(&mut data)
+            .map_err(|error| format!("dashboard IPC handshake read failed: {error}"))?;
+        if handshake["token"].as_str() != Some(&self.token) {
+            return Err("Invalid runner handshake".into());
+        }
+        control
+            .set_nodelay(true)
+            .map_err(|e| format!("dashboard IPC control socket set_nodelay failed: {e}"))?;
+        control
+            .set_read_timeout(Some(Duration::from_secs(30)))
+            .map_err(|e| format!("dashboard IPC control socket set_read_timeout failed: {e}"))?;
+        let control_handshake = read_message(&mut control)
+            .map_err(|error| format!("dashboard IPC control handshake read failed: {error}"))?;
+        if control_handshake["token"].as_str() != Some(&self.token) {
+            return Err("Invalid runner control handshake".into());
+        }
+        data.set_read_timeout(None)
+            .map_err(|e| format!("dashboard IPC data socket clear timeout failed: {e}"))?;
+        control
+            .set_read_timeout(None)
+            .map_err(|e| format!("dashboard IPC control socket clear timeout failed: {e}"))?;
+        control
+            .set_write_timeout(Some(Duration::from_secs(5)))
+            .map_err(|e| format!("dashboard IPC control socket set_write_timeout failed: {e}"))?;
+        Ok(Some((Box::new(data), Box::new(control))))
+    }
+
+    fn wake(&self) {
+        for _ in 0..2 {
+            let _ = TcpStream::connect_timeout(&self.address, Duration::from_millis(100));
+        }
+    }
+}
+
+#[cfg(windows)]
+struct StdioTransport {
+    output: Mutex<Option<std::process::ChildStdout>>,
+    input: Mutex<Option<std::process::ChildStdin>>,
+}
+
+#[cfg(windows)]
+impl SessionTransport for StdioTransport {
+    fn new() -> Result<Self, String> {
+        Ok(Self {
+            output: Mutex::new(None),
+            input: Mutex::new(None),
+        })
+    }
+
+    fn configure(&self, command: &mut Command) {
+        command
+            .env("RSXP_SESSION_STDIO", "1")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+    }
+
+    fn attach_output(
+        &self,
+        child: &mut Child,
+        exchange: &Arc<Mutex<Exchange>>,
+    ) -> Result<Vec<std::thread::JoinHandle<()>>, String> {
+        *self
+            .output
+            .lock()
+            .map_err(|_| "runner stdout lock is unavailable")? = Some(
+            child
+                .stdout
+                .take()
+                .ok_or("could not capture game runner protocol output")?,
+        );
+        *self
+            .input
+            .lock()
+            .map_err(|_| "runner stdin lock is unavailable")? = Some(
+            child
+                .stdin
+                .take()
+                .ok_or("could not open game runner control input")?,
+        );
+        let mut threads = Vec::new();
+        if let Some(pipe) = child.stderr.take() {
+            let logs = exchange.clone();
+            threads.push(std::thread::spawn(move || {
+                forward_output(std::io::BufReader::new(pipe), std::io::stderr(), &logs);
+            }));
+        }
+        Ok(threads)
+    }
+
+    fn streams(
+        &self,
+        _stopping: &AtomicBool,
+    ) -> Result<Option<(ProtocolReader, ProtocolWriter)>, String> {
+        let output = self
+            .output
+            .lock()
+            .map_err(|_| "runner stdout lock is unavailable")?
+            .take()
+            .ok_or("runner stdout was already consumed")?;
+        let input = self
+            .input
+            .lock()
+            .map_err(|_| "runner stdin lock is unavailable")?
+            .take()
+            .ok_or("runner stdin was already consumed")?;
+        Ok(Some((Box::new(output), Box::new(input))))
+    }
+
+    fn wake(&self) {}
+}
+
+#[cfg(windows)]
+type PlatformTransport = StdioTransport;
+#[cfg(not(windows))]
+type PlatformTransport = TcpTransport;
+
+impl Session {
+    fn start(args: &[String], jit: rsxp::ui::session::RubyJit) -> Result<Self, String> {
+        let transport = Arc::new(PlatformTransport::new()?);
+        let executable = std::env::current_exe()
+            .map_err(|e| format!("could not locate runner executable: {e}"))?;
+        let mut command = Command::new(executable);
+        command
+            .arg("run")
+            .args(args)
+            .env("RSXP_API", "0")
+            .env("RSXP_JIT", jit.as_str());
+        transport.configure(&mut command);
+        let mut child = command
+            .spawn()
+            .map_err(|e| format!("could not start game runner process: {e}"))?;
+        let exchange = Arc::new(Mutex::new(Exchange::default()));
+        let output_threads = transport.attach_output(&mut child, &exchange)?;
+        let stopping = Arc::new(AtomicBool::new(false));
         let shared = exchange.clone();
         let stop = stopping.clone();
+        let io_transport = Arc::clone(&transport);
         std::thread::spawn(move || {
             let result = (|| -> Result<(), String> {
-                let start = std::time::Instant::now();
-                let mut stream = loop {
-                    if stop.load(Ordering::Relaxed) {
-                        return Ok(());
-                    }
-                    match accept_runner(&listener) {
-                        Ok(s) => break s,
-                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                            if start.elapsed() > Duration::from_secs(30) {
-                                return Err("Game did not connect within 30 seconds".into());
-                            }
-                            std::thread::sleep(Duration::from_millis(10));
-                        }
-                        Err(e) => return Err(e.to_string()),
-                    }
+                let Some((mut stream, mut control_stream)) = io_transport.streams(&stop)? else {
+                    return Ok(());
                 };
-                stream.set_nodelay(true).map_err(|e| e.to_string())?;
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(30)))
-                    .map_err(|e| e.to_string())?;
-                if read_message(&mut stream)?["token"].as_str() != Some(&token) {
-                    return Err("Invalid runner handshake".into());
-                }
-                stream.set_read_timeout(None).map_err(|e| e.to_string())?;
-                stream
-                    .set_write_timeout(Some(Duration::from_secs(5)))
-                    .map_err(|e| e.to_string())?;
                 loop {
-                    let header = read_message(&mut stream)?;
+                    let header = read_message(&mut *stream)
+                        .map_err(|error| format!("dashboard IPC message read failed: {error}"))?;
                     if header["poll"].as_bool() == Some(true) {
                         let control = {
                             let mut state = shared.lock().unwrap();
@@ -229,7 +452,9 @@ impl Session {
                             state.control["api"] = json!("");
                             control
                         };
-                        write_message(&mut stream, &control)?;
+                        write_message(&mut *control_stream, &control).map_err(|error| {
+                            format!("dashboard IPC control write failed: {error}")
+                        })?;
                     } else {
                         let w = header["width"].as_u64().ok_or("Missing frame width")? as u32;
                         let h = header["height"].as_u64().ok_or("Missing frame height")? as u32;
@@ -242,13 +467,15 @@ impl Session {
                                 return Err("GPU packet exceeds transport limit".into());
                             }
                             let mut bytes = vec![0; length as usize];
-                            std::io::Read::read_exact(&mut stream, &mut bytes)
-                                .map_err(|e| e.to_string())?;
+                            std::io::Read::read_exact(&mut *stream, &mut bytes).map_err(
+                                |error| format!("dashboard IPC GPU frame read failed: {error}"),
+                            )?;
                             (None, Some(rsxp::gpu::GpuFrame::decode(&bytes)?))
                         } else {
                             let mut bytes = vec![0; w as usize * h as usize * 4];
-                            std::io::Read::read_exact(&mut stream, &mut bytes)
-                                .map_err(|e| e.to_string())?;
+                            std::io::Read::read_exact(&mut *stream, &mut bytes).map_err(
+                                |error| format!("dashboard IPC frame read failed: {error}"),
+                            )?;
                             let pixels = bytes
                                 .chunks_exact(4)
                                 .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
@@ -319,6 +546,7 @@ impl Session {
             child,
             exchange,
             stopping,
+            transport,
             output_threads,
         })
     }
@@ -334,6 +562,15 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
     let mut gpu = rsxp::gpu::GpuRenderer::new_for_surface(640, 480, instance, &surface)?;
     let mut display = GpuDisplay::new(&gpu, surface, window.physical_size())?;
     let mut panel = rsxp::ui::session::SessionPanel::default();
+    panel.ruby_jit = match std::env::var("RSXP_JIT").ok().as_deref() {
+        Some("zjit") => rsxp::ui::session::RubyJit::Zjit,
+        Some("off") => rsxp::ui::session::RubyJit::Disabled,
+        Some("yjit") => rsxp::ui::session::RubyJit::Yjit,
+        _ if std::env::var("RSXP_YJIT").as_deref() == Ok("0") => {
+            rsxp::ui::session::RubyJit::Disabled
+        }
+        _ => rsxp::ui::session::RubyJit::Yjit,
+    };
     panel.recent = super::library::load();
     display.workspace_mut().session = Some(panel);
     rsxp::api_bridge::start_from_env()?;
@@ -399,7 +636,8 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
             }
             display.workspace_mut().backend =
                 Box::new(rsxp::workspace_services::LocalServices::new(root.clone()));
-            match Session::start(&args) {
+            let jit = display.workspace_mut().session.as_ref().unwrap().ruby_jit;
+            match Session::start(&args, jit) {
                 Ok(s) => {
                     session = Some(s);
                     last_args = args;
@@ -556,7 +794,10 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
         }
         let actions = std::mem::take(&mut display.workspace_mut().session_actions);
         if actions.browse {
-            if let Some(path) = rfd::FileDialog::new().set_title("Choose an RPG Maker game folder").pick_folder() {
+            if let Some(path) = rfd::FileDialog::new()
+                .set_title("Choose an RPG Maker game folder")
+                .pick_folder()
+            {
                 let panel = display.workspace_mut().session.as_mut().unwrap();
                 panel.source = path.to_string_lossy().into_owned();
                 if let Ok(root) = super::library::discover(&panel.source) {
@@ -564,12 +805,17 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
                     launch = Some(vec!["--game".into(), panel.source.clone()]);
                     panel.open = false;
                 } else {
-                    panel.error = Some("That folder does not contain a supported RPG Maker game.".into());
+                    panel.error =
+                        Some("That folder does not contain a supported RPG Maker game.".into());
                 }
             }
         }
         if actions.browse_game_file {
-            if let Some(path) = rfd::FileDialog::new().set_title("Choose Game.ini").add_filter("RPG Maker project", &["ini"]).pick_file() {
+            if let Some(path) = rfd::FileDialog::new()
+                .set_title("Choose Game.ini")
+                .add_filter("RPG Maker project", &["ini"])
+                .pick_file()
+            {
                 let panel = display.workspace_mut().session.as_mut().unwrap();
                 panel.source = path.to_string_lossy().into_owned();
                 match super::library::discover(&panel.source) {
@@ -630,23 +876,22 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
 mod tests {
     use super::*;
 
+    #[cfg(not(windows))]
     #[test]
     fn runner_connection_waits_for_fragmented_messages() {
-        use std::io::Write;
+        use std::{io::Write, net::TcpListener};
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        listener.set_nonblocking(true).unwrap();
-        let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
-        let deadline = std::time::Instant::now() + Duration::from_secs(2);
-        let mut server = loop {
-            match accept_runner(&listener) {
-                Ok(stream) => break stream,
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                    assert!(std::time::Instant::now() < deadline);
-                    std::thread::sleep(Duration::from_millis(1));
-                }
-                Err(error) => panic!("{error}"),
-            }
-        };
+        let address = listener.local_addr().unwrap();
+        let mut client = TcpStream::connect(address).unwrap();
+        let _control_client = TcpStream::connect(address).unwrap();
+        let (mut server, _control_server) = accept_runner(
+            listener,
+            address,
+            &AtomicBool::new(false),
+            Duration::from_secs(2),
+        )
+        .unwrap()
+        .unwrap();
         server
             .set_read_timeout(Some(Duration::from_secs(2)))
             .unwrap();

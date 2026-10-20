@@ -2,11 +2,10 @@
 //! Desktop-only transport to an isolated "runner" process; the dashboard never
 //! owns Ruby state itself.
 //!
-//! When `RSXP_SESSION_ADDR` is set, [`Runner::connect`] opens a TCP connection,
-//! sends a length-prefixed JSON handshake carrying `RSXP_SESSION_TOKEN`, enables the
-//! API relay, and spawns a background `rsxp-session-controls` thread that decodes
-//! control messages into a bounded channel. If the variable is unset, connect returns
-//! `Ok(None)` and no runner is used.
+//! The dashboard selects TCP on non-Windows platforms and standard process
+//! pipes on Windows. The runner enables the API relay and spawns a background
+//! `rsxp-session-controls` thread that decodes control messages into a bounded
+//! channel. If no dashboard transport is configured, connect returns `Ok(None)`.
 //!
 //! Frames are sent one-way: a JSON header from [`Runner::frame_header`] (fps/frame
 //! counters, input/rate state and relay
@@ -24,19 +23,22 @@
 //! `false` on a `stop` request or when the stream/peer is lost.
 use rsxp::{graphics::Bitmap, input::Input};
 use serde_json::{json, Value};
-use std::{
-    io::{Read, Write},
-    net::TcpStream,
-};
+use std::io::{Read, Write};
+#[cfg(any(not(windows), test))]
+use std::net::TcpStream;
 
-pub fn write_message(stream: &mut TcpStream, value: &Value) -> Result<(), String> {
+pub trait WriteStream: Write + Send {}
+impl<T: Write + Send> WriteStream for T {}
+
+pub fn write_message<W: Write + ?Sized>(stream: &mut W, value: &Value) -> Result<(), String> {
     let bytes = serde_json::to_vec(value).map_err(|e| e.to_string())?;
     stream
         .write_all(&(bytes.len() as u32).to_le_bytes())
         .and_then(|_| stream.write_all(&bytes))
+        .and_then(|_| stream.flush())
         .map_err(|e| e.to_string())
 }
-pub fn read_message(stream: &mut TcpStream) -> Result<Value, String> {
+pub fn read_message<R: Read + ?Sized>(stream: &mut R) -> Result<Value, String> {
     let mut length = [0; 4];
     stream.read_exact(&mut length).map_err(|e| e.to_string())?;
     let length = u32::from_le_bytes(length) as usize;
@@ -49,7 +51,7 @@ pub fn read_message(stream: &mut TcpStream) -> Result<Value, String> {
 }
 
 pub struct Runner {
-    stream: TcpStream,
+    stream: Box<dyn WriteStream>,
     controls: std::sync::mpsc::Receiver<Result<Value, String>>,
     first_control: bool,
     pub paused: bool,
@@ -63,24 +65,48 @@ pub struct Runner {
 }
 impl Runner {
     pub fn connect() -> Result<Option<Self>, String> {
-        let Ok(address) = std::env::var("RSXP_SESSION_ADDR") else {
-            return Ok(None);
+        #[cfg(windows)]
+        let (stream, control_stream): (Box<dyn WriteStream>, Box<dyn Read + Send>) = {
+            if std::env::var_os("RSXP_SESSION_STDIO").is_none() {
+                return Ok(None);
+            }
+            (Box::new(std::io::stdout()), Box::new(std::io::stdin()))
         };
-        let mut stream = TcpStream::connect(address).map_err(|e| e.to_string())?;
-        stream.set_nodelay(true).map_err(|e| e.to_string())?;
-        write_message(
-            &mut stream,
-            &json!({"token": std::env::var("RSXP_SESSION_TOKEN").unwrap_or_default()}),
-        )?;
-        let mut reader = stream.try_clone().map_err(|e| e.to_string())?;
+        #[cfg(not(windows))]
+        let (stream, control_stream): (Box<dyn WriteStream>, Box<dyn Read + Send>) = {
+            let Ok(address) = std::env::var("RSXP_SESSION_ADDR") else {
+                return Ok(None);
+            };
+            let mut stream = TcpStream::connect(&address)
+                .map_err(|e| format!("dashboard IPC connect to {address} failed: {e}"))?;
+            stream
+                .set_nodelay(true)
+                .map_err(|e| format!("dashboard IPC set_nodelay failed: {e}"))?;
+            let token = json!({"token": std::env::var("RSXP_SESSION_TOKEN").unwrap_or_default()});
+            write_message(&mut stream, &token)
+                .map_err(|error| format!("dashboard IPC handshake write failed: {error}"))?;
+            let mut control_stream = TcpStream::connect(&address)
+                .map_err(|e| format!("dashboard IPC control connect to {address} failed: {e}"))?;
+            control_stream
+                .set_nodelay(true)
+                .map_err(|e| format!("dashboard IPC control set_nodelay failed: {e}"))?;
+            write_message(&mut control_stream, &token).map_err(|error| {
+                format!("dashboard IPC control handshake write failed: {error}")
+            })?;
+            (Box::new(stream), Box::new(control_stream))
+        };
         let (send, controls) = std::sync::mpsc::sync_channel(8);
         std::thread::Builder::new()
             .name("rsxp-session-controls".into())
-            .spawn(move || loop {
-                let value = read_message(&mut reader);
-                let failed = value.is_err();
-                if send.send(value).is_err() || failed {
-                    break;
+            .spawn(move || {
+                let mut reader = control_stream;
+                loop {
+                    let value = read_message(&mut *reader)
+                        .map_err(|error| format!("dashboard IPC control read failed: {error}"));
+                    let failed = value.is_err();
+                    if send.send(value).is_err() || failed {
+                        break;
+                    }
                 }
             })
             .map_err(|e| e.to_string())?;
@@ -125,7 +151,7 @@ impl Runner {
                 .collect();
             self.stream.write_all(&bytes).map_err(|e| e.to_string())?;
         }
-        Ok(())
+        self.stream.flush().map_err(|e| e.to_string())
     }
     #[cfg(feature = "gpu")]
     pub fn gpu_frame(&mut self, frame: rsxp::gpu::GpuFrame) -> Result<(), String> {
@@ -134,7 +160,10 @@ impl Runner {
         let mut header = self.frame_header(width, height);
         header["gpu_bytes"] = json!(bytes.len());
         write_message(&mut self.stream, &header)?;
-        self.stream.write_all(&bytes).map_err(|e| e.to_string())
+        self.stream
+            .write_all(&bytes)
+            .and_then(|_| self.stream.flush())
+            .map_err(|e| e.to_string())
     }
     pub fn poll(&mut self, input: &mut Input) -> bool {
         // The first poll also announces readiness before a frame exists.
@@ -230,6 +259,7 @@ mod tests {
     use super::*;
     #[test]
     fn game_poll_does_not_wait_for_the_next_control_reply() {
+        use std::net::TcpStream;
         let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let _silent_peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
         let (stream, _) = listener.accept().unwrap();
@@ -239,7 +269,7 @@ mod tests {
         let (send, controls) = std::sync::mpsc::channel();
         send.send(Ok(json!({"keys":[40],"fast":true}))).unwrap();
         let mut runner = Runner {
-            stream,
+            stream: Box::new(stream),
             controls,
             first_control: true,
             paused: false,

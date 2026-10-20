@@ -1,6 +1,19 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Browser-specific VM services; shared by the page and the headless runner.
+
+// ruby.wasm's in-memory WASI filesystem does not expose permission bits, so
+// File.writable? is always false. Dir.tmpdir and Dir.mktmpdir then reject even
+// directories that accept writes. Treat existing directories as writable
+// candidates; writes still fail normally if the filesystem is read-only.
+export const WASI_TMPDIR_COMPAT = `
+class << File
+  alias_method :__rsxp_wasi_writable?, :writable? unless method_defined?(:__rsxp_wasi_writable?)
+  def writable?(path) = __rsxp_wasi_writable?(path) || directory?(path)
+end
+`;
+
 export const PRELUDE = `
+${WASI_TMPDIR_COMPAT}
 require 'js'
 require 'stringio'
 # RGSS FileInputMixin binary helpers are normally available on files returned
@@ -60,8 +73,11 @@ class File
       prefix = Dir.pwd.sub(%r{/+$}, '') + '/'
       absolute.start_with?(prefix) ? absolute.delete_prefix(prefix) : path.to_s
     end
+    def __rsxp_asset_exist?(path)
+      RSXP.call('exists', payload: RSXP.utf8(__rsxp_asset_path(path))) == '1'
+    end
     def file?(path)
-      RSXP.call('exists', payload: RSXP.utf8(__rsxp_asset_path(path))) == '1' || __rsxp_real_file?(path)
+      __rsxp_asset_exist?(path) || __rsxp_real_file?(path)
     end
     def foreach(path, *args, encoding: nil, **options, &block)
       return enum_for(:foreach, path, *args, encoding: encoding, **options) unless block
@@ -85,7 +101,7 @@ class File
       result
     end
     def exist?(path)
-      return true if RSXP.call('exists', payload: RSXP.utf8(__rsxp_asset_path(path))) == '1'
+      return true if __rsxp_asset_exist?(path)
       __rsxp_real_exist?(path)
     end
     def exists?(path) = exist?(path)
@@ -132,8 +148,17 @@ class File
 end
 module FileTest
   class << self
-    def exist?(path) = File.exist?(path)
-    def exists?(path) = File.exist?(path)
+    # rgss.rb aliases FileTest's current probe to __rsxp_case_sensitive_exist?
+    # and builds its case-insensitive exist? on top. Defining it here first
+    # keeps that alias independent of File.exist?: RGSS games commonly replace
+    # File.exist? with a wrapper that falls back to FileTest.exist?, and an
+    # alias that dispatched back through the replaceable File.exist? would
+    # recurse until the Ruby VM's stack overflows.
+    def __rsxp_case_sensitive_exist?(path)
+      File.__rsxp_asset_exist?(path) || File.__rsxp_real_exist?(path)
+    end
+    def exist?(path) = __rsxp_case_sensitive_exist?(path)
+    def exists?(path) = exist?(path)
     def file?(path) = File.file?(path)
     def size(path) = File.binread(path).bytesize
   end

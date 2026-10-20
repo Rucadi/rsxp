@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DefaultRubyVM } from '../web/node_modules/@ruby/wasm-wasi/dist/esm/browser.js';
+import { WASI_TMPDIR_COMPAT } from '../web/browser/ruby-host.js';
 import { rubySource } from './ruby-sources.mjs';
 
 const root = resolve(import.meta.dirname, '..');
@@ -36,6 +37,8 @@ const { vm } = await DefaultRubyVM(await WebAssembly.compile(
   ...Object.fromEntries(['RSXP_SPRITE_CACHE']
     .filter(name => process.env[name] !== undefined).map(name => [name, process.env[name]])),
 } });
+// Match the browser VM so fixtures can use Dir.tmpdir/Dir.mktmpdir.
+vm.eval(WASI_TMPDIR_COMPAT);
 vm.eval(`
 require 'js'
 def __rsxp_native(request)

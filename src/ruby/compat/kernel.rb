@@ -3,12 +3,14 @@ module Kernel
   def load_data(path, raw=false)
     bytes=begin
       RSXP.call('read',payload:String(path))
-    rescue RuntimeError => error
+    rescue => error
       # mkxp reports a missing asset through the filesystem error that games
       # rescue while probing optional files (Essentials' pbGetFileChar uses
-      # load_data and expects Errno::ENOENT for absent graphics).
-      raise Errno::ENOENT,path.to_s if error.message.start_with?('asset not found: ')
-      raise
+      # load_data and expects Errno::ENOENT for absent graphics). The browser
+      # engine's asset store does not see files written to Ruby's virtual
+      # filesystem, so fall back to a normal read before reporting the miss.
+      raise unless error.message.start_with?('asset not found: ')
+      File.binread(path)
     end
     return bytes if raw
     data=Marshal.load(bytes)

@@ -48,6 +48,9 @@ static WORLD: LazyLock<Mutex<World>> = LazyLock::new(Mutex::default);
 fn with_world<T>(f: impl FnOnce(&mut World) -> T) -> T {
     f(&mut WORLD.lock().unwrap_or_else(|e| e.into_inner()))
 }
+#[cfg(feature = "mobile")]
+pub(super) fn reset() { with_world(|world| *world = World::default()); }
+
 macro_rules! get {
     ($object:expr,$name:literal,$ty:ty) => {{
         static ID: LazyId = LazyId::new($name);

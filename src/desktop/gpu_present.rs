@@ -226,6 +226,7 @@ impl GpuDisplay {
             gpu.frame_buffer_ref().clone(),
             gpu.size(),
             presentation,
+            None,
         )
     }
 
@@ -235,6 +236,17 @@ impl GpuDisplay {
         bitmap: &Bitmap,
         presentation: Presentation<'_>,
     ) -> Result<egui::PlatformOutput, String> {
+        self.upload_bitmap(gpu, bitmap);
+        self.present_buffer(
+            gpu,
+            self.cpu_frame.clone(),
+            (bitmap.width(), bitmap.height()),
+            presentation,
+            None,
+        )
+    }
+
+    fn upload_bitmap(&mut self, gpu: &GpuRenderer, bitmap: &Bitmap) {
         let bytes = bytemuck::cast_slice(bitmap.pixels());
         let needed = bytes.len().max(4) as u64;
         if needed > self.cpu_capacity {
@@ -250,12 +262,23 @@ impl GpuDisplay {
             gpu.queue.write_buffer(&self.cpu_frame, 0, bytes);
             self.cpu_revision = Some(bitmap.revision());
         }
-        self.present_buffer(
-            gpu,
-            self.cpu_frame.clone(),
-            (bitmap.width(), bitmap.height()),
-            presentation,
-        )
+    }
+
+    /// Same surface/shader as desktop, with a frontend-provided egui layout.
+    pub fn present_with_ui(
+        &mut self,
+        gpu: &GpuRenderer,
+        bitmap: Option<&Bitmap>,
+        presentation: Presentation<'_>,
+        ui: &mut dyn FnMut(&egui::Context, &rsxp::ui::WorkspaceInfo) -> rsxp::ui::WorkspaceOutput,
+    ) -> Result<egui::PlatformOutput, String> {
+        let (buffer, size) = if let Some(bitmap) = bitmap {
+            self.upload_bitmap(gpu, bitmap);
+            (self.cpu_frame.clone(), (bitmap.width(), bitmap.height()))
+        } else {
+            (gpu.frame_buffer_ref().clone(), gpu.size())
+        };
+        self.present_buffer(gpu, buffer, size, presentation, Some(ui))
     }
 
     fn present_buffer(
@@ -264,6 +287,9 @@ impl GpuDisplay {
         source: wgpu::Buffer,
         logical_size: (u32, u32),
         presentation: Presentation<'_>,
+        mut ui: Option<
+            &mut dyn FnMut(&egui::Context, &rsxp::ui::WorkspaceInfo) -> rsxp::ui::WorkspaceOutput,
+        >,
     ) -> Result<egui::PlatformOutput, String> {
         let Presentation {
             size,
@@ -313,7 +339,11 @@ impl GpuDisplay {
         let mut game_rect = egui::Rect::ZERO;
         let mut fullscreen_request = None;
         let mut output = context.run_pass(input, |context| {
-            let result = self.workspace.draw(context, &workspace_info);
+            let result = if let Some(ui) = ui.as_mut() {
+                ui(context, &workspace_info)
+            } else {
+                self.workspace.draw(context, &workspace_info)
+            };
             game_rect = result.game_rect;
             fullscreen_request = result.fullscreen_request;
         });

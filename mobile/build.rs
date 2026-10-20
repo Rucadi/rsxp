@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Provision the native MRI runtime, link it into the mobile app, and inline
-//! the touch UI so the same WebView content works on every cargo-mobile2 target.
+//! Provision and link native MRI. The frontend is native winit/egui/wgpu.
 use sha2::{Digest as _, Sha256};
 use std::{
     env, fs,
@@ -42,7 +41,10 @@ fn native_ruby(manifest: &Path, target: &str) -> PathBuf {
             ])
             .output()
             .unwrap_or_else(|error| panic!("failed to query host Ruby; enter the Nix development shell: {error}"));
-        assert!(output.status.success(), "failed to query host Ruby configuration");
+        assert!(
+            output.status.success(),
+            "failed to query host Ruby configuration"
+        );
         let values = String::from_utf8(output.stdout).expect("Ruby config was not UTF-8");
         let mut values = values.lines();
         let prefix = PathBuf::from(values.next().expect("missing Ruby prefix"));
@@ -53,8 +55,16 @@ fn native_ruby(manifest: &Path, target: &str) -> PathBuf {
         fs::create_dir_all(manifest.join("build")).expect("failed to create build directory");
         fs::write(
             manifest.join("build/host-ruby-config"),
-            format!("{}\n{}\n{}\n{}\n{}", prefix.display(), header.display(), arch_header.display(), libdir.display(), library),
-        ).expect("failed to cache host Ruby configuration");
+            format!(
+                "{}\n{}\n{}\n{}\n{}",
+                prefix.display(),
+                header.display(),
+                arch_header.display(),
+                libdir.display(),
+                library
+            ),
+        )
+        .expect("failed to cache host Ruby configuration");
         return prefix;
     }
 
@@ -115,17 +125,29 @@ fn link_ruby(manifest: &Path, prefix: &Path, target: &str) {
         let mut bridge = cc::Build::new();
         bridge.file(manifest.join("../ruby_rgss_core/mobile_bridge.c"));
         bridge.include(header).include(arch_header);
-        let platform = Path::new(arch_header).file_name().unwrap().to_string_lossy();
-        bridge.define("RSXP_RUBY_PLATFORM", Some(format!("\"{platform}\"").as_str()));
+        let platform = Path::new(arch_header)
+            .file_name()
+            .unwrap()
+            .to_string_lossy();
+        bridge.define(
+            "RSXP_RUBY_PLATFORM",
+            Some(format!("\"{platform}\"").as_str()),
+        );
         bridge.define("RSXP_STOCK_RUBY", None);
         bridge.cargo_metadata(false);
         bridge
             .flag_if_supported("-Wno-unused-parameter")
             .flag_if_supported("-O2")
             .compile("rsxp_mri_bridge");
-        println!("cargo:rustc-link-search=native={}", env::var("OUT_DIR").unwrap());
+        println!(
+            "cargo:rustc-link-search=native={}",
+            env::var("OUT_DIR").unwrap()
+        );
         println!("cargo:rustc-link-lib=static:+whole-archive=rsxp_mri_bridge");
-        println!("cargo:rustc-env=RSXP_NATIVE_RUBY_DEFAULT={}", prefix.display());
+        println!(
+            "cargo:rustc-env=RSXP_NATIVE_RUBY_DEFAULT={}",
+            prefix.display()
+        );
         println!("cargo:rustc-env=RSXP_RUBY_VERSION={RUBY_VERSION}");
         return;
     }
@@ -199,7 +221,10 @@ fn link_ruby(manifest: &Path, prefix: &Path, target: &str) {
         .flag_if_supported("-Wno-unused-parameter")
         .flag_if_supported("-O2")
         .compile("rsxp_mri_bridge");
-    println!("cargo:rustc-link-search=native={}", env::var("OUT_DIR").unwrap());
+    println!(
+        "cargo:rustc-link-search=native={}",
+        env::var("OUT_DIR").unwrap()
+    );
     println!("cargo:rustc-link-lib=static:+whole-archive=rsxp_mri_bridge");
     println!(
         "cargo:rustc-env=RSXP_NATIVE_RUBY_DEFAULT={}",
@@ -255,43 +280,10 @@ fn stage_runtime(manifest: &Path, prefix: &Path, target: &str) {
     fs::write(marker, wanted).unwrap();
 }
 
-/// Inline the shared UI into a single document so no platform asset loader is
-/// needed for HTML, CSS, or JavaScript.
-fn build_ui(manifest: &Path) {
-    let ui = manifest.join("ui");
-    let html = fs::read_to_string(ui.join("index.html")).unwrap();
-    let style = fs::read_to_string(ui.join("style.css")).unwrap();
-    let input = fs::read_to_string(ui.join("input.js")).unwrap();
-    let app = fs::read_to_string(ui.join("app.js")).unwrap();
-    let input = input.replace(
-        "export function createTouchInput",
-        "function createTouchInput",
-    );
-    let app = app.replacen("import { createTouchInput } from './input.js';\n", "", 1);
-    let html = html
-        .replace(
-            "<link rel=\"stylesheet\" href=\"style.css\">",
-            &format!("<style>\n{style}\n</style>"),
-        )
-        .replace(
-            "<script type=\"module\" src=\"app.js\"></script>",
-            &format!("<script type=\"module\">\n{input}\n{app}\n</script>"),
-        );
-    let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join("ui.html");
-    fs::write(out, html).unwrap();
-}
-
 fn main() {
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let target = env::var("TARGET").unwrap();
-    for file in [
-        "build.rs",
-        "../ruby_rgss_core/mobile_bridge.c",
-        "ui/index.html",
-        "ui/style.css",
-        "ui/input.js",
-        "ui/app.js",
-    ] {
+    for file in ["build.rs", "../ruby_rgss_core/mobile_bridge.c"] {
         println!("cargo:rerun-if-changed={file}");
     }
     println!("cargo:rerun-if-env-changed=RSXP_RUBY_PREFIX");
@@ -299,5 +291,4 @@ fn main() {
     let prefix = native_ruby(&manifest, &target);
     link_ruby(&manifest, &prefix, &target);
     stage_runtime(&manifest, &prefix, &target);
-    build_ui(&manifest);
 }

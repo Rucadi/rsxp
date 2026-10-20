@@ -5,7 +5,22 @@
 
 let
   inherit (pkgs) lib;
-  root = ../.;
+  # Do not copy game libraries or live Cargo target directories into the Nix
+  # store just to enter nix-shell (which inherits this package's build inputs).
+  root = lib.fileset.toSource {
+    root = ../.;
+    fileset = lib.fileset.unions [
+      ../Cargo.toml
+      ../Cargo.lock
+      ../COPYING
+      ../README.md
+      ../src
+      ../desktop
+      ../ruby_rgss_core
+      ../api
+      ../assets
+    ];
+  };
   isLinux = pkgs.stdenv.hostPlatform.isLinux;
   runtimeLibraries = lib.optionals isLinux (
     with pkgs;

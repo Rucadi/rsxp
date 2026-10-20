@@ -97,8 +97,11 @@ int rsxp_mri_start(const char *source,const char *root,const char *scripts,const
 static VALUE resume_game(VALUE unused) {
     (void)unused;
     if(NIL_P(game_fiber) || !RTEST(rb_funcall(game_fiber,rb_intern("alive?"),0))) return Qfalse;
-    rb_funcall(game_fiber,rb_intern("resume"),0);
-    return rb_funcall(game_fiber,rb_intern("alive?"),0);
+    VALUE result=rb_funcall(game_fiber,rb_intern("resume"),0);
+    VALUE alive=rb_funcall(game_fiber,rb_intern("alive?"),0);
+    if(!RTEST(alive) && RB_INTEGER_TYPE_P(result) && NUM2INT(result)!=0)
+        rb_raise(rb_eRuntimeError,"RGSS game exited with status %d (see game log)",NUM2INT(result));
+    return alive;
 }
 int rsxp_mri_step(void) {
     int state=0; VALUE alive=rb_protect(resume_game,Qnil,&state);

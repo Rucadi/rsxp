@@ -5,7 +5,7 @@
 //! completion. The mobile build (`mobile` feature) keeps MRI alive and exposes
 //! a fiber-pumped lifecycle for the cargo-mobile2 shell.
 
-#[cfg(feature = "desktop")]
+#[cfg(feature = "native-bindings")]
 mod bindings;
 #[cfg(feature = "desktop")]
 mod bridge;

@@ -6,9 +6,14 @@
 //! once per UI step. `Graphics.update` yields after every frame so the WebView
 //! stays responsive without running Ruby on another thread.
 use std::{
+    cell::Cell,
     ffi::{c_char, CStr, CString},
     path::Path,
 };
+
+thread_local! {
+    static BOUND: Cell<bool> = const { Cell::new(false) };
+}
 
 unsafe extern "C" {
     fn rsxp_mri_initialize(path: *const c_char) -> i32;
@@ -57,6 +62,19 @@ pub fn start(
         if rsxp_mri_initialize(runtime.as_ptr()) != 0 {
             return Err(error());
         }
+        BOUND.with(|bound| -> Result<(), String> {
+            if !bound.get() {
+                let ruby = magnus::Ruby::get().map_err(|error| error.to_string())?;
+                // Use the same optional JIT setup as desktop. Unsupported
+                // platform builds simply report that JIT is unavailable.
+                if let Err(error) = ruby.eval::<magnus::Value>(include_str!("jit.rb")) {
+                    eprintln!("Could not configure Ruby JIT: {error}");
+                }
+                crate::bindings::bind(&ruby).map_err(|error| error.to_string())?;
+                bound.set(true);
+            }
+            Ok(())
+        })?;
         if rsxp_mri_start(
             source.as_ptr(),
             root.as_ptr(),
@@ -86,4 +104,5 @@ pub fn step() -> Result<bool, String> {
 /// Stop the game fiber and run finalizers even when the shell closes early.
 pub fn stop() {
     unsafe { rsxp_mri_stop() }
+    crate::bindings::reset();
 }

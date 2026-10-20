@@ -449,6 +449,17 @@ impl Runtime {
     pub fn target(&self) -> &Bitmap {
         &self.target
     }
+    /// Present without a GPU readback. A CPU bitmap is supplied only when
+    /// composition used the software compatibility path.
+    #[cfg(feature = "gpu")]
+    pub fn with_native_frame<T>(
+        &mut self,
+        present: impl FnOnce(&mut crate::gpu::GpuRenderer, Option<&Bitmap>) -> T,
+    ) -> Option<T> {
+        let bitmap = (!self.gpu_frame).then_some(&self.target);
+        self.host.gpu().map(|gpu| present(gpu, bitmap))
+    }
+
     /// Completed RGSS frames, for host-side performance displays.
     pub fn frame_count(&self) -> u64 {
         self.frame

@@ -53,7 +53,7 @@ name = "render-bench"
 path = "src/examples/render_bench.rs"
 
 [profile.release]
-# Keep source locations and symbols for perf while retaining release optimization.
+opt-level = 3
 lto = true
 codegen-units = 1
 

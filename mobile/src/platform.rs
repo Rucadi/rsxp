@@ -77,11 +77,11 @@ pub fn ruby_runtime() -> Result<PathBuf, String> {
 mod android {
     use super::*;
     use jni::{
-        objects::{JObject, JString},
-        JValue, JavaVM,
+        objects::{JObject, JObjectArray, JString, JValue},
+        JavaVM,
     };
     use ndk::asset::AssetManager;
-    use std::{ffi::CString, fs, io, ptr::NonNull};
+    use std::{ffi::CString, fs, io, path::Path, ptr::NonNull};
 
     fn with_environment<T>(
         operation: impl FnOnce(&mut jni::JNIEnv<'_>, &JObject<'_>) -> Result<T, String>,
@@ -162,10 +162,11 @@ mod android {
                 assets,
                 "list",
                 "(Ljava/lang/String;)[Ljava/lang/String;",
-                &[JValue::Object(&path)],
+                &[JValue::Object(path.as_ref())],
             )
             .and_then(|value| value.l())
             .map_err(|error| error.to_string())?;
+        let list = JObjectArray::from(list);
         let length = env
             .get_array_length(&list)
             .map_err(|error| error.to_string())?;

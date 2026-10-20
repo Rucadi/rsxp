@@ -47,3 +47,10 @@ pub(crate) fn bind(ruby: &Ruby) -> Result<(), Error> {
     retained_map::bind(ruby)?;
     win32::bind(ruby)
 }
+
+/// Clear game-specific native caches when reusing MRI for another game.
+#[cfg(feature = "mobile")]
+pub(crate) fn reset() {
+    retained::reset();
+    world::reset();
+}

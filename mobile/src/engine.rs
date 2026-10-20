@@ -12,10 +12,10 @@ use serde_json::{json, Value};
 use std::{
     cell::RefCell,
     fs,
-    io::{Read, Seek, SeekFrom, Write},
+    io::{Seek, SeekFrom, Write},
     path::{Component, Path, PathBuf},
     sync::OnceLock,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 static LIBRARY: OnceLock<PathBuf> = OnceLock::new();
@@ -28,6 +28,7 @@ struct ImportSession {
 }
 
 thread_local! {
+    static GPU: RefCell<Option<rsxp::gpu::GpuRenderer>> = const { RefCell::new(None) };
     static IMPORT: RefCell<Option<ImportSession>> = const { RefCell::new(None) };
 }
 
@@ -81,9 +82,71 @@ fn safe_relative(name: &str) -> Option<PathBuf> {
 
 struct MobileHost {
     root: PathBuf,
+    gpu: Option<rsxp::gpu::GpuRenderer>,
+    audio: crate::audio::DesktopAudio,
+    started: Instant,
+}
+
+impl Drop for MobileHost {
+    fn drop(&mut self) {
+        let gpu = self.gpu.take();
+        let _ = GPU.try_with(|slot| *slot.borrow_mut() = gpu);
+    }
+}
+
+/// Install a surface-compatible compositor before launching a game.
+pub fn set_gpu(gpu: rsxp::gpu::GpuRenderer) {
+    GPU.with(|slot| *slot.borrow_mut() = Some(gpu));
+}
+
+/// Native presentation, including the library screen between games.
+pub fn with_native_frame<T>(
+    present: impl FnOnce(&mut rsxp::gpu::GpuRenderer, Option<&Bitmap>) -> T,
+) -> Option<T> {
+    let mut present = Some(present);
+    if let Some(result) =
+        engine::with_runtime_mut(|runtime| runtime.with_native_frame(present.take().unwrap()))
+    {
+        return result;
+    }
+    GPU.with(|slot| {
+        slot.borrow_mut()
+            .as_mut()
+            .map(|gpu| present.take().unwrap()(gpu, None))
+    })
+}
+
+pub fn input(event: InputEvent) {
+    engine::with_runtime_mut(|runtime| runtime.queue_input(event));
+}
+
+pub fn step() -> Result<bool, String> {
+    mri::step()
+}
+
+pub fn stats() -> (u64, u32) {
+    engine::with_runtime(|runtime| (runtime.frame_count(), runtime.rate())).unwrap_or((0, 60))
+}
+
+pub fn stop() {
+    mri::stop();
+    engine::take_runtime();
 }
 
 impl Host for MobileHost {
+    fn gpu(&mut self) -> Option<&mut rsxp::gpu::GpuRenderer> {
+        self.gpu.as_mut()
+    }
+    fn audio(&mut self) -> Option<&mut dyn rsxp::host::AudioBackend> {
+        Some(&mut self.audio)
+    }
+    fn has_performance_ui(&self) -> bool {
+        true
+    }
+    fn now(&self) -> f64 {
+        self.started.elapsed().as_secs_f64()
+    }
+
     fn read_file(&self, path: &str) -> Option<Vec<u8>> {
         fs::read(safe_file(&self.root, path)?).ok()
     }
@@ -113,6 +176,10 @@ fn prepare(id: &str) -> Result<Value, String> {
     if !root.starts_with(library) {
         return Err("Game is outside the library".into());
     }
+    prepare_root(id, root)
+}
+
+fn prepare_root(id: &str, root: PathBuf) -> Result<Value, String> {
     let ini = safe_file(&root, "Game.ini")
         .and_then(|p| fs::read_to_string(p).ok())
         .unwrap_or_default();
@@ -146,9 +213,7 @@ fn prepare(id: &str) -> Result<Value, String> {
     } else {
         (544, 416, 60)
     };
-    // Tear down any previous game before creating another runtime. The shared
-    // WebView reads frames back over IPC, so every target uses the portable
-    // software compositor.
+    // Return the previous host GPU before constructing its successor.
     mri::stop();
     engine::take_runtime();
     engine::set_runtime(Runtime::new(RuntimeOptions {
@@ -160,11 +225,23 @@ fn prepare(id: &str) -> Result<Value, String> {
         frame_limit: None,
         fast_forward: true,
         archives,
-        scripted: vec![],
-        host: Box::new(MobileHost { root: root.clone() }),
+        scripted: std::env::var("RSXP_INPUT").map(|value| engine::parse_scripted(&value)).transpose()?.unwrap_or_default(),
+        host: Box::new(MobileHost {
+            root: root.clone(),
+            gpu: GPU.with(|slot| slot.borrow_mut().take()),
+            audio: if cfg!(test) || std::env::var_os("RSXP_SILENT").is_some() {
+                crate::audio::DesktopAudio::silent()
+            } else {
+                crate::audio::DesktopAudio::new()
+            },
+            started: Instant::now(),
+        }),
     })?);
+    rsxp::runtime_patch::reset();
+    rsxp::runtime_patch::load_user_patches(&root)?;
+    if let Ok(patches) = std::env::var("RSXP_PATCH") { rsxp::runtime_patch::enable_from(&patches); }
     rsxp::runtime_settings::reset();
-    rsxp::runtime_settings::set_fast_forward(true); // The shared UI paces Ruby fibers.
+    rsxp::runtime_settings::set_fast_forward(false); // The event loop paces Ruby fibers without sleeping.
     Ok(
         json!({"title":field("Title").unwrap_or_else(|| id.into()), "version":version,
         "width":width,"height":height,"rate":rate,"scripts":scripts,
@@ -172,10 +249,27 @@ fn prepare(id: &str) -> Result<Value, String> {
     )
 }
 
-fn initialize(id: &str) -> Result<Value, String> {
+pub fn initialize(id: &str) -> Result<Value, String> {
     let config = prepare(id)?;
     let library = LIBRARY.get().ok_or("Library is not configured")?;
     let root = library.join(id).canonicalize().map_err(|e| e.to_string())?;
+    start(config, root)
+}
+
+/// Launch an explicitly selected native directory in place (no import/copy).
+pub fn initialize_path(path: &Path) -> Result<Value, String> {
+    let root = path.canonicalize().map_err(|e| e.to_string())?;
+    let title = root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Game")
+        .to_owned();
+    let config = prepare_root(&title, root.clone())?;
+    start(config, root)
+}
+
+fn start(config: Value, root: PathBuf) -> Result<Value, String> {
+    let library = LIBRARY.get().ok_or("Library is not configured")?;
     mri::start(
         RUBY_RUNTIME.get().ok_or("Native Ruby is not configured")?,
         &root,
@@ -273,37 +367,23 @@ pub fn import_directory(source: &std::path::Path) -> Result<Value, String> {
         .ok_or("Invalid game folder name")?;
     import_begin(name)?;
 
-    fn copy_tree(source: &std::path::Path, relative: &std::path::Path) -> Result<(), String> {
+    fn copy_tree(source: &Path, destination: &Path) -> Result<(), String> {
+        fs::create_dir_all(destination).map_err(|error| error.to_string())?;
         for entry in fs::read_dir(source).map_err(|error| error.to_string())? {
             let entry = entry.map_err(|error| error.to_string())?;
-            let file_type = entry.file_type().map_err(|error| error.to_string())?;
-            let child = relative.join(entry.file_name());
-            if file_type.is_dir() {
-                copy_tree(&entry.path(), &child)?;
-            } else if file_type.is_file() {
-                let child = child.to_str().ok_or("Invalid file path")?;
-                let safe = safe_relative(child).ok_or("Invalid file path")?;
-                let mut input = fs::File::open(entry.path()).map_err(|error| error.to_string())?;
-                let mut offset = 0;
-                let mut buffer = vec![0; 512 * 1024];
-                loop {
-                    let count = input.read(&mut buffer).map_err(|error| error.to_string())?;
-                    if count == 0 {
-                        if offset == 0 {
-                            import_chunk(safe.to_str().ok_or("Invalid file path")?, 0, "")?;
-                        }
-                        break;
-                    }
-                    let encoded = B64.encode(&buffer[..count]);
-                    import_chunk(safe.to_str().ok_or("Invalid file path")?, offset, &encoded)?;
-                    offset += count as u64;
-                }
+            let kind = entry.file_type().map_err(|error| error.to_string())?;
+            let target = destination.join(entry.file_name());
+            if kind.is_dir() {
+                copy_tree(&entry.path(), &target)?;
+            } else if kind.is_file() {
+                fs::copy(entry.path(), target).map_err(|error| error.to_string())?;
             }
         }
         Ok(())
     }
+    let temporary = IMPORT.with(|slot| slot.borrow().as_ref().unwrap().temporary.clone());
 
-    match copy_tree(&source, std::path::Path::new("")) {
+    match copy_tree(&source, &temporary) {
         Ok(()) => import_end(),
         Err(error) => {
             let _ = import_cancel();
@@ -315,7 +395,7 @@ pub fn import_directory(source: &std::path::Path) -> Result<Value, String> {
 fn dispatch(request: Value) -> Result<Value, String> {
     match request["op"].as_str().unwrap_or("") {
         "info" => Ok(
-            json!({"engine":"Native Rust + MRI Ruby", "platform":std::env::consts::OS,"arch":std::env::consts::ARCH,"nativePresentation":false,"gpu":false}),
+            json!({"engine":"Native Rust + MRI Ruby", "platform":std::env::consts::OS,"arch":std::env::consts::ARCH,"nativePresentation":true,"gpu":true,"nativeBindings":true}),
         ),
         "games" => {
             let mut games = vec![json!({"id":".demo","title":"Touch controls demo","demo":true})];
@@ -402,7 +482,7 @@ pub fn configure(library: PathBuf, ruby_runtime: Option<PathBuf>) -> Result<(), 
 }
 
 /// Execute one UI request and wrap the result in the `{ok}`/`{error}` envelope
-/// consumed by `ui/app.js`.
+/// used by integration tests and library management (never frame presentation).
 pub fn request(value: Value) -> Value {
     let result = std::panic::catch_unwind(|| dispatch(value));
     match result {

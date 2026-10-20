@@ -632,6 +632,14 @@ impl Workspace {
         self.logs.push(message.into());
     }
 
+    /// Let a native shell expose the shared tools from its own navigation.
+    pub fn set_controls_visible(&mut self, visible: bool) {
+        self.controls_visible = visible;
+        if visible {
+            self.view_mode = ViewMode::Docked;
+        }
+    }
+
     pub fn performance_visible(&self) -> bool {
         self.controls_visible && !self.is_workspace_fullscreen() && self.panels_performance
     }

@@ -49,6 +49,14 @@ fn with_changes<T>(f: impl FnOnce(&mut Changes) -> T) -> T {
     f(&mut CHANGES.lock().unwrap_or_else(|error| error.into_inner()))
 }
 
+#[cfg(feature = "mobile")]
+pub(super) fn reset() {
+    with_changes(|changes| {
+        let next_token = changes.next_token;
+        *changes = Changes { next_token, ..Changes::default() };
+    });
+}
+
 fn token(object: RObject) -> Result<Option<u64>, Error> {
     let id: Option<u64> = object.ivar_get("@__id")?;
     if id.is_some() {

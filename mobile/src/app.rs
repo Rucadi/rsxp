@@ -1,286 +1,683 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! cargo-mobile2 shell: one tao window and one system WebView on every target.
-use crate::{engine, platform};
-#[cfg(target_os = "linux")]
-use gtk::prelude::*;
-use serde_json::{json, Value};
-use std::{cell::RefCell, rc::Rc};
-#[cfg(target_os = "linux")]
-use tao::platform::unix::WindowExtUnix;
-use tao::{
-    event::{Event, StartCause, WindowEvent},
-    event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy, EventLoopWindowTarget},
-    window::WindowBuilder,
+//! One native event loop on Linux, Android and iOS. Ruby yields at frame
+//! boundaries; neither pixel readbacks nor serialized IPC are used to display.
+use crate::{
+    engine,
+    gpu_present::{GpuDisplay, Presentation},
+    input::Controls,
+    platform,
 };
-#[cfg(target_os = "linux")]
-use wry::WebViewBuilderExtUnix;
-use wry::{
-    http::{header, Request, Response},
-    WebView, WebViewBuilder,
+use rsxp::gpu::GpuRenderer;
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+use winit::{
+    application::ApplicationHandler,
+    dpi::LogicalSize,
+    event::{ElementState, MouseButton, TouchPhase, WindowEvent},
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+    keyboard::PhysicalKey,
+    window::{Window, WindowId},
 };
 
-const UI: &str = include_str!(concat!(env!("OUT_DIR"), "/ui.html"));
-
-/// IPC arrives on a WebView thread on Android. All engine and MRI work must
-/// run on the event-loop thread, so requests are forwarded as user events.
-enum AppEvent {
-    Ipc {
-        id: Value,
-        request: Value,
-    },
-    FolderSelected {
-        id: Value,
-        path: Option<std::path::PathBuf>,
-    },
+#[derive(Default)]
+struct Options {
+    game: Option<String>,
+    headless: bool,
+    frames: Option<u64>,
+    software: bool,
 }
-
-#[cfg(target_os = "android")]
-fn init_logging() {
-    android_logger::init_once(
-        android_logger::Config::default()
-            .with_max_level(log::LevelFilter::Info)
-            .with_tag("RSXP"),
-    );
-}
-
-#[cfg(not(target_os = "android"))]
-fn init_logging() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-}
-
-#[cfg(any(target_os = "android", target_os = "ios"))]
-fn stop_unwind<F: FnOnce() -> T, T>(f: F) -> T {
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
-        Ok(value) => value,
-        Err(error) => {
-            eprintln!("attempt to unwind out of Rust: {error:?}");
-            std::process::abort()
-        }
-    }
-}
-
-#[cfg(any(target_os = "android", target_os = "ios"))]
-fn _start_app() {
-    stop_unwind(run);
-}
-
-/// Entry point used by the cargo-mobile2 iOS project and Android `WryActivity`.
-#[cfg(target_os = "ios")]
-#[no_mangle]
-pub extern "C" fn start_app() {
-    _start_app();
-}
-
-#[cfg(target_os = "android")]
-#[no_mangle]
-pub extern "C" fn start_app() {
-    // These identifiers mirror `org.rsxp.mobile` and the `Rust` object that
-    // cargo-mobile2's wry template generates.
-    tao::android_binding!(
-        org_rsxp,
-        mobile,
-        WryActivity,
-        wry::android_setup,
-        _start_app
-    );
-    wry::android_binding!(org_rsxp, mobile);
-}
-
-fn launch_url() -> String {
-    let mut url = String::from("rsxp://app/index.html");
-    let arguments: Vec<String> = std::env::args().collect();
-    if arguments.iter().any(|argument| argument == "--demo") {
-        url.push_str("?demo=1");
-    } else if let Some(index) = arguments.iter().position(|argument| argument == "--game") {
-        if let Some(game) = arguments.get(index + 1) {
-            let encoded: String = game
-                .bytes()
-                .map(|byte| {
-                    if byte.is_ascii_alphanumeric() || b"-._~/".contains(&byte) {
-                        (byte as char).to_string()
-                    } else {
-                        format!("%{byte:02X}")
+impl Options {
+    fn parse() -> Result<Self, String> {
+        let mut options = Self::default();
+        let mut args = std::env::args().skip(1);
+        while let Some(arg) = args.next() {
+            match arg.as_str() {
+                "--demo" => options.game = Some(".demo".into()),
+                "--game" => {
+                    options.game = Some(
+                        args.next()
+                            .ok_or("--game needs a directory or library name")?,
+                    )
+                }
+                "--headless" => options.headless = true,
+                "--frames" => {
+                    options.frames = Some(
+                        args.next()
+                            .ok_or("--frames needs a count")?
+                            .parse::<u64>()
+                            .map_err(|e| e.to_string())?,
+                    )
+                }
+                "--renderer" => {
+                    options.software = match args.next().as_deref() {
+                        Some("software") => true,
+                        Some("wgpu") => false,
+                        _ => return Err("--renderer must be wgpu or software".into()),
                     }
-                })
-                .collect();
-            url.push_str("?game=");
-            url.push_str(&encoded);
+                }
+                "--help" | "-h" => {
+                    println!("RSXP native mobile frontend (egui + wgpu + native MRI bindings)\n\nrsxp-mobile-desktop [--demo | --game DIRECTORY] [--frames N]\nrsxp-mobile-desktop --headless --demo --frames 120 [--renderer wgpu|software]\n\nF1: tools. F11: uncapped. Arrow keys / Z / X or touch controls.\nThe software renderer is available only for headless compatibility tests.");
+                    std::process::exit(0);
+                }
+                _ => return Err(format!("Unknown argument: {arg}")),
+            }
         }
+        if let Some(game) = options.game.as_mut() {
+            if PathBuf::from(&*game).is_dir() {
+                *game = std::fs::canonicalize(&*game)
+                    .map_err(|e| e.to_string())?
+                    .to_string_lossy()
+                    .into_owned();
+            }
+        }
+        if options.software && !options.headless {
+            return Err("--renderer software is only available with --headless".into());
+        }
+        Ok(options)
     }
-    url
 }
 
-fn build_webview(
-    event_loop: &EventLoopWindowTarget<AppEvent>,
-    proxy: EventLoopProxy<AppEvent>,
-) -> anyhow::Result<(tao::window::Window, Rc<RefCell<Option<WebView>>>)> {
-    let window = WindowBuilder::new().with_title("RSXP").build(event_loop)?;
-
-    let webview: Rc<RefCell<Option<WebView>>> = Rc::new(RefCell::new(None));
-    let builder = WebViewBuilder::new()
-        .with_url(launch_url())
-        .with_custom_protocol("rsxp".into(), move |_id, request: Request<Vec<u8>>| {
-            let path = request.uri().path().trim_start_matches('/');
-            if path.is_empty() || path == "index.html" {
-                Response::builder()
-                    .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-                    .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
-                    .body(UI.as_bytes().into())
-                    .unwrap_or_default()
-            } else {
-                Response::builder()
-                    .status(404)
-                    .header(header::CONTENT_TYPE, "text/plain")
-                    .body(b"Not found".as_slice().into())
-                    .unwrap_or_default()
-            }
-        })
-        .with_ipc_handler(move |message: Request<String>| {
-            let payload: Value = serde_json::from_str(message.body()).unwrap_or(Value::Null);
-            let id = payload.get("id").cloned().unwrap_or(Value::Null);
-            let request = payload.get("request").cloned().unwrap_or(Value::Null);
-            let _ = proxy.send_event(AppEvent::Ipc { id, request });
-        });
-    #[cfg(target_os = "linux")]
-    let view = builder.build_gtk(
-        window
-            .default_vbox()
-            .expect("Tao window should have its default GTK box"),
-    )?;
-    #[cfg(not(target_os = "linux"))]
-    let view = builder.build(&window)?;
-    *webview.borrow_mut() = Some(view);
-    Ok((window, webview))
+fn configure() -> Result<(), String> {
+    engine::configure(platform::library_dir()?, Some(platform::ruby_runtime()?))
+}
+fn launch_game(value: &str) -> Result<serde_json::Value, String> {
+    let path = PathBuf::from(value);
+    if path.is_dir() {
+        engine::initialize_path(&path)
+    } else {
+        engine::initialize(value)
+    }
 }
 
 pub fn run() {
-    if std::env::args().any(|argument| argument == "--help" || argument == "-h") {
-        println!("RSXP desktop preview\n\nUsage: rsxp-mobile-desktop [--demo] [--game <path>]\n\
-            \nOptions:\n  --demo          Start the built-in demo game\n  --game <path>   Open a game directory\n  -h, --help      Show this help and exit");
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
+        .try_init();
+    let options = match Options::parse() {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("{e}");
+            return;
+        }
+    };
+    if options.headless {
+        if let Err(error) = headless(options) {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
         return;
     }
-    #[cfg(target_os = "linux")]
-    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
-        // Avoid the NVIDIA explicit-sync protocol failure seen with WebKitGTK
-        // on some Wayland compositors. Users can still override this setting.
-        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-    }
-    init_logging();
-    match platform::library_dir()
-        .and_then(|library| platform::ruby_runtime().map(|runtime| (library, runtime)))
-    {
-        Ok((library, runtime)) => {
-            if let Err(error) = engine::configure(library, Some(runtime)) {
-                eprintln!("RSXP configuration failed: {error}");
-            }
-        }
-        Err(error) => eprintln!("RSXP configuration failed: {error}"),
-    }
+    run_event_loop(EventLoop::new().expect("native event loop"));
+}
 
-    let event_loop = EventLoopBuilder::<AppEvent>::with_user_event().build();
-    let proxy = event_loop.create_proxy();
-    let mut window = None;
-    let mut webview: Option<Rc<RefCell<Option<WebView>>>> = None;
-    #[cfg(target_os = "linux")]
-    let folder_dialog = Rc::new(RefCell::new(None::<gtk::FileChooserNative>));
-    event_loop.run(move |event, event_loop, control_flow| {
-        *control_flow = ControlFlow::Wait;
-        match event {
-            Event::NewEvents(StartCause::Init) => match build_webview(event_loop, proxy.clone()) {
-                Ok((new_window, new_webview)) => {
-                    window = Some(new_window);
-                    webview = Some(new_webview);
+pub(crate) fn run_event_loop(event_loop: EventLoop<()>) {
+    let result = (|| {
+        let options = Options::parse()?;
+        configure()?;
+        let mut app = App::new(options);
+        event_loop.run_app(&mut app).map_err(|e| e.to_string())?;
+        engine::stop();
+        Ok::<_, String>(())
+    })();
+    if let Err(error) = result {
+        eprintln!("RSXP: {error}");
+    }
+}
+
+fn headless(options: Options) -> Result<(), String> {
+    configure()?;
+    if !options.software {
+        engine::set_gpu(GpuRenderer::new(640, 480)?);
+    }
+    launch_game(options.game.as_deref().unwrap_or(".demo"))?;
+    rsxp::runtime_settings::set_fast_forward(true);
+    let start = Instant::now();
+    let frames = options.frames.unwrap_or(120);
+    while engine::stats().0 < frames && engine::step()? {}
+    let count = engine::stats().0;
+    let gpu_frame = engine::with_native_frame(|_, bitmap| bitmap.is_none()).unwrap_or(false);
+    println!(
+        "NATIVE_GAMEPLAY_OK frames={count} seconds={:.3} fps={:.1} gpu_frame={gpu_frame}",
+        start.elapsed().as_secs_f64(),
+        count as f64 / start.elapsed().as_secs_f64()
+    );
+    engine::stop();
+    Ok(())
+}
+
+enum Action {
+    Launch(String),
+    Stop,
+    Import,
+}
+struct Ui {
+    controls: Controls,
+    games: Vec<(String, String)>,
+    running: bool,
+    paused: bool,
+    tools: bool,
+    touch: bool,
+    error: Option<String>,
+    actions: Vec<Action>,
+    workspace: rsxp::ui::Workspace,
+}
+impl Ui {
+    fn new() -> Self {
+        let mut ui = Self {
+            controls: Controls::default(),
+            games: vec![],
+            running: false,
+            paused: false,
+            tools: false,
+            touch: true,
+            error: None,
+            actions: vec![],
+            workspace: rsxp::ui::Workspace::new(),
+        };
+        ui.refresh();
+        ui
+    }
+    fn refresh(&mut self) {
+        let response = engine::request(serde_json::json!({"op":"games"}));
+        self.games = response["ok"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|game| Some((game["id"].as_str()?.into(), game["title"].as_str()?.into())))
+            .collect();
+    }
+    fn draw(
+        &mut self,
+        ctx: &egui::Context,
+        info: &rsxp::ui::WorkspaceInfo,
+    ) -> rsxp::ui::WorkspaceOutput {
+        ctx.root_ui(|root| {
+            egui::Panel::top("mobile-toolbar").show(root, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.strong("RSXP");
+                    if self.running {
+                        if ui.button("Library").clicked() {
+                            self.actions.push(Action::Stop);
+                        }
+                        if ui
+                            .button(if self.paused { "Resume" } else { "Pause" })
+                            .clicked()
+                        {
+                            self.paused = !self.paused;
+                            self.controls.clear();
+                        }
+                        ui.toggle_value(&mut self.tools, "Tools");
+                        if ui.toggle_value(&mut self.touch, "Controls").changed() {
+                            self.controls.clear();
+                        }
+                        let mut uncapped = rsxp::runtime_settings::fast_forward();
+                        if ui.checkbox(&mut uncapped, "Uncapped").changed() {
+                            rsxp::runtime_settings::set_fast_forward(uncapped);
+                        }
+                        ui.label(format!("{:.0} fps", info.fps));
+                    }
+                });
+                if let Some(error) = &self.error {
+                    ui.colored_label(egui::Color32::LIGHT_RED, error);
                 }
-                Err(error) => eprintln!("could not create the RSXP window: {error}"),
-            },
-            Event::UserEvent(AppEvent::Ipc { id, request }) => {
-                #[cfg(target_os = "linux")]
-                if request["op"] == "chooseFolder" {
-                    if let Some(active_window) = window.as_ref() {
-                        let dialog = gtk::FileChooserNative::new(
-                            Some("Choose game folder"),
-                            Some(active_window.gtk_window()),
-                            gtk::FileChooserAction::SelectFolder,
-                            Some("Import"),
-                            Some("Cancel"),
-                        );
-                        let proxy = proxy.clone();
-                        let folder_dialog_slot = folder_dialog.clone();
-                        dialog.connect_response(move |dialog, response| {
-                            let path = (response == gtk::ResponseType::Accept)
-                                .then(|| dialog.filename())
-                                .flatten();
-                            dialog.hide();
-                            folder_dialog_slot.borrow_mut().take();
-                            let _ = proxy.send_event(AppEvent::FolderSelected {
-                                id: id.clone(),
-                                path,
-                            });
-                        });
-                        // Keep a strong reference while the native dialog is
-                        // presented; otherwise it is dropped with this event.
-                        *folder_dialog.borrow_mut() = Some(dialog.clone());
-                        dialog.show();
-                    } else {
-                        let response = json!({"error": "The desktop window is not ready"});
-                        let script = format!("globalThis.__rsxpResponse({id}, {response});");
-                        if let Some(slot) = webview.as_ref() {
-                            if let Some(webview) = slot.borrow().as_ref() {
-                                let _ = webview.evaluate_script(&script);
+            });
+        });
+        self.controls.regions.clear();
+        if !self.running {
+            ctx.root_ui(|root| {
+                egui::CentralPanel::default().show(root, |ui| {
+                    ui.heading("Game library");
+                    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                    if ui.button("Import game folder…").clicked() {
+                        self.actions.push(Action::Import);
+                    }
+                    #[cfg(any(target_os = "android", target_os = "ios"))]
+                    ui.label("Copy game folders into the app's Games directory, then refresh.");
+                    if ui.button("Refresh").clicked() {
+                        self.refresh();
+                    }
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        for (id, title) in &self.games {
+                            if ui
+                                .add_sized([ui.available_width(), 48.], egui::Button::new(title))
+                                .clicked()
+                            {
+                                self.actions.push(Action::Launch(id.clone()));
                             }
                         }
-                    }
-                } else {
-                    let response = engine::request(request);
-                    let response = serde_json::to_string(&response).unwrap_or_else(|_| {
-                        json!({"error": "response encoding failed"}).to_string()
                     });
-                    let script = format!("globalThis.__rsxpResponse({id}, {response});");
-                    if let Some(slot) = webview.as_ref() {
-                        if let Some(webview) = slot.borrow().as_ref() {
-                            let _ = webview.evaluate_script(&script);
+                });
+            });
+            return rsxp::ui::WorkspaceOutput::default();
+        }
+        if self.touch {
+            ctx.root_ui(|root| {
+                egui::Panel::bottom("touch-controls")
+                    .exact_size(120.)
+                    .show(root, |ui| {
+                        let area = ui.max_rect();
+                        let side = (area.width() / 7.).min(48.);
+                        let origin = area.min + egui::vec2(8., 8.);
+                        for (label, code, x, y) in [
+                            ("↑", 82, 1., 0.),
+                            ("←", 80, 0., 1.),
+                            ("↓", 81, 1., 1.),
+                            ("→", 79, 2., 1.),
+                        ] {
+                            self.control(
+                                ui,
+                                label,
+                                code,
+                                egui::Rect::from_min_size(
+                                    origin + egui::vec2(x * side, y * side),
+                                    egui::vec2(side - 4., side - 4.),
+                                ),
+                            );
                         }
-                    }
+                        let right = area.right() - side * 3.;
+                        for (label, code, x, y) in
+                            [("A", 40, 2., 0.), ("B", 41, 1., 1.), ("Shift", 225, 0., 0.)]
+                        {
+                            self.control(
+                                ui,
+                                label,
+                                code,
+                                egui::Rect::from_min_size(
+                                    egui::pos2(right + x * side, origin.y + y * side),
+                                    egui::vec2(side - 4., side - 4.),
+                                ),
+                            );
+                        }
+                    });
+            });
+        }
+        if self.tools {
+            self.workspace.set_controls_visible(true);
+            self.workspace.draw(ctx, info)
+        } else {
+            let mut result = rsxp::ui::WorkspaceOutput::default();
+            ctx.root_ui(|root| {
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE)
+                    .show(root, |ui| {
+                        result.game_rect = ui.max_rect();
+                    });
+            });
+            result
+        }
+    }
+    fn control(&mut self, ui: &mut egui::Ui, label: &str, code: i32, rect: egui::Rect) {
+        let held = self.controls.held(code);
+        ui.painter().rect_filled(
+            rect,
+            8.,
+            if held {
+                egui::Color32::from_rgb(40, 130, 100)
+            } else {
+                egui::Color32::from_gray(50)
+            },
+        );
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            label,
+            egui::FontId::proportional(16.),
+            egui::Color32::WHITE,
+        );
+        if !self.paused {
+            self.controls.regions.push((rect, code));
+        }
+    }
+}
+
+struct App {
+    options: Options,
+    window: Option<Arc<Window>>,
+    display: Option<GpuDisplay>,
+    egui: egui::Context,
+    platform: Option<egui_winit::State>,
+    ui: Ui,
+    active: bool,
+    next_frame: Instant,
+    next_redraw: Instant,
+    fps_start: Instant,
+    fps_frames: u64,
+    fps: f64,
+    cursor: egui::Pos2,
+    mouse_down: bool,
+    launched: bool,
+    current_game: Option<String>,
+}
+impl App {
+    fn new(options: Options) -> Self {
+        Self {
+            options,
+            window: None,
+            display: None,
+            egui: egui::Context::default(),
+            platform: None,
+            ui: Ui::new(),
+            active: false,
+            next_frame: Instant::now(),
+            next_redraw: Instant::now(),
+            fps_start: Instant::now(),
+            fps_frames: 0,
+            fps: 0.,
+            cursor: egui::Pos2::ZERO,
+            mouse_down: false,
+            launched: false,
+            current_game: None,
+        }
+    }
+    fn flush_input(&mut self) {
+        for event in self.ui.controls.drain() {
+            engine::input(event);
+        }
+    }
+    fn release(&mut self) {
+        self.ui.controls.clear();
+        self.mouse_down = false;
+        self.flush_input();
+    }
+    fn launch(&mut self, id: &str) {
+        self.release();
+        match launch_game(id) {
+            Ok(_) => {
+                self.current_game = Some(id.into());
+                self.ui.running = true;
+                self.ui.paused = false;
+                self.ui.error = None;
+                self.next_frame = Instant::now();
+                self.fps_start = Instant::now();
+                self.fps_frames = 0;
+            }
+            Err(error) => {
+                engine::stop();
+                self.ui.running = false;
+                self.ui.error = Some(error);
+            }
+        }
+    }
+    fn redraw(&mut self, event_loop: &ActiveEventLoop) -> Result<(), String> {
+        if !self.active {
+            return Ok(());
+        }
+        self.flush_input();
+        if rsxp::runtime_settings::reset_requested() {
+            rsxp::runtime_settings::clear_reset();
+            if let Some(game) = self.current_game.clone() {
+                self.launch(&game);
+            }
+        }
+        if self.ui.running && !self.ui.paused && Instant::now() >= self.next_frame {
+            if !engine::step()? {
+                self.ui.running = false;
+                engine::stop();
+            }
+            let (frames, rate) = engine::stats();
+            if self.options.frames.is_some_and(|limit| frames >= limit) {
+                event_loop.exit();
+                return Ok(());
+            }
+            let now = Instant::now();
+            let period = Duration::from_secs_f64(1. / rate.max(1) as f64);
+            self.next_frame = if rsxp::runtime_settings::fast_forward() {
+                now
+            } else {
+                (self.next_frame + period).max(now)
+            };
+            if self.fps_start.elapsed() >= Duration::from_millis(500) {
+                self.fps = frames.saturating_sub(self.fps_frames) as f64
+                    / self.fps_start.elapsed().as_secs_f64();
+                self.fps_frames = frames;
+                self.fps_start = now;
+            }
+        }
+        let Some(window) = &self.window else {
+            return Ok(());
+        };
+        let size = window.inner_size();
+        if size.width == 0 || size.height == 0 {
+            return Ok(());
+        }
+        let mut input = self.platform.as_mut().unwrap().take_egui_input(window);
+        // F1 belongs to this shell's Tools toggle, not the nested workspace.
+        input.events.retain(|event| {
+            !matches!(
+                event,
+                egui::Event::Key {
+                    key: egui::Key::F1,
+                    ..
                 }
-                #[cfg(not(target_os = "linux"))]
+            )
+        });
+        let display = self.display.as_mut().unwrap();
+        display.set_game_metrics(self.fps, engine::stats().0);
+        let output = engine::with_native_frame(|gpu, bitmap| {
+            display.present_with_ui(
+                gpu,
+                bitmap,
+                Presentation {
+                    size: (size.width, size.height),
+                    context: &self.egui,
+                    input,
+                    global_fullscreen: window.fullscreen().is_some(),
+                },
+                &mut |ctx, info| self.ui.draw(ctx, info),
+            )
+        })
+        .ok_or("No native GPU available")??;
+        self.platform
+            .as_mut()
+            .unwrap()
+            .handle_platform_output(window, output);
+        if let Some(fullscreen) = display.take_global_fullscreen_request() {
+            window
+                .set_fullscreen(fullscreen.then_some(winit::window::Fullscreen::Borderless(None)));
+        }
+        self.next_redraw = Instant::now() + Duration::from_millis(33);
+        self.flush_input();
+        for action in std::mem::take(&mut self.ui.actions) {
+            match action {
+                Action::Launch(id) => self.launch(&id),
+                Action::Stop => {
+                    self.release();
+                    engine::stop();
+                    self.ui.running = false;
+                    self.ui.refresh();
+                }
+                Action::Import =>
                 {
-                    let response = engine::request(request);
-                    let response = serde_json::to_string(&response).unwrap_or_else(|_| {
-                        json!({"error": "response encoding failed"}).to_string()
-                    });
-                    let script = format!("globalThis.__rsxpResponse({id}, {response});");
-                    if let Some(slot) = webview.as_ref() {
-                        if let Some(webview) = slot.borrow().as_ref() {
-                            let _ = webview.evaluate_script(&script);
+                    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                    if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                        if let Err(error) = engine::import_directory(&path) {
+                            self.ui.error = Some(error);
+                        }
+                        self.ui.refresh();
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+impl ApplicationHandler for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.window.is_some() {
+            self.active = true;
+            return;
+        }
+        let result = (|| {
+            let window = Arc::new(
+                event_loop
+                    .create_window(
+                        Window::default_attributes()
+                            .with_title("RSXP · Native mobile")
+                            .with_inner_size(LogicalSize::new(900., 760.)),
+                    )
+                    .map_err(|e| e.to_string())?,
+            );
+            let size = window.inner_size();
+            let size = (size.width.max(1), size.height.max(1));
+            let existing = engine::with_native_frame(|gpu, _| {
+                let surface = gpu
+                    .instance
+                    .create_surface(window.clone())
+                    .map_err(|e| e.to_string())?;
+                GpuDisplay::new(gpu, surface, size)
+            });
+            let display = if let Some(display) = existing {
+                display?
+            } else {
+                let instance =
+                    wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+                let surface = instance
+                    .create_surface(window.clone())
+                    .map_err(|e| e.to_string())?;
+                let mut gpu = GpuRenderer::new_for_surface(640, 480, instance, &surface)?;
+                eprintln!("RSXP native GPU: {:?}", gpu.adapter.get_info());
+                gpu.begin(640, 480)?;
+                gpu.submit()?;
+                let display = GpuDisplay::new(&gpu, surface, size)?;
+                engine::set_gpu(gpu);
+                display
+            };
+            self.platform = Some(egui_winit::State::new(
+                self.egui.clone(),
+                egui::ViewportId::ROOT,
+                window.as_ref(),
+                Some(window.scale_factor() as f32),
+                window.theme(),
+                None,
+            ));
+            self.window = Some(window);
+            self.display = Some(display);
+            self.active = true;
+            if !self.launched {
+                self.launched = true;
+                if let Some(game) = self.options.game.clone() {
+                    self.launch(&game);
+                }
+            }
+            self.next_frame = Instant::now();
+            Ok::<_, String>(())
+        })();
+        if let Err(error) = result {
+            eprintln!("Native GPU setup failed: {error}");
+            event_loop.exit();
+        }
+    }
+    fn suspended(&mut self, _: &ActiveEventLoop) {
+        self.active = false;
+        self.release();
+        // Android requires dropping the surface before suspended returns.
+        self.display = None;
+        self.platform = None;
+        self.window = None;
+    }
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        let Some(window) = &self.window else {
+            return;
+        };
+        if window.id() != id {
+            return;
+        }
+        let consumed = self
+            .platform
+            .as_mut()
+            .unwrap()
+            .on_window_event(window, &event)
+            .consumed;
+        let scale = window.scale_factor() as f32;
+        let redraw = matches!(event, WindowEvent::RedrawRequested);
+        match event {
+            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::Focused(focused) => {
+                self.active = focused;
+                if !focused {
+                    self.release();
+                }
+                self.next_frame = Instant::now();
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                if let PhysicalKey::Code(key) = event.physical_key {
+                    if let Some(code) = crate::native_keys::scancode(key) {
+                        let down = event.state == ElementState::Pressed;
+                        if down && !event.repeat && code == 58 {
+                            self.ui.tools = !self.ui.tools;
+                        }
+                        if !down || (!consumed && !self.ui.paused) {
+                            self.ui.controls.key(code, down);
                         }
                     }
                 }
             }
-            Event::UserEvent(AppEvent::FolderSelected { id, path }) => {
-                let response = match path {
-                    Some(path) => engine::import_directory(&path)
-                        .map(|value| json!({"ok": value}))
-                        .unwrap_or_else(|error| json!({"error": error})),
-                    None => json!({"ok": null}),
+            WindowEvent::Touch(touch) => {
+                let position = match touch.phase {
+                    TouchPhase::Started | TouchPhase::Moved => Some(egui::pos2(
+                        touch.location.x as f32 / scale,
+                        touch.location.y as f32 / scale,
+                    )),
+                    _ => None,
                 };
-                let response = serde_json::to_string(&response)
-                    .unwrap_or_else(|_| json!({"error": "response encoding failed"}).to_string());
-                let script = format!("globalThis.__rsxpResponse({id}, {response});");
-                if let Some(slot) = webview.as_ref() {
-                    if let Some(webview) = slot.borrow().as_ref() {
-                        let _ = webview.evaluate_script(&script);
-                    }
+                self.ui.controls.pointer(touch.id, position);
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                self.cursor = egui::pos2(position.x as f32 / scale, position.y as f32 / scale);
+                if self.mouse_down {
+                    self.ui.controls.pointer(u64::MAX, Some(self.cursor));
                 }
             }
-            Event::WindowEvent {
-                event: WindowEvent::CloseRequested { .. },
+            WindowEvent::MouseInput {
+                state,
+                button: MouseButton::Left,
                 ..
             } => {
-                webview.take();
-                window.take();
-                *control_flow = ControlFlow::Exit;
+                self.mouse_down = state == ElementState::Pressed;
+                self.ui
+                    .controls
+                    .pointer(u64::MAX, self.mouse_down.then_some(self.cursor));
+            }
+            WindowEvent::RedrawRequested => {
+                if let Err(error) = self.redraw(event_loop) {
+                    self.release();
+                    engine::stop();
+                    self.ui.running = false;
+                    self.ui.error = Some(error);
+                }
             }
             _ => {}
         }
-    });
+        self.flush_input();
+        if !redraw {
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
+        }
+    }
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if !self.active
+            || self.window.as_ref().is_none_or(|window| {
+                let size = window.inner_size();
+                size.width == 0 || size.height == 0
+            })
+        {
+            event_loop.set_control_flow(ControlFlow::Wait);
+            return;
+        }
+        let deadline = if self.ui.running && !self.ui.paused {
+            self.next_frame.min(self.next_redraw)
+        } else {
+            self.next_redraw
+        };
+        event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
+        if Instant::now() >= deadline {
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
+        }
+    }
 }

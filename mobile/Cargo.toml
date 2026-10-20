@@ -1,7 +1,7 @@
 [package]
 # cargo-mobile2 passes `--package <app.name>` and expects the Cargo package to
 # match `[app].name` in mobile.toml; the library keeps its platform-facing name.
-name = "mobile"
+name = "rsxp-mobile"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.95"
@@ -25,42 +25,39 @@ name = "native_mri"
 path = "tests/native_mri.rs"
 harness = false
 
+# NativeActivity is provided by winit/android-activity.
 [package.metadata.cargo-android]
-app-activity-name = "org.rsxp.mobile.MainActivity"
-app-dependencies = [
-    "androidx.webkit:webkit:1.6.1",
-    "androidx.appcompat:appcompat:1.7.1",
-    "com.google.android.material:material:1.12.0",
-    "androidx.activity:activity-ktx:1.10.1",
-    "androidx.lifecycle:lifecycle-process:2.10.0",
-]
+app-activity-name = "android.app.NativeActivity"
 app-permissions = []
-app-theme-parent = "Theme.MaterialComponents.DayNight.NoActionBar"
 vulkan-validation = false
-
-[package.metadata.cargo-android.env-vars]
-WRY_ANDROID_PACKAGE = "org.rsxp.mobile"
-WRY_ANDROID_LIBRARY = "rsxp_mobile"
-WRY_ANDROID_KOTLIN_FILES_OUT_DIR = "<android-project-dir>/app/src/main/kotlin/org/rsxp/mobile"
+cargo-args = ["--lib"]
 
 [package.metadata.cargo-apple.ios]
-frameworks = ["WebKit"]
-# The desktop preview binary has no iOS entry point; the app consumes the
-# static library through `start_app` instead.
+frameworks = ["Metal", "QuartzCore", "UIKit"]
 cargo-args = ["--lib"]
 
 [dependencies]
-rsxp = { path = "..", default-features = false, features = ["game-api", "portable-media"] }
+rsxp = { path = "..", default-features = false, features = ["gpu", "ui", "game-api", "portable-media"] }
 ruby_rgss_core = { path = "../ruby_rgss_core", default-features = false, features = ["mobile"] }
 serde_json = "1"
 base64 = "0.22"
 anyhow = "1"
 
-# cargo-mobile2's wry template uses tao for the window/event loop and wry for
-# the system WebView on iOS and Android. The desktop binary reuses the same
-# code path, which also replaces the old host preview server.
-tao = "0.37"
-wry = "0.57"
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "vulkan", "gles", "metal", "wgsl"] }
+bytemuck = "1"
+egui = { version = "0.37.0", features = ["default_fonts"] }
+egui-wgpu = { version = "0.37.0", default-features = false }
+egui-winit = { version = "0.37.0", default-features = false }
+winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "android-native-activity"] }
+kira = { version = "0.12.5", default-features = false, features = ["cpal", "flac", "mp3", "ogg", "pcm", "vorbis", "wav"] }
+log = "0.4"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+winit = { version = "0.30.13", default-features = false, features = ["wayland", "x11", "wayland-dlopen"] }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+rfd = "0.17.2"
+env_logger = "0.11"
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.13"
@@ -69,12 +66,19 @@ ndk = "0.9"
 ndk-sys = "0.6"
 ndk-context = "0.1"
 
-[target.'cfg(target_os = "linux")'.dependencies]
-gtk = "0.18"
-
-[target.'cfg(not(target_os = "android"))'.dependencies]
-env_logger = "0.11"
-
 [build-dependencies]
 cc = "1"
 sha2 = "0.10"
+
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+# The root workspace's development overrides do not propagate here.
+[profile.dev.package.rsxp]
+opt-level = 2
+
+[profile.dev.package.theora-rs]
+opt-level = 3

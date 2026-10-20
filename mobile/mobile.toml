@@ -4,15 +4,14 @@
 #   cargo apple run        # build and run on an iOS device or simulator
 #   cargo android run      # build and run on an Android device or emulator
 #
-# `name` supplies the Android JNI package suffix and generated Xcode scheme,
-# so it must match the last component of the `org.rsxp.mobile` identifier.
-# The native library itself is named by `lib-name`.
+# Keep the package name equal to app.name and its snake_case equal to lib-name:
+# NativeActivity's generated manifest loads that snake_case shared library.
 [app]
-name = "mobile"
+name = "rsxp-mobile"
 lib-name = "rsxp_mobile"
 stylized-name = "RSXP"
 identifier = "org.rsxp.mobile"
-template-pack = "wry"
+template-pack = "winit"
 
 [apple]
 ios-version = "16.0"

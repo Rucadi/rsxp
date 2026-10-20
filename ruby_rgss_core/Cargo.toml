@@ -9,10 +9,12 @@ description = "Embedded Ruby VM and RGSS-native bindings for rsxp"
 [features]
 default = ["desktop"]
 # Magnus bindings and the run-to-completion desktop lifecycle.
-desktop = ["dep:magnus"]
+desktop = ["native-bindings", "magnus/embed"]
+# Shared optimized RGSS objects, independent of the VM lifecycle.
+native-bindings = ["dep:magnus"]
 # Fiber-pumped MRI lifecycle used by the cargo-mobile2 shell.
-mobile = []
+mobile = ["native-bindings", "magnus/embed"]
 
 [dependencies]
-magnus = { version = "0.9.2", default-features = false, features = ["embed"], optional = true }
+magnus = { version = "0.9.2", default-features = false, optional = true }
 rsxp = { path = "..", default-features = false, features = ["game-api"] }

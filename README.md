@@ -76,16 +76,13 @@ updated. Platform declarations alone are not evidence of successful builds.
 
 ## How the project fits together
 
-The experimental [mobile app](mobile/README.md) shares one touch interface between
-iOS and Android, with a native Rust core and native MRI Ruby for game execution.
-The iOS Simulator prototype runs; Android still requires a native MRI build.
-Mobile projects are generated and driven by
-[cargo-mobile2](https://github.com/tauri-apps/cargo-mobile2): run
-`cargo mobile init` once in `mobile/`, then `cargo apple run` or
-`cargo android run` inside `nix-shell` after completing Xcode's first-launch
-setup. Android development can use the reproducible `android-shell.nix`, which
-provides the SDK, NDK, JDK, and cargo-mobile2. The mobile README covers
-prerequisites and current compatibility limits.
+The experimental [mobile app](mobile/README.md) uses a shared native
+winit/egui/wgpu frontend for Linux testing, Android, and iOS, with native MRI
+and the same optimized RGSS bindings as desktop. Linux is the first validation
+target; the new Android/iOS frontend still needs cross-build and device testing.
+[cargo-mobile2](https://github.com/tauri-apps/cargo-mobile2) manages platform
+projects and build/run tooling. The mobile README covers Linux commands,
+regenerating the old Wry projects, and native Ruby cross-compilation requirements.
 
 - [Architecture](docs/architecture.md): startup flowcharts, frame sequence,
   desktop rendering paths, browser scheduling, ownership and a source map.

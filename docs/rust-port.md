@@ -104,7 +104,7 @@ execution. These are runtime controls, not `--fps`/`--uncapped` CLI arguments.
 | --- | --- |
 | `--renderer auto\|software\|wgpu`, `RSXP_RENDERER` | Select compositor; headless auto uses software |
 | `--trace-scripts` | Log script sections during loading |
-| `RSXP_YJIT=0` | Disable the desktop attempt to enable YJIT |
+| `RSXP_YJIT=0` | Disable the desktop attempt to enable ZJIT (preferred when available) or YJIT |
 | `RSXP_INPUT` | Scripted frame/scancode input |
 | `RSXP_PATCH=ID[,ID...]` | Enable runtime patches at startup |
 | `RSXP_GPU_BATCH=0` | Disable disjoint GPU draw grouping for comparison |

@@ -20,12 +20,12 @@
 //! - `demo` → [`demo`], a self-contained animated sprite scene that also
 //!   exercises the window/GPU path, with `--headless`/`--frames`/`--output`
 //!   (writes a PPM of the last frame);
-//! - `run` → validates options and, unless `--headless` or `RSXP_SESSION_ADDR`
+//! - `run` → validates options and, unless `--headless` or a dashboard session
 //!   is set (which means this is the runner side of a dashboard session),
 //!   opens the dashboard around the run; otherwise calls [`runtime::run`].
 //!
-//! `RSXP_RENDERER`, `RSXP_INPUT`, `RSXP_PATCH`, `RSXP_RECORD`, and
-//! `RSXP_SESSION_ADDR` are the relevant environment variables; [`HELP`]
+//! `RSXP_RENDERER`, `RSXP_INPUT`, `RSXP_PATCH`, `RSXP_RECORD`, and the private
+//! dashboard session transport variables are the relevant environment; [`HELP`]
 //! documents the full CLI and frame pacing. `main` maps the
 //! returned status (or an error) to the process exit code.
 mod audio;
@@ -282,6 +282,7 @@ fn run() -> Result<u8, Box<dyn Error>> {
             #[cfg(feature = "gpu")]
             if !args.iter().any(|a| a == "--headless")
                 && std::env::var_os("RSXP_SESSION_ADDR").is_none()
+                && std::env::var_os("RSXP_SESSION_STDIO").is_none()
             {
                 return dashboard::run(Some(args[1..].to_vec()));
             }

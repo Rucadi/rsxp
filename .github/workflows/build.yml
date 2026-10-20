@@ -38,6 +38,33 @@ jobs:
       - name: Build and test desktop with Nix
         run: nix build --print-build-logs .#rsxp
 
+  windows-nix:
+    name: Windows / Nix cross-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v17
+        with:
+          name: rsxp
+          authToken: '${{ secrets.CACHIX_KEY }}'
+      - name: Build Windows bundle with Nix and upload it to Cachix
+        run: nix build --print-build-logs --print-out-paths .#windows | tee windows-store-path.txt
+      - name: Create portable ZIP with bin contents at its root
+        run: |
+          store_path="$(tail -n 1 windows-store-path.txt)"
+          test -d "$store_path/bin"
+          mkdir -p artifacts
+          (cd "$store_path/bin" && zip -qr "$GITHUB_WORKSPACE/artifacts/rsxp-windows-x86_64-nix.zip" .)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rsxp-windows-x86_64-nix
+          path: artifacts/rsxp-windows-x86_64-nix.zip
+          if-no-files-found: error
+
   appimage:
     name: Linux / AppImage (Debian 11)
     runs-on: ubuntu-24.04
@@ -460,7 +487,7 @@ jobs:
   release-assets:
     name: Attach build artifacts to GitHub Release
     if: github.event_name == 'release'
-    needs: [appimage, desktop, browser, web-player]
+    needs: [appimage, desktop, windows-nix, browser, web-player]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

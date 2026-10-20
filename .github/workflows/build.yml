@@ -344,7 +344,7 @@ jobs:
             ${{ runner.temp }}/RSXP portable test/*.dll
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
-        if: always() && runner.os == 'Windows'
+        if: always() && (runner.os == 'Windows' || (runner.os == 'macOS' && hashFiles('artifacts/*.dmg') != ''))
         with:
           name: rsxp-${{ matrix.platform }}
           path: |
@@ -486,7 +486,7 @@ jobs:
 
   release-assets:
     name: Attach build artifacts to GitHub Release
-    if: always() && github.event_name == 'release'
+    if: github.event_name == 'release'
     needs: [appimage, desktop, windows-nix, browser, web-player]
     runs-on: ubuntu-24.04
     permissions:

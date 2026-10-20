@@ -528,7 +528,15 @@ impl Runtime {
             "movie_frame" => {
                 let id = number::<u64>(&args, 1)?;
                 let bitmap_id = number::<u64>(&args, 2)?;
-                let now = self.host.now();
+                // Headless runs do not sleep between frames, so wall-clock time
+                // can advance much slower than the frame counter. Drive movie
+                // timing from the frame clock there to keep playback (and the
+                // frame budget in automated tests) deterministic.
+                let now = if self.headless {
+                    self.updates as f64 / f64::from(self.rate.max(1))
+                } else {
+                    self.host.now()
+                };
                 let start = *self.movie_start.entry(id).or_insert(now);
                 let elapsed = (now - start).max(0.0);
                 let frame = match self.movies.get_mut(&id) {

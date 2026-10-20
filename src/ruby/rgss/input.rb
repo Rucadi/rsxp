@@ -69,10 +69,12 @@ module Input
     count=@held[code(key)]
     count==1 || (count>=24 && count%6==0)
   end
-  def self.dir4
+  # mkxp-z ignores arguments to direction queries. Essentials forks pass the
+  # previous movement state here, so accept it without changing input state.
+  def self.dir4(*)
     [DOWN,LEFT,RIGHT,UP].find { |key| press?(key) } || 0
   end
-  def self.dir8
+  def self.dir8(*)
     x=(press?(RIGHT) ? 1 : 0)-(press?(LEFT) ? 1 : 0)
     y=(press?(DOWN) ? 1 : 0)-(press?(UP) ? 1 : 0)
     x==0 && y==0 ? 0 : 5+x-y*3

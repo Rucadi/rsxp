@@ -638,6 +638,29 @@ fn mkxp_compatibility_methods_run_headless() {
 }
 
 #[test]
+fn movie_playback_polls_skip_input_and_honours_skippable_flag() {
+    let script = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../src/testdata/rgss_movie_input.rb"
+    );
+    for (skippable, key) in [("1", 40), ("1", 41), ("1", 606), ("0", 40)] {
+        let result = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+            .args(["run", "--script", script, "--headless", "--frames", "90"])
+            .env("RSXP_INPUT", format!("2:{key}:2"))
+            .env("RSXP_MOVIE_SKIPPABLE", skippable)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success()
+                && String::from_utf8_lossy(&result.stdout).contains("MOVIE_INPUT_OK"),
+            "skippable={skippable}, key={key}: {}\n{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+}
+
+#[test]
 fn legacy_rgss_win32_tilemap_and_bush_rendering() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),

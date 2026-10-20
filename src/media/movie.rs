@@ -12,7 +12,10 @@
 //! given elapsed time, and [`Movie::finished`] reports end of stream.
 use crate::graphics::Bitmap;
 use ogg::reading::PacketReader;
-use std::io::{BufReader, Cursor};
+use std::{
+    collections::VecDeque,
+    io::{BufReader, Cursor},
+};
 use theora_rs::{
     th_decode_packetin, th_decode_ycbcr_out, th_granule_time, DecoderContext, HeaderParser,
     PixelFmt, YCbCrBuffer,
@@ -24,7 +27,10 @@ pub struct Movie {
     decoder: Option<DecoderContext>,
     serial: Option<u32>,
     packet_index: i64,
-    /// Presentation time of the most recently decoded frame (seconds).
+    /// Number of video packets decoded since the headers (including repeats).
+    decoded_frames: u64,
+    /// Compressed packets from a page, assigned individual presentation times.
+    packets: VecDeque<(theora_rs::OggPacket, f64)>,
     next_time: f64,
     /// A decoded frame waiting to be shown, with its presentation time.
     pending: Option<(f64, Bitmap)>,
@@ -43,6 +49,8 @@ impl Movie {
             decoder: None,
             serial: None,
             packet_index: 0,
+            decoded_frames: 0,
+            packets: VecDeque::new(),
             next_time: 0.0,
             pending: None,
             current: None,
@@ -73,7 +81,7 @@ impl Movie {
     }
 
     pub fn finished(&self) -> bool {
-        self.finished
+        self.finished && self.packets.is_empty() && self.pending.is_none()
     }
 
     /// Returns the frame that should be visible at `elapsed` seconds, decoding
@@ -81,7 +89,7 @@ impl Movie {
     pub fn frame_at(&mut self, elapsed: f64) -> Result<Option<&Bitmap>, String> {
         loop {
             if self.pending.is_none() {
-                while self.pending.is_none() && !self.finished {
+                while self.pending.is_none() && (!self.finished || !self.packets.is_empty()) {
                     if !self.decode_next()? {
                         break;
                     }
@@ -131,7 +139,12 @@ impl Movie {
                 packet: packet.data.clone(),
                 b_o_s: packet.first_in_stream(),
                 e_o_s: packet.last_in_stream(),
-                granulepos: packet.absgp_page() as i64,
+                // An Ogg page's granule belongs only to its final packet.
+                granulepos: if packet.last_in_page() {
+                    packet.absgp_page() as i64
+                } else {
+                    -1
+                },
                 packetno: self.packet_index,
             };
             self.packet_index += 1;
@@ -141,32 +154,46 @@ impl Movie {
 
     /// Processes exactly one Theora packet. Returns false once the stream ends.
     fn decode_next(&mut self) -> Result<bool, String> {
-        let Some(packet) = self.next_theora_packet()? else {
+        if self.packets.is_empty() {
+            let mut page = Vec::new();
+            let mut end_time = None;
+            while let Some(packet) = self.next_theora_packet()? {
+                let granule = packet.granulepos;
+                page.push(packet);
+                if granule >= 0 {
+                    end_time = Some(th_granule_time(&self.parser.info, granule));
+                    break;
+                }
+            }
+            let info = &self.parser.info;
+            let duration = info.fps_denominator as f64 / info.fps_numerator.max(1) as f64;
+            // A page's granule marks the END of its last frame. Work backwards
+            // to timestamp each packet, retaining gaps for omitted duplicate
+            // frames rather than speeding up clips with sparse packets.
+            let start = end_time.map_or(self.next_time, |end| end - page.len() as f64 * duration);
+            for (index, packet) in page.into_iter().enumerate() {
+                let time = (start + index as f64 * duration).max(0.0);
+                self.packets.push_back((packet, time));
+                self.next_time = time + duration;
+            }
+        }
+        let Some((packet, time)) = self.packets.pop_front() else {
             return Ok(false);
         };
         let Some(decoder) = self.decoder.as_mut() else {
             return Ok(false);
         };
         th_decode_packetin(decoder, &packet).map_err(|error| error.to_string())?;
+        self.decoded_frames += 1;
         let frame = match th_decode_ycbcr_out(decoder) {
             Ok(frame) => frame,
             // Some packets do not produce a displayable frame; move on.
             Err(_) => return Ok(true),
         };
-        let time = {
-            let info = &self.parser.info;
-            let time = th_granule_time(info, packet.granulepos);
-            if time < 0.0 {
-                self.next_time
-            } else {
-                time
-            }
-        };
         let bitmap = {
             let info = &self.parser.info;
             ycbcr_to_bitmap(&frame, info)?
         };
-        self.next_time = time;
         self.pending = Some((time, bitmap));
         Ok(true)
     }
@@ -230,4 +257,62 @@ pub(crate) fn ycbcr_to_bitmap(
         }
     }
     Bitmap::from_argb(width, height, &pixels).map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn packets_on_the_same_page_have_distinct_presentation_times() {
+        // Synthetic 10 fps clip, generated with:
+        // ffmpeg -f lavfi -i testsrc=size=32x32:rate=10:duration=1 \
+        //   -pix_fmt yuv420p -c:v libtheora -q:v 5 -page_duration 1000000 \
+        //   -an movie_timing.ogv
+        let bytes = include_bytes!("../testdata/movie_timing.ogv").to_vec();
+        let mut packets = PacketReader::new(Cursor::new(bytes.clone()));
+        let mut shared_page_frames = 0;
+        while let Some(packet) = packets.read_packet().unwrap() {
+            if packet.data.first().is_some_and(|byte| byte & 0x80 == 0) && !packet.last_in_page() {
+                shared_page_frames += 1;
+            }
+        }
+        assert!(
+            shared_page_frames > 1,
+            "fixture must exercise shared Ogg pages"
+        );
+
+        let mut movie = Movie::open(bytes).unwrap();
+        assert!(movie.frame_at(0.0).unwrap().is_some());
+        assert_eq!(movie.decoded_frames, 2); // current frame plus one lookahead
+        assert!((movie.pending.as_ref().unwrap().0 - 0.1).abs() < 1e-9);
+        movie.frame_at(0.05).unwrap();
+        assert_eq!(movie.decoded_frames, 2);
+        movie.frame_at(0.100001).unwrap();
+        assert_eq!(movie.decoded_frames, 3);
+        assert!((movie.pending.as_ref().unwrap().0 - 0.2).abs() < 1e-9);
+        movie.frame_at(0.75).unwrap();
+        assert_eq!(movie.decoded_frames, 9);
+        assert!(!movie.finished());
+        movie.frame_at(1.0).unwrap();
+        assert!(movie.finished());
+        assert_eq!(movie.decoded_frames, 10);
+    }
+
+    #[test]
+    fn omitted_duplicate_frames_keep_their_display_duration() {
+        // Same generation as above, but testsrc2 and default page duration:
+        // at this size the encoder omits some unchanged frames.
+        let mut movie =
+            Movie::open(include_bytes!("../testdata/movie_sparse.ogv").to_vec()).unwrap();
+        movie.frame_at(0.0).unwrap();
+        assert!((movie.pending.as_ref().unwrap().0 - 0.2).abs() < 1e-9);
+        movie.frame_at(0.15).unwrap();
+        assert_eq!(movie.decoded_frames, 2);
+        movie.frame_at(0.25).unwrap();
+        assert_eq!(movie.decoded_frames, 3);
+        movie.frame_at(1.0).unwrap();
+        assert!(movie.finished());
+        assert_eq!(movie.decoded_frames, 7);
+    }
 }

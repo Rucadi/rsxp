@@ -1,10 +1,13 @@
 module Kernel
-  # Modern Ruby rejects `class Foo < Foo` (superclass mismatch) and would raise
-  # a NameError if Foo is undefined. Some Essentials plugins contain this typo
-  # while intending to reopen the class, so repair it in memory as legacy RGSS
-  # games expect.
-  def load_data(path)
-    data=Marshal.load(RSXP.call('read',payload:String(path)))
+  # mkxp-z's optional raw flag bypasses Marshal for archive-backed file reads.
+  def load_data(path, raw=false)
+    bytes=RSXP.call('read',payload:String(path))
+    return bytes if raw
+    data=Marshal.load(bytes)
+    # Modern Ruby rejects `class Foo < Foo` (superclass mismatch) and would raise
+    # a NameError if Foo is undefined. Some Essentials plugins contain this typo
+    # while intending to reopen the class, so repair it in memory as legacy RGSS
+    # games expect.
     if path.to_s.tr('\\','/').downcase=='data/pluginscripts.rxdata' && data.is_a?(Array)
       data.each do |entry|
         next unless entry.is_a?(Array) && entry[2].is_a?(Array)

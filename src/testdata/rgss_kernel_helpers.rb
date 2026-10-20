@@ -29,4 +29,19 @@ begin
   raise 'unknown helper accepted'
 rescue NoMethodError
 end
+require 'tmpdir'
+Dir.mktmpdir('rsxp-load-data') do |dir|
+  path=File.join(dir,'data.rxdata')
+  object={value: [1, 'test']}
+  save_data(object,path)
+  raise 'default Marshal load' unless load_data(path)==object
+  raise 'explicit Marshal load' unless load_data(path,false)==object
+  raise 'raw Marshal bytes' unless load_data(path,true)==File.binread(path)
+  bytes="\x00\xffnot Marshal\r\n".b
+  File.binwrite(path,bytes)
+  raw=load_data(path,true)
+  raise 'raw binary load' unless raw==bytes && raw.encoding==Encoding::BINARY
+  File.binwrite(path,'')
+  raise 'empty raw load' unless load_data(path,true)==''
+end
 puts 'KERNEL_GAME_HELPERS_OK'

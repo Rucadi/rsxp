@@ -132,6 +132,9 @@ module Graphics
       loop do
         status=RSXP.call('movie_frame',id,bitmap.__id).to_s
         update
+        # The movie blocks the game's normal loop, including Input.update.
+        # Poll after Graphics pumps host events so skip sees fresh key edges.
+        Input.update
         break if status=='0'
         break if skippable && (Input.trigger?(Input::C) || Input.trigger?(Input::B))
       end

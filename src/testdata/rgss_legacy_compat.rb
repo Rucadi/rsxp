@@ -251,4 +251,25 @@ end
 sprite=Sprite.new
 Graphics.update
 sprite.dispose
+royal_move=<<~'SOURCE'
+class Battle
+  class Move
+    class LowerUserSpAtk1 < Move; end
+  end
+end
+class Battle::Move::AddMoneyGainedFromBattleLowerUserSpAtk1 < Battle::Move::LowerUserSpAtk1
+  def obsolete_damage_hook; true; end
+end
+class Battle::Move::AddMoneyGainedFromBattleLowerUserSpAtk1 < Battle::Move
+  def replacement_hook; true; end
+end
+SOURCE
+prepared=RSXP.prepare_script(royal_move)
+assert(prepared.lines.size==royal_move.lines.size,'Royal repair changed backtrace lines')
+MKXP.eval_script(royal_move,'Royal duplicate move')
+move=Battle::Move::AddMoneyGainedFromBattleLowerUserSpAtk1
+assert(move.superclass==Battle::Move,'Royal replacement has wrong superclass')
+assert(move.new.replacement_hook && !move.new.respond_to?(:obsolete_damage_hook),'Royal retained obsolete damage hook')
+standalone=royal_move.sub(/class Battle::Move::AddMoneyGainedFromBattleLowerUserSpAtk1 < Battle::Move\n.*?^end\n/m,'')
+assert(RSXP.prepare_script(standalone)==standalone,'Royal repair changed standalone original')
 puts 'LEGACY_COMPAT_OK'

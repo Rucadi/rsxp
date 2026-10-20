@@ -206,6 +206,18 @@ module RSXP
   # has not already provided one.
   def self.before_scripts; end unless singleton_class.method_defined?(:before_scripts)
   def self.prepare_script(source)
+    # Pokemon Royal bundles two implementations of Make It Rain in one
+    # section. The later standalone implementation replaces the earlier
+    # StatDownMove implementation; reopening it would both reject the new
+    # superclass and retain the old damage hook (awarding coins twice).
+    # Drop only this known superseded definition, preserving backtrace lines.
+    move='Battle::Move::AddMoneyGainedFromBattleLowerUserSpAtk1'
+    old_definition=/^class #{Regexp.escape(move)} < Battle::Move::LowerUserSpAtk1[ \t]*\r?\n.*?^end[ \t]*\r?$/m
+    replacement=/^class #{Regexp.escape(move)} < Battle::Move[ \t]*\r?$/
+    old=source.match(old_definition)
+    if old && source.match(replacement,old.end(0))
+      source=source.sub(old_definition) { |definition| definition.gsub(/[^\r\n]/,'') }
+    end
     # Realidea's PSystem_Controls replaces Input.update and reads the host
     # keyboard state via Win32API. Refresh RSXP's raw state before that poll.
     if source.include?('GetAsyncKeyState') && source.include?('def self.update')

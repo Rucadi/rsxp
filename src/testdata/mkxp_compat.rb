@@ -7,6 +7,23 @@ end
 
 Graphics.resize_screen(64, 48)
 
+# Direction queries tolerate the movement-state argument used by Royal.
+saved_state=Input.instance_variable_get(:@state)
+begin
+  [{}, {79=>1}, {79=>1,82=>1}, {603=>1}].each do |state|
+    Input.instance_variable_set(:@state,state)
+    [:dir4,:dir8].each do |method|
+      expected=Input.public_send(method)
+      [true,false,nil].each do |moving|
+        check(Input.public_send(method,moving)==expected,"#{method} movement argument")
+      end
+      check(Input.public_send(method,true,false)==expected,"#{method} ignored arguments")
+    end
+  end
+ensure
+  Input.instance_variable_set(:@state,saved_state)
+end
+
 # Bitmap effects and snapshot/hi-res compatibility.
 bitmap = Bitmap.new(4, 4)
 bitmap.gradient_fill_rect(0, 0, 4, 4, Color.new(255, 0, 0), Color.new(0, 0, 255))

@@ -57,4 +57,13 @@ path = "src/examples/render_bench.rs"
 lto = true
 codegen-units = 1
 
+# Real-time video decoding and per-pixel conversion are too slow without
+# optimization, even for Royal's 640x440 intro. Keep debug symbols/assertions
+# and the desktop/Ruby glue's normal development settings.
+[profile.dev.package.theora-rs]
+opt-level = 3
+
+[profile.dev.package.rsxp]
+opt-level = 2
+
 

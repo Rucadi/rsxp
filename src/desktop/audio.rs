@@ -187,7 +187,7 @@ impl DesktopAudio {
             // a non-zero timestamp, and Symphonia can reject that seek even
             // though normal playback from the stream start is valid.
             if position > 0.0 {
-                sound=sound.start_position(position);
+                sound = sound.start_position(position);
             }
             sound = sound.loop_region(..);
             match self.manager.as_mut().unwrap().play(sound) {

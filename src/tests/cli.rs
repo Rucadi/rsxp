@@ -450,10 +450,7 @@ fn sprite_cache_preserves_lifecycle_and_pixels() {
 
 #[test]
 fn ruby_rgss_values_gc_and_rendering_all_versions() {
-    let script = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../src/testdata/rgss_smoke.rb"
-    );
+    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/testdata/rgss_smoke.rb");
     let dir = TempDir::new();
     for version in ["1", "2", "3"] {
         let output = dir.0.join(format!("ruby-{version}.ppm"));
@@ -578,10 +575,7 @@ fn media_demo_reports_animated_gif_metadata() {
         }
     }
     fs::write(&gif, bytes).unwrap();
-    let script = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../src/testdata/media_demo.rb"
-    );
+    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/testdata/media_demo.rb");
     let result = Command::new(env!("CARGO_BIN_EXE_rsxp"))
         .args(["run", "--script", script, "--headless", "--frames", "5"])
         .env("RSXP_GIF", &gif)
@@ -601,10 +595,7 @@ fn media_demo_reports_animated_gif_metadata() {
 
 #[test]
 fn kgl2_compatibility_functions_run_headless() {
-    let script = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../src/testdata/kgl2_smoke.rb"
-    );
+    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/testdata/kgl2_smoke.rb");
     let result = run(&["run", "--script", script, "--headless"]);
     assert!(
         result.status.success(),

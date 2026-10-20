@@ -47,7 +47,7 @@ use crate::{
 use rsxp::{graphics::Bitmap, input::Input};
 use serde_json::{json, Value};
 use std::{
-    net::{TcpListener, TcpStream},
+    net::{SocketAddr, TcpListener, TcpStream},
     process::{Child, Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -74,11 +74,14 @@ struct Session {
     child: Child,
     exchange: Arc<Mutex<Exchange>>,
     stopping: Arc<AtomicBool>,
+    listener_addr: SocketAddr,
     output_threads: Vec<std::thread::JoinHandle<()>>,
 }
 impl Drop for Session {
     fn drop(&mut self) {
         self.stopping.store(true, Ordering::Relaxed);
+        // Wake the blocking accept below before waiting for the child to exit.
+        let _ = TcpStream::connect_timeout(&self.listener_addr, Duration::from_millis(100));
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
@@ -126,18 +129,48 @@ fn forward_output(
     }
 }
 
-fn accept_runner(listener: &TcpListener) -> std::io::Result<TcpStream> {
-    let (stream, _) = listener.accept()?;
-    // BSD/macOS inherits O_NONBLOCK from the listener. The framed protocol
-    // uses blocking read_exact/write_all on its dedicated transport thread.
-    stream.set_nonblocking(false)?;
-    Ok(stream)
+fn accept_runner(
+    listener: TcpListener,
+    address: SocketAddr,
+    stopping: &AtomicBool,
+    timeout: Duration,
+) -> std::io::Result<Option<TcpStream>> {
+    // Keep the listener in its default blocking mode. In particular, avoid
+    // Winsock's nonblocking ioctlsocket path, which can fail under Wine.
+    let (send, receive) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let result = listener.accept().map(|(stream, _)| stream);
+        let _ = send.send(result);
+    });
+    let start = std::time::Instant::now();
+    loop {
+        if stopping.load(Ordering::Relaxed) {
+            return Ok(None);
+        }
+        let elapsed = start.elapsed();
+        if elapsed >= timeout {
+            // The accept thread owns the listener. Connect once to release it
+            // on timeout, just as Session::drop does when stopping a game.
+            let _ = TcpStream::connect_timeout(&address, Duration::from_millis(100));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("Game did not connect within {} seconds", timeout.as_secs()),
+            ));
+        }
+        match receive.recv_timeout(Duration::from_millis(10).min(timeout - elapsed)) {
+            Ok(result) => return result.map(Some),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(std::io::Error::other("runner accept thread stopped"));
+            }
+        }
+    }
 }
 
 impl Session {
     fn start(args: &[String]) -> Result<Self, String> {
         let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(|e| e.to_string())?;
-        listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+        let listener_addr = listener.local_addr().map_err(|e| e.to_string())?;
         // A per-launch nonce prevents accidental attachment to another runner.
         let mut nonce = [0u8; 32];
         getrandom::fill(&mut nonce).map_err(|e| e.to_string())?;
@@ -145,13 +178,7 @@ impl Session {
         let mut child = Command::new(std::env::current_exe().map_err(|e| e.to_string())?)
             .arg("run")
             .args(args)
-            .env(
-                "RSXP_SESSION_ADDR",
-                listener
-                    .local_addr()
-                    .map_err(|e| e.to_string())?
-                    .to_string(),
-            )
+            .env("RSXP_SESSION_ADDR", listener_addr.to_string())
             .env("RSXP_API", "0")
             .env("RSXP_SESSION_TOKEN", &token)
             .stdout(Stdio::piped())
@@ -189,21 +216,11 @@ impl Session {
         let stop = stopping.clone();
         std::thread::spawn(move || {
             let result = (|| -> Result<(), String> {
-                let start = std::time::Instant::now();
-                let mut stream = loop {
-                    if stop.load(Ordering::Relaxed) {
-                        return Ok(());
-                    }
-                    match accept_runner(&listener) {
-                        Ok(s) => break s,
-                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                            if start.elapsed() > Duration::from_secs(30) {
-                                return Err("Game did not connect within 30 seconds".into());
-                            }
-                            std::thread::sleep(Duration::from_millis(10));
-                        }
-                        Err(e) => return Err(e.to_string()),
-                    }
+                let Some(mut stream) =
+                    accept_runner(listener, listener_addr, &stop, Duration::from_secs(30))
+                        .map_err(|e| e.to_string())?
+                else {
+                    return Ok(());
                 };
                 stream.set_nodelay(true).map_err(|e| e.to_string())?;
                 stream
@@ -319,6 +336,7 @@ impl Session {
             child,
             exchange,
             stopping,
+            listener_addr,
             output_threads,
         })
     }
@@ -556,7 +574,10 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
         }
         let actions = std::mem::take(&mut display.workspace_mut().session_actions);
         if actions.browse {
-            if let Some(path) = rfd::FileDialog::new().set_title("Choose an RPG Maker game folder").pick_folder() {
+            if let Some(path) = rfd::FileDialog::new()
+                .set_title("Choose an RPG Maker game folder")
+                .pick_folder()
+            {
                 let panel = display.workspace_mut().session.as_mut().unwrap();
                 panel.source = path.to_string_lossy().into_owned();
                 if let Ok(root) = super::library::discover(&panel.source) {
@@ -564,12 +585,17 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
                     launch = Some(vec!["--game".into(), panel.source.clone()]);
                     panel.open = false;
                 } else {
-                    panel.error = Some("That folder does not contain a supported RPG Maker game.".into());
+                    panel.error =
+                        Some("That folder does not contain a supported RPG Maker game.".into());
                 }
             }
         }
         if actions.browse_game_file {
-            if let Some(path) = rfd::FileDialog::new().set_title("Choose Game.ini").add_filter("RPG Maker project", &["ini"]).pick_file() {
+            if let Some(path) = rfd::FileDialog::new()
+                .set_title("Choose Game.ini")
+                .add_filter("RPG Maker project", &["ini"])
+                .pick_file()
+            {
                 let panel = display.workspace_mut().session.as_mut().unwrap();
                 panel.source = path.to_string_lossy().into_owned();
                 match super::library::discover(&panel.source) {
@@ -634,19 +660,16 @@ mod tests {
     fn runner_connection_waits_for_fragmented_messages() {
         use std::io::Write;
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        listener.set_nonblocking(true).unwrap();
-        let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
-        let deadline = std::time::Instant::now() + Duration::from_secs(2);
-        let mut server = loop {
-            match accept_runner(&listener) {
-                Ok(stream) => break stream,
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                    assert!(std::time::Instant::now() < deadline);
-                    std::thread::sleep(Duration::from_millis(1));
-                }
-                Err(error) => panic!("{error}"),
-            }
-        };
+        let address = listener.local_addr().unwrap();
+        let mut client = TcpStream::connect(address).unwrap();
+        let mut server = accept_runner(
+            listener,
+            address,
+            &AtomicBool::new(false),
+            Duration::from_secs(2),
+        )
+        .unwrap()
+        .unwrap();
         server
             .set_read_timeout(Some(Duration::from_secs(2)))
             .unwrap();

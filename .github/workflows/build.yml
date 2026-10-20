@@ -4,6 +4,8 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  release:
+    types: [published]
 
 permissions:
   contents: read
@@ -454,3 +456,22 @@ jobs:
           path: site
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  release-assets:
+    name: Attach build artifacts to GitHub Release
+    if: github.event_name == 'release'
+    needs: [appimage, desktop, browser, web-player]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Upload files to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" release-assets/* --clobber

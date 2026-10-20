@@ -561,7 +561,7 @@ jobs:
           upload_failed=0
           for asset in "${assets[@]}"; do
             echo "Uploading ${asset#release-assets/}"
-            if ! gh release upload "$RELEASE_TAG" "$asset" --clobber; then
+            if ! gh release upload "$RELEASE_TAG" "$asset" --repo "$GITHUB_REPOSITORY" --clobber; then
               echo "Failed to upload ${asset#release-assets/}" >&2
               upload_failed=1
             fi

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Desktop GBA runner.
+//! Desktop cartridge-core runner.
 //!
 //! The dashboard already supervises a child process and exchanges video,
 //! input and lifecycle controls over [`crate::session`]. This module gives that
@@ -32,11 +32,26 @@ pub fn run(
     output: Option<PathBuf>,
 ) -> Result<u8, Box<dyn Error>> {
     let rom = rom.canonicalize()?;
+    let is_nds = rom
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("nds"));
+    let registration = if is_nds {
+        #[cfg(feature = "nds")]
+        {
+            rsxp_core_nds::registration()
+        }
+        #[cfg(not(feature = "nds"))]
+        {
+            return Err("Nintendo DS support requires a build with --features nds".into());
+        }
+    } else {
+        rsxp_core_gba::registration()
+    };
     let root = rom.parent().unwrap_or_else(|| Path::new(".")).to_path_buf();
     let title = rom
         .file_stem()
         .and_then(|stem| stem.to_str())
-        .unwrap_or("GBA game")
+        .unwrap_or("ROM game")
         .to_owned();
     let save_dir = save_directory(&title);
 
@@ -45,7 +60,16 @@ pub fn run(
         // The core reads this at load time and configures its resampler to the
         // actual device rate.
         // SAFETY: no core/audio threads exist yet.
-        unsafe { std::env::set_var("RSXP_GBA_AUDIO_RATE", audio.sample_rate.to_string()) };
+        unsafe {
+            std::env::set_var(
+                if is_nds {
+                    "RSXP_NDS_AUDIO_RATE"
+                } else {
+                    "RSXP_GBA_AUDIO_RATE"
+                },
+                audio.sample_rate.to_string(),
+            )
+        };
     }
 
     let control = Arc::new(CoreControl::new());
@@ -75,9 +99,8 @@ pub fn run(
         }),
         Arc::clone(&control),
     );
-    let registration = rsxp_core_gba::registration();
     let handle = rsxp_frontend::spawn_core(registration, Content::file(&rom), context)
-        .map_err(|error| format!("could not start GBA core: {error}"))?;
+        .map_err(|error| format!("could not start cartridge core: {error}"))?;
 
     if let Some(runner) = &shared_runner {
         let mut input = Input::default();
@@ -93,14 +116,14 @@ pub fn run(
             }
             control.set_paused(paused);
             control.set_fast_forward(rsxp::runtime_settings::fast_forward());
-            update_buttons(&control, &input);
+            update_buttons(&control, &input, is_nds);
             std::thread::sleep(Duration::from_millis(2));
         }
     }
 
     let result = handle
         .join()
-        .map_err(|_| "GBA core thread panicked".to_string())?
+        .map_err(|_| "cartridge core thread panicked".to_string())?
         .map_err(|error| error.to_string())?;
     if let Some(path) = output
         && let Some(bitmap) = captured.lock().unwrap().take()
@@ -113,19 +136,36 @@ pub fn run(
     Ok(u8::try_from(result.code).unwrap_or(1))
 }
 
-fn update_buttons(control: &CoreControl, input: &Input) {
+fn update_buttons(control: &CoreControl, input: &Input, is_nds: bool) {
     let pressed = |key: i32| input.pressed(key);
     let set = |button, down| control.input().set_button(button, down);
     set(Button::Up, pressed(82) || pressed(604));
     set(Button::Down, pressed(81) || pressed(601));
     set(Button::Left, pressed(80) || pressed(602));
     set(Button::Right, pressed(79) || pressed(603));
-    set(Button::South, pressed(27) || pressed(605) || pressed(607));
+    set(
+        Button::South,
+        pressed(27) || pressed(605) || (!is_nds && pressed(607)),
+    );
     set(Button::East, pressed(29) || pressed(606));
+    if is_nds {
+        set(Button::North, pressed(22) || pressed(608));
+        set(Button::West, pressed(4) || pressed(607));
+        set(Button::Extra0, pressed(1));
+        control
+            .input()
+            .set_pointer(input.mouse_x, input.mouse_y, input.mouse_inside);
+    }
     set(Button::Start, pressed(40));
     set(Button::Select, pressed(42));
-    set(Button::LeftShoulder, pressed(4) || pressed(611));
-    set(Button::RightShoulder, pressed(22) || pressed(612));
+    set(
+        Button::LeftShoulder,
+        (if is_nds { pressed(20) } else { pressed(4) }) || pressed(611),
+    );
+    set(
+        Button::RightShoulder,
+        (if is_nds { pressed(26) } else { pressed(22) }) || pressed(612),
+    );
 }
 
 struct FsPlatform {
@@ -250,7 +290,7 @@ impl PcmAudio {
         let device = host.default_output_device()?;
         let supported = device.default_output_config().ok()?;
         if supported.sample_format() != cpal::SampleFormat::F32 {
-            eprintln!("GBA audio disabled: output device is not f32");
+            eprintln!("Cartridge audio disabled: output device is not f32");
             return None;
         }
         let config: cpal::StreamConfig = supported.config();
@@ -277,7 +317,7 @@ impl PcmAudio {
                         }
                     }
                 },
-                |error| eprintln!("GBA audio stream error: {error}"),
+                |error| eprintln!("Cartridge audio stream error: {error}"),
                 None,
             )
             .ok()?;
@@ -331,8 +371,10 @@ impl EventSink for LogEvents {
                 height,
                 sample_rate,
                 audio_channels,
-            }) => eprintln!("GBA: {width}x{height}, {sample_rate} Hz, {audio_channels} channels"),
-            CoreEvent::Window(command) => eprintln!("GBA window: {command:?}"),
+            }) => eprintln!(
+                "Cartridge: {width}x{height}, {sample_rate} Hz, {audio_channels} channels"
+            ),
+            CoreEvent::Window(command) => eprintln!("Cartridge window: {command:?}"),
             CoreEvent::Log(_, message) => eprintln!("{message}"),
             CoreEvent::SaveState { slot, data } => {
                 let path = self
@@ -342,14 +384,14 @@ impl EventSink for LogEvents {
                     let _ = std::fs::create_dir_all(parent);
                 }
                 if let Err(error) = std::fs::write(&path, data) {
-                    eprintln!("GBA: could not write {}: {error}", path.display());
+                    eprintln!("Cartridge: could not write {}: {error}", path.display());
                 }
             }
             CoreEvent::SaveRam { .. } => {}
             CoreEvent::Screenshot { .. } => {}
-            CoreEvent::Status(message) => eprintln!("GBA: {message}"),
-            CoreEvent::Error(message) => eprintln!("GBA: {message}"),
-            CoreEvent::Exited(status) => eprintln!("GBA exited: {}", status.code),
+            CoreEvent::Status(message) => eprintln!("Cartridge: {message}"),
+            CoreEvent::Error(message) => eprintln!("Cartridge: {message}"),
+            CoreEvent::Exited(status) => eprintln!("Cartridge exited: {}", status.code),
         }
     }
 }

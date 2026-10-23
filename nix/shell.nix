@@ -41,6 +41,10 @@ pkgs.mkShell {
     lib.makeLibraryPath (runtimeLibraries ++ [ pkgs.ruby_4_0 ])
   );
 
+  # Dust uses nightly-only language features. Keep the Nix-provided latest
+  # rustc usable for the default DS-enabled build.
+  RUSTC_BOOTSTRAP = "1";
+
   # WebAssembly builds need a wasm-capable linker (rust-lld is not shipped here).
   CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_LINKER = "${pkgs.lld}/bin/wasm-ld";
 }

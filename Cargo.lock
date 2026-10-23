@@ -207,6 +207,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "arm-decoder"
+version = "0.0.0"
+source = "git+https://github.com/kelpsyberry/arm-decoder#f853ca666532cc2fbd58e5760d98afbb47660655"
+
+[[package]]
 name = "arm7tdmi"
 version = "0.1.0"
 source = "git+https://github.com/michelhe/rustboyadvance-ng?rev=1d7ff23a6adb42d803ebd393c3d27d94e4fea15e#1d7ff23a6adb42d803ebd393c3d27d94e4fea15e"
@@ -962,6 +967,44 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 
 [[package]]
+name = "dust-core"
+version = "0.0.0"
+source = "git+https://github.com/kelpsyberry/dust?branch=main#76d79f25e4ea3ce355c4ac868f5ac9a233e64b89"
+dependencies = [
+ "arm-decoder",
+ "bitflags 2.13.2",
+ "cfg-if",
+ "emu-utils",
+ "proc-bitfield",
+]
+
+[[package]]
+name = "dust-soft-2d"
+version = "0.0.0"
+source = "git+https://github.com/kelpsyberry/dust?branch=main#76d79f25e4ea3ce355c4ac868f5ac9a233e64b89"
+dependencies = [
+ "dust-core",
+ "dust-soft-2d-base",
+]
+
+[[package]]
+name = "dust-soft-2d-base"
+version = "0.0.0"
+source = "git+https://github.com/kelpsyberry/dust?branch=main#76d79f25e4ea3ce355c4ac868f5ac9a233e64b89"
+dependencies = [
+ "dust-core",
+ "proc-bitfield",
+]
+
+[[package]]
+name = "dust-soft-3d"
+version = "0.0.0"
+dependencies = [
+ "dust-core",
+ "proc-bitfield",
+]
+
+[[package]]
 name = "ecolor"
 version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1044,6 +1087,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e73ce90f54750be8672c02be0743fe47530e6f251e066f0ee2869b59eb297af5"
 dependencies = [
  "bytemuck",
+]
+
+[[package]]
+name = "emu-utils"
+version = "0.0.0"
+dependencies = [
+ "cfg-if",
+ "emu-utils-macros",
+]
+
+[[package]]
+name = "emu-utils-macros"
+version = "0.0.0"
+dependencies = [
+ "proc-macro2",
+ "quote 1.0.47",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -2823,6 +2883,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8cf8e6a8aa66ce33f63993ffc4ea4271eb5b0530a9002db8455ea6050c77bfa"
 
 [[package]]
+name = "proc-bitfield"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb5041a3f8b230c2078ab917516d352f40625245d4c953472eacbe075051c4b7"
+dependencies = [
+ "proc-bitfield-macros",
+ "static_assertions",
+]
+
+[[package]]
+name = "proc-bitfield-macros"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b34b74711e53c2ff9c879e7a22c6c8dbac847ef2b11c2d69296a890e12a243a"
+dependencies = [
+ "proc-macro2",
+ "quote 1.0.47",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "proc-macro-crate"
 version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3092,6 +3173,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsxp-core-nds"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dust-core",
+ "dust-soft-2d",
+ "dust-soft-3d",
+ "rsxp-core",
+ "serde_json",
+]
+
+[[package]]
 name = "rsxp-core-rgss"
 version = "0.1.0"
 dependencies = [
@@ -3116,6 +3209,7 @@ version = "0.1.0"
 dependencies = [
  "rsxp-core",
  "rsxp-core-gba",
+ "rsxp-core-nds",
  "rsxp-core-rgss",
  "rsxp-frontend",
 ]
@@ -3140,6 +3234,7 @@ dependencies = [
  "rsxp",
  "rsxp-core",
  "rsxp-core-gba",
+ "rsxp-core-nds",
  "rsxp-frontend",
  "rsxp-rgss-ruby",
  "serde_json",

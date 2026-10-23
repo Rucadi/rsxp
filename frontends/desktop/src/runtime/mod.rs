@@ -60,8 +60,9 @@ pub fn run(args: &[String]) -> Result<u8, Box<dyn Error>> {
         version,
     } = options::RunOptions::parse(args)?;
     if let Some(rom) = game.as_ref().or(script.as_ref()).filter(|path| {
-        path.extension()
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("gba"))
+        path.extension().is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("gba") || extension.eq_ignore_ascii_case("nds")
+        })
     }) {
         return crate::gba::run(rom.clone(), headless, frames, output).map_err(Into::into);
     }

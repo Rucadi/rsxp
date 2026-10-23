@@ -8,8 +8,9 @@ description = "Headless runner for any RSXP core"
 publish = false
 
 [features]
-default = ["gba"]
+default = ["gba", "nds"]
 gba = ["rsxp-cores/gba"]
+nds = ["rsxp-cores/nds"]
 rgss = ["rsxp-cores/rgss"]
 
 [dependencies]

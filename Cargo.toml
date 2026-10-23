@@ -5,6 +5,7 @@ members = [
     "crates/rsxp-frontend",
     "crates/rsxp-rgss",
     "cores/gba/core",
+    "cores/nds/core",
     "cores/rgss/core",
     "cores/rgss/ruby",
     "frontends/core-runner",
@@ -43,3 +44,21 @@ opt-level = 3
 
 [profile.dev.package.rsxp-desktop]
 opt-level = 2
+
+# Dust's utility crate still references SIMD lane bounds removed in Rust 1.96.
+[patch."https://github.com/kelpsyberry/emu-utils"]
+emu-utils = { path = "cores/nds/vendor/emu-utils" }
+
+[profile.dev.package.dust-core]
+opt-level = 3
+[profile.dev.package.dust-soft-2d]
+opt-level = 3
+[profile.dev.package.dust-soft-2d-base]
+opt-level = 3
+[profile.dev.package.dust-soft-3d]
+opt-level = 3
+[profile.dev.package.rsxp-core-nds]
+opt-level = 3
+
+[patch."https://github.com/kelpsyberry/dust"]
+dust-soft-3d = { path = "cores/nds/vendor/dust-soft-3d" }

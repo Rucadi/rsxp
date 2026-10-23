@@ -233,14 +233,14 @@ impl SessionPanel {
         }
         ui.add_space(16.0);
         ui.separator();
-        egui::CollapsingHeader::new("Open from path, Game.ini, or GBA ROM")
+        egui::CollapsingHeader::new("Open from path, Game.ini, or GBA/DS ROM")
             .default_open(self.recent.is_empty())
             .show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.add(
                         egui::TextEdit::singleline(&mut self.source)
                             .desired_width((ui.available_width() - 170.0).max(100.0))
-                            .hint_text("Paste a game folder, Game.ini, or .gba path…"),
+                            .hint_text("Paste a game folder, Game.ini, or .gba/.nds path…"),
                     );
                     if ui
                         .add_enabled(

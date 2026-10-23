@@ -8,12 +8,12 @@
 //!   `remember` moves a path to the front, deduplicates, truncates, and writes
 //!   atomically through a pid-suffixed temp file and `rename`.
 //! - [`discover`] canonicalizes the chosen file or directory. A `Game.ini`
-//!   path selects its parent directory; an `.gba` path is a GBA game. A
+//!   path selects its parent directory; an `.gba` or `.nds` path is a cartridge game. A
 //!   directory must contain an RPG Maker marker (`Game.ini`, an RGSS archive,
-//!   or a `Data/Scripts.*` file) or exactly one `.gba` ROM. RPG Maker markers
+//!   or a `Data/Scripts.*` file) or exactly one `.gba`/`.nds` ROM. RPG Maker markers
 //!   are matched case-insensitively via [`crate::host::case_path`].
 //! - [`title`] reads the `Title=` value from `Game.ini`, falling back to the
-//!   directory name. [`GameSource::title`] also names GBA ROMs from their file
+//!   directory name. [`GameSource::title`] also names cartridge ROMs from their file
 //!   stem. [`save_directory`] returns the on-disk save folder under
 //!   `$XDG_DATA_HOME` (or `~/.local/share`) `rsxp/<sanitized title>` if it
 //!   already exists; [`data_directory`] returns the path without requiring it.
@@ -67,16 +67,15 @@ pub fn discover(path: &str) -> Result<GameSource, String> {
     {
         path.pop();
     } else if path.is_file() {
-        if path
-            .extension()
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("gba"))
-        {
-            return Ok(GameSource::Gba(path));
+        if path.extension().is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("gba") || extension.eq_ignore_ascii_case("nds")
+        }) {
+            return Ok(GameSource::Cartridge(path));
         }
-        return Err("Choose a game directory, Game.ini, or a .gba ROM".into());
+        return Err("Choose a game directory, Game.ini, or a .gba/.nds ROM".into());
     }
     if !path.is_dir() {
-        return Err("Choose a game directory, Game.ini, or a .gba ROM".into());
+        return Err("Choose a game directory, Game.ini, or a .gba/.nds ROM".into());
     }
     if [
         "Game.ini",
@@ -92,34 +91,34 @@ pub fn discover(path: &str) -> Result<GameSource, String> {
     {
         return Ok(GameSource::Rgss(path));
     }
-    let gba: Vec<PathBuf> = fs::read_dir(&path)
+    let roms: Vec<PathBuf> = fs::read_dir(&path)
         .map_err(|error| format!("Could not read folder: {error}"))?
         .filter_map(Result::ok)
         .map(|entry| entry.path())
         .filter(|entry| {
             entry.is_file()
-                && entry
-                    .extension()
-                    .is_some_and(|extension| extension.eq_ignore_ascii_case("gba"))
+                && entry.extension().is_some_and(|extension| {
+                    extension.eq_ignore_ascii_case("gba") || extension.eq_ignore_ascii_case("nds")
+                })
         })
         .collect();
-    match gba.as_slice() {
-        [rom] => Ok(GameSource::Gba(rom.clone())),
-        [] => Err("No RPG Maker game or .gba ROM found in that directory.".into()),
-        _ => Err("That folder contains multiple .gba ROMs; choose one file instead.".into()),
+    match roms.as_slice() {
+        [rom] => Ok(GameSource::Cartridge(rom.clone())),
+        [] => Err("No RPG Maker game or .gba/.nds ROM found in that directory.".into()),
+        _ => Err("That folder contains multiple cartridge ROMs; choose one file instead.".into()),
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GameSource {
     Rgss(PathBuf),
-    Gba(PathBuf),
+    Cartridge(PathBuf),
 }
 
 impl GameSource {
     pub fn path(&self) -> &Path {
         match self {
-            Self::Rgss(path) | Self::Gba(path) => path,
+            Self::Rgss(path) | Self::Cartridge(path) => path,
         }
     }
 }
@@ -190,11 +189,34 @@ mod tests {
         fs::write(&rom, vec![0u8; 0x200]).unwrap();
         assert_eq!(
             discover(rom.to_str().unwrap()).unwrap(),
-            GameSource::Gba(rom.canonicalize().unwrap())
+            GameSource::Cartridge(rom.canonicalize().unwrap())
         );
         assert_eq!(
             discover(dir.to_str().unwrap()).unwrap(),
-            GameSource::Gba(rom.canonicalize().unwrap())
+            GameSource::Cartridge(rom.canonicalize().unwrap())
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn discovers_nds_and_rejects_ambiguous_cartridge_folders() {
+        let dir = temp("nds");
+        let rom = dir.join("game.NDS");
+        fs::write(&rom, [0u8; 512]).unwrap();
+        assert_eq!(
+            discover(rom.to_str().unwrap()).unwrap(),
+            GameSource::Cartridge(rom.canonicalize().unwrap())
+        );
+        assert_eq!(
+            discover(dir.to_str().unwrap()).unwrap(),
+            GameSource::Cartridge(rom.canonicalize().unwrap())
+        );
+        fs::write(dir.join("other.gba"), [0u8; 512]).unwrap();
+        assert!(discover(dir.to_str().unwrap()).is_err());
+        fs::write(dir.join("Game.ini"), "[Game]\nTitle=RGSS").unwrap();
+        assert_eq!(
+            discover(dir.to_str().unwrap()).unwrap(),
+            GameSource::Rgss(dir.clone())
         );
         let _ = fs::remove_dir_all(dir);
     }

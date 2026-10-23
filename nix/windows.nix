@@ -27,6 +27,8 @@ crossPkgs.rustPlatform.buildRustPackage {
   cargoLock = {
     lockFile = root + "/Cargo.lock";
     outputHashes = {
+      "arm-decoder-0.0.0" = "sha256-HG8Gh5H7ez1ad6VtWNCKcQ6ywA1yguwrMeFL5ZbKyIE=";
+      "dust-core-0.0.0" = "sha256-BT/AofCPtDt22l0G/yW2bvDG+QqP2Po/8Q17Lp3lwIs=";
       "arm7tdmi-0.1.0" = "sha256-wRsghc7uRlv+fUh7hpibQ7ajw+3kasEqdHTV+1N2QnI=";
       "rustboyadvance-core-0.1.0" = "sha256-wRsghc7uRlv+fUh7hpibQ7ajw+3kasEqdHTV+1N2QnI=";
       "rustboyadvance-utils-0.1.0" = "sha256-wRsghc7uRlv+fUh7hpibQ7ajw+3kasEqdHTV+1N2QnI=";
@@ -52,6 +54,9 @@ crossPkgs.rustPlatform.buildRustPackage {
     "--target"
     target
   ];
+
+  # Dust uses nightly-only language features and is in the desktop defaults.
+  RUSTC_BOOTSTRAP = "1";
 
   buildInputs = [
     crossPkgs.windows.pthreads

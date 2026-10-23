@@ -41,3 +41,20 @@ cores/
 
 See [multi-core architecture](../docs/multi-core-architecture.md) for the full
 contract and migration plan.
+
+## Nintendo DS (Dust)
+
+The default `nds` feature adds the [Dust](https://github.com/kelpsyberry/dust)
+core, `.nds` content routing, stacked screens, touch input, stereo audio,
+cartridge saves and save states. The desktop and runner include DS by default.
+Dust requires nightly Rust features; the Nix shell enables those features for
+its bundled compiler.
+
+```sh
+cargo run -p rsxp-desktop -- run --game /path/to/game.nds
+cargo run -p rsxp-core-runner -- \
+  --content /path/to/game.nds --frames 120 --output frame.ppm
+```
+
+See [the DS core guide](nds/README.md) for system files,
+controls, build compatibility, licensing and limitations.

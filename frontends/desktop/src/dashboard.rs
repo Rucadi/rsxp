@@ -627,13 +627,14 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
                 .windows(2)
                 .find(|a| a[0] == "--game")
                 .map(|a| PathBuf::from(&a[1]));
-            let gba = game_path.as_ref().filter(|path| {
-                path.extension()
-                    .is_some_and(|extension| extension.eq_ignore_ascii_case("gba"))
+            let cartridge = game_path.as_ref().filter(|path| {
+                path.extension().is_some_and(|extension| {
+                    extension.eq_ignore_ascii_case("gba") || extension.eq_ignore_ascii_case("nds")
+                })
             });
             let root = game_path
                 .as_ref()
-                .filter(|_| gba.is_none())
+                .filter(|_| cartridge.is_none())
                 .and_then(|path| std::fs::canonicalize(path).ok());
             if let Some(root) = &root {
                 if let Err(error) = rsxp::runtime_patch::load_user_patches(root) {
@@ -655,11 +656,11 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
                     panel.paused = false;
                     panel.status = "Starting…".into();
                     panel.error = None;
-                    if let Some(rom) = gba {
+                    if let Some(rom) = cartridge {
                         let title = rom
                             .file_stem()
                             .map(|stem| stem.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| "GBA game".into());
+                            .unwrap_or_else(|| "Cartridge game".into());
                         panel.title = title.clone();
                         panel.source = rom.to_string_lossy().into_owned();
                         panel.save_directory = super::library::data_directory(&title)
@@ -817,7 +818,7 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
         let actions = std::mem::take(&mut display.workspace_mut().session_actions);
         if actions.browse {
             if let Some(path) = rfd::FileDialog::new()
-                .set_title("Choose an RPG Maker game folder or GBA ROM")
+                .set_title("Choose an RPG Maker game folder or GBA/DS ROM")
                 .pick_folder()
             {
                 let panel = display.workspace_mut().session.as_mut().unwrap();
@@ -836,8 +837,8 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
         }
         if actions.browse_game_file {
             if let Some(path) = rfd::FileDialog::new()
-                .set_title("Choose Game.ini or a GBA ROM")
-                .add_filter("Games", &["ini", "gba"])
+                .set_title("Choose Game.ini or a GBA/DS ROM")
+                .add_filter("Games", &["ini", "gba", "nds"])
                 .pick_file()
             {
                 let panel = display.workspace_mut().session.as_mut().unwrap();

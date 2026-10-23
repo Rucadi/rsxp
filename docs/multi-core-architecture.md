@@ -46,7 +46,7 @@ cores/
   gba/
     core/                      # GBA adapter (RustBoyAdvance-NG backend)
   gb/                          # future
-  nds/                         # future
+  nds/core/                    # Nintendo DS adapter (Dust; optional nightly feature)
 frontends/
   core-runner/                 # headless generic runner for core validation
   desktop/                     # winit + egui + Kira desktop frontend
@@ -252,6 +252,7 @@ loading must never silently reset a running game.
 | Core | Backend | Status |
 | --- | --- | --- |
 | `rgss` | Embedded MRI + Rust RGSS engine | Adapter available and headless-tested; desktop runner migration in progress |
+| `nds` | [Dust](https://github.com/kelpsyberry/dust) (GPL-3.0) | Optional `nds` feature; software 2D/3D, stacked screens and touch |
 | `gba` | [RustBoyAdvance-NG](https://github.com/michelhe/rustboyadvance-ng) (MIT) | Adapter available and headless-tested |
 
 The GBA adapter embeds the open-source Normmatt/VBA-M BIOS replacement from

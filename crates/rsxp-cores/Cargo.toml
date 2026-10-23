@@ -8,11 +8,13 @@ description = "Build-time core registry for RSXP frontends"
 publish = false
 
 [features]
-default = ["gba"]
+default = ["gba", "nds"]
 gba = ["dep:rsxp-core-gba"]
+nds = ["dep:rsxp-core-nds"]
 rgss = ["dep:rsxp-core-rgss"]
 
 [dependencies]
+rsxp-core-nds = { path = "../../cores/nds/core", optional = true }
 rsxp-core = { path = "../rsxp-core" }
 rsxp-frontend = { path = "../rsxp-frontend" }
 rsxp-core-gba = { path = "../../cores/gba/core", optional = true }

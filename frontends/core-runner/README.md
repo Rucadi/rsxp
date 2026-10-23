@@ -32,3 +32,19 @@ Useful options:
 This runner is intentionally headless and non-interactive. It is not the
 desktop application; it is a stable way to validate new cores while the
 core-selectable UI is being built.
+
+## Nintendo DS (Dust)
+
+The default `nds` feature adds the [Dust](https://github.com/kelpsyberry/dust)
+core, `.nds` content routing, stacked screens, touch input, stereo audio,
+cartridge saves and save states. Dust requires nightly Rust; existing default
+GBA/RGSS builds remain on stable Rust.
+
+```sh
+cargo run -p rsxp-desktop -- run --game /path/to/game.nds
+cargo run -p rsxp-core-runner -- \
+  --content /path/to/game.nds --frames 120 --output frame.ppm
+```
+
+See [the DS core guide](../../cores/nds/README.md) for system files,
+controls, build compatibility, licensing and limitations.

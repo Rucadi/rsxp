@@ -184,3 +184,19 @@ docker run --rm --user "$(id -u):$(id -g)" --env HOME=/tmp \
   --volume "$PWD":/src --workdir /src \
   rsxp-appimage bash tools/build-appimage.sh /src/artifacts
 ```
+
+## Nintendo DS (Dust)
+
+The default desktop build includes the [Dust](https://github.com/kelpsyberry/dust)
+Nintendo DS core, `.nds` content routing, stacked screens, touch input, stereo
+audio, cartridge saves and save states. Dust requires nightly Rust features;
+the Nix shell enables them for its bundled compiler.
+
+```sh
+cargo run -p rsxp-desktop -- run --game /path/to/game.nds
+cargo run -p rsxp-core-runner -- \
+  --content /path/to/game.nds --frames 120 --output frame.ppm
+```
+
+See [the DS core guide](cores/nds/README.md) for system files,
+controls, build compatibility, licensing and limitations.

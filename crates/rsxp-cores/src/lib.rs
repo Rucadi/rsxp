@@ -14,6 +14,8 @@ pub fn catalog() -> CoreCatalog {
     catalog.register(rsxp_core_rgss::registration());
     #[cfg(feature = "gba")]
     catalog.register(rsxp_core_gba::registration());
+    #[cfg(feature = "nds")]
+    catalog.register(rsxp_core_nds::registration());
     catalog
 }
 
@@ -26,8 +28,26 @@ mod tests {
         let catalog = catalog();
         #[cfg(feature = "gba")]
         assert!(catalog.get("gba").is_some());
+        #[cfg(feature = "nds")]
+        assert!(catalog.get("nds").is_some());
         #[cfg(feature = "rgss")]
         assert!(catalog.get("rgss").is_some());
+    }
+
+    #[test]
+    #[cfg(feature = "nds")]
+    fn nds_content_routes_by_extension() {
+        let path = std::env::temp_dir().join(format!("rsxp-registry-{}.NDS", std::process::id()));
+        std::fs::write(&path, [0u8; 512]).unwrap();
+        assert_eq!(
+            catalog()
+                .route(&rsxp_core::Content::file(&path))
+                .unwrap()
+                .info
+                .id,
+            "nds"
+        );
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

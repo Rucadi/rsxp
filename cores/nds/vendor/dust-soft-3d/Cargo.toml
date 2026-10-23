@@ -1,0 +1,9 @@
+[package]
+name = "dust-soft-3d"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+dust-core = { git = "https://github.com/kelpsyberry/dust", branch = "main" }
+proc-bitfield = { version = "0.5", features = ["nightly"] }

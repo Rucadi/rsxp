@@ -233,14 +233,14 @@ impl SessionPanel {
         }
         ui.add_space(16.0);
         ui.separator();
-        egui::CollapsingHeader::new("Open from path or Game.ini")
+        egui::CollapsingHeader::new("Open from path, Game.ini, or GBA ROM")
             .default_open(self.recent.is_empty())
             .show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.add(
                         egui::TextEdit::singleline(&mut self.source)
                             .desired_width((ui.available_width() - 170.0).max(100.0))
-                            .hint_text("Paste a game folder path…"),
+                            .hint_text("Paste a game folder, Game.ini, or .gba path…"),
                     );
                     if ui
                         .add_enabled(
@@ -253,7 +253,7 @@ impl SessionPanel {
                         self.open = false;
                     }
                     if ui
-                        .add_enabled(!self.busy, egui::Button::new("Browse Game.ini…"))
+                        .add_enabled(!self.busy, egui::Button::new("Browse game file…"))
                         .clicked()
                     {
                         actions.browse_game_file = true;

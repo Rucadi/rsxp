@@ -14,8 +14,7 @@
 //!
 //! ```ignore
 //! let content = Content::directory("/games/example");
-//! let core = registration.create();
-//! let handle = rsxp_frontend::spawn_core(core, content, context)?;
+//! let handle = rsxp_frontend::spawn_core(registration, content, context)?;
 //! // The frontend thread owns presentation; the core thread owns emulation.
 //! let status = handle.join()?;
 //! ```

@@ -24,7 +24,14 @@ crossPkgs.rustPlatform.buildRustPackage {
 
   src = root;
 
-  cargoLock.lockFile = root + "/Cargo.lock";
+  cargoLock = {
+    lockFile = root + "/Cargo.lock";
+    outputHashes = {
+      "arm7tdmi-0.1.0" = "sha256-wRsghc7uRlv+fUh7hpibQ7ajw+3kasEqdHTV+1N2QnI=";
+      "rustboyadvance-core-0.1.0" = "sha256-wRsghc7uRlv+fUh7hpibQ7ajw+3kasEqdHTV+1N2QnI=";
+      "rustboyadvance-utils-0.1.0" = "sha256-wRsghc7uRlv+fUh7hpibQ7ajw+3kasEqdHTV+1N2QnI=";
+    };
+  };
 
   CARGO_BUILD_TARGET = target;
 

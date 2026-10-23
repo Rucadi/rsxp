@@ -55,9 +55,12 @@ RGSS application.
 | --- | --- |
 | `crates/rsxp-core/` | Emulator-core contract: video/audio/input/control/events, no RGSS or frontend dependencies |
 | `crates/rsxp-frontend/` | Generic core catalog, content routing and dedicated core-thread driver |
+| `crates/rsxp-cores/` | Build-time registry; features select which cores a frontend links |
 | `crates/rsxp-rgss/` | The `rsxp` engine package: graphics, GPU compositor, archives, media, Ruby shim and current RGSS workspace UI |
 | `cores/rgss/core/` | RGSS adapter implementing `rsxp_core::Core` |
 | `cores/rgss/ruby/` | MRI embedding and all Magnus bindings (package `rsxp-rgss-ruby`) |
+| `cores/gba/core/` | GBA adapter implementing `rsxp_core::Core` (RustBoyAdvance-NG backend) |
+| `frontends/core-runner/` | Headless generic runner for core validation |
 | `frontends/desktop/` | Desktop binary, dashboard, window, audio, presentation and session transport |
 | `web/` | Browser frontend (separate Cargo workspace) |
 | `mobile/` | iOS/Android host (separate Cargo workspace) |
@@ -310,7 +313,9 @@ separate relay services, not a general HTTP implementation for game scripts.
 | --- | --- |
 | Emulator-core contract | `crates/rsxp-core/` |
 | Core catalog, routing and core thread | `crates/rsxp-frontend/` |
+| Build-time core registry | `crates/rsxp-cores/` |
 | RGSS core adapter | `cores/rgss/core/` |
+| GBA core adapter | `cores/gba/core/` |
 | Public engine modules and compatibility re-exports | `crates/rsxp-rgss/src/lib.rs` |
 | Runtime registries and bridge entry points | `crates/rsxp-rgss/src/engine/mod.rs` |
 | Protocol, assets, input, frame and scene order | `crates/rsxp-rgss/src/engine/{commands,assets,input,frame,scene}.rs` |

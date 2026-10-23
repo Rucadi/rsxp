@@ -6,12 +6,13 @@ change substantially. Expect incomplete behavior and breaking changes; do not
 rely on it for production use or on compatibility with any particular game.
 
 RSXP is being reorganized as a multi-core emulator shell. The first core runs
-RPG Maker RGSS game scripts on a Rust engine; GBA, GB/GBC and DS cores can use
-the same frontend contract without linking MRI, RPG Maker data code or RGSS
-panels. Desktop RGSS execution embeds MRI Ruby through Magnus; the browser runs
-Ruby and the Rust engine in separate WebAssembly modules. The shared engine owns
-graphics resources, input state, archive decoding and frame execution. Game
-logic remains Ruby. See [multi-core architecture](docs/multi-core-architecture.md).
+RPG Maker RGSS game scripts on a Rust engine; a Game Boy Advance core built on
+RustBoyAdvance-NG uses the same contract, and GB/GBC and DS cores can follow
+without linking MRI, RPG Maker data code or RGSS panels. Desktop RGSS execution
+embeds MRI Ruby through Magnus; the browser runs Ruby and the Rust engine in
+separate WebAssembly modules. The shared engine owns graphics resources, input
+state, archive decoding and frame execution. Game logic remains Ruby. See
+[multi-core architecture](docs/multi-core-architecture.md).
 
 Compatibility is incomplete. Selecting RGSS 1, 2 or 3 loads the corresponding
 RPG data definitions and compatibility behavior; it does not guarantee that a
@@ -71,6 +72,27 @@ with a standard Gamepad API mapping; press a controller button to expose it.
 
 The parser does not accept `--fps`, `--fast-forward` or `--uncapped`.
 
+### Running a GBA core
+
+The GBA core can be exercised without the desktop UI through the generic
+headless runner:
+
+```sh
+cargo run -p rsxp-core-runner -- --content /path/to/game.gba --frames 120 \
+  --output /tmp/gba.ppm
+```
+
+The backend is
+[RustBoyAdvance-NG](https://github.com/michelhe/rustboyadvance-ng) (MIT).
+See [cores/gba/README.md](cores/gba/README.md) for BIOS resolution, save
+locations and current limitations. The runner links only the GBA core by
+default; add `--features rgss` to include the RGSS adapter.
+
+Games start directly at the cartridge without the BIOS startup image. The
+embedded open-source BIOS remains available for BIOS services during gameplay.
+Development builds optimize the GBA CPU cores (`opt-level = 3`) even in the dev
+profile; use `--release` for the highest throughput.
+
 The repository also supplies `flake.nix`, `default.nix` and `shell.nix`. The
 flake declares x86-64 and AArch64 Linux. Its package source filter currently
 omits `crates/rsxp-rgss/api/`, although the default desktop build includes files from that
@@ -112,6 +134,7 @@ cargo test -p rsxp --lib --no-default-features
 cargo test -p rsxp --lib
 cargo test -p rsxp-desktop --test cli
 cargo test -p rsxp-core -p rsxp-frontend
+cargo test -p rsxp-core-gba -p rsxp-cores
 nix-shell --run 'cargo test -p rsxp-core-rgss --test headless'
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings

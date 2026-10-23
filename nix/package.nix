@@ -24,7 +24,16 @@ pkgs.rustPlatform.buildRustPackage {
   version = "0.1.0";
   src = root;
 
-  cargoLock.lockFile = root + "/Cargo.lock";
+  cargoLock = {
+    lockFile = root + "/Cargo.lock";
+    # Same git repository as the three RustBoyAdvance-NG workspace crates.
+    # Pinned in Cargo.lock and Cargo.toml.
+    outputHashes = {
+      "arm7tdmi-0.1.0" = "sha256-wRsghc7uRlv+fUh7hpibQ7ajw+3kasEqdHTV+1N2QnI=";
+      "rustboyadvance-core-0.1.0" = "sha256-wRsghc7uRlv+fUh7hpibQ7ajw+3kasEqdHTV+1N2QnI=";
+      "rustboyadvance-utils-0.1.0" = "sha256-wRsghc7uRlv+fUh7hpibQ7ajw+3kasEqdHTV+1N2QnI=";
+    };
+  };
   cargoBuildFlags = [
     "-p"
     "rsxp-desktop"

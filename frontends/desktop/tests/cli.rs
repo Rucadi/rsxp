@@ -21,7 +21,7 @@
 use std::{
     fs,
     path::PathBuf,
-    process::{Command, Output},
+    process::{Command, Output, Stdio},
     sync::atomic::{AtomicUsize, Ordering},
 };
 
@@ -881,6 +881,113 @@ fn compressed_script_bundles_and_encrypted_games() {
 #[test]
 fn isolated_runner_streams_frames_input_and_inspector_replies() {
     isolated_runner_transport("software");
+}
+
+#[test]
+fn isolated_runner_streams_gba_frames_and_input() {
+    use std::{
+        io::{Read, Write},
+        net::{TcpListener, TcpStream},
+        time::{Duration, Instant},
+    };
+    fn read(stream: &mut TcpStream) -> serde_json::Value {
+        let mut length = [0; 4];
+        stream.read_exact(&mut length).unwrap();
+        let length = u32::from_le_bytes(length) as usize;
+        let mut bytes = vec![0; length];
+        stream.read_exact(&mut bytes).unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+    fn write(stream: &mut TcpStream, value: serde_json::Value) {
+        let bytes = serde_json::to_vec(&value).unwrap();
+        stream
+            .write_all(&(bytes.len() as u32).to_le_bytes())
+            .unwrap();
+        stream.write_all(&bytes).unwrap();
+    }
+    let dir = TempDir::new();
+    let rom = dir.0.join("test.gba");
+    let program: [u32; 8] = [
+        0xE3A0_0003,
+        0xE380_0B01,
+        0xE3A0_1301,
+        0xE581_0000,
+        0xE3A0_2406,
+        0xE3A0_301F,
+        0xE1C2_30B0,
+        0xEAFF_FFFE,
+    ];
+    let mut bytes = vec![0u8; 0x200];
+    for (index, instruction) in program.iter().enumerate() {
+        bytes[index * 4..index * 4 + 4].copy_from_slice(&instruction.to_le_bytes());
+    }
+    fs::write(&rom, bytes).unwrap();
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let address = listener.local_addr().unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+        .args(["run", "--game", rom.to_str().unwrap()])
+        .env("RSXP_SESSION_ADDR", address.to_string())
+        .env("RSXP_SESSION_TOKEN", "gba-session-token")
+        .env("RSXP_API", "0")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let start = Instant::now();
+    let mut data = loop {
+        match listener.accept() {
+            Ok((stream, _)) => break stream,
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                assert!(start.elapsed() < Duration::from_secs(15));
+                assert!(child.try_wait().unwrap().is_none());
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(error) => panic!("{error}"),
+        }
+    };
+    let mut control = loop {
+        match listener.accept() {
+            Ok((stream, _)) => break stream,
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                assert!(start.elapsed() < Duration::from_secs(15));
+                assert!(child.try_wait().unwrap().is_none());
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(error) => panic!("{error}"),
+        }
+    };
+    data.set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    control
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    assert_eq!(read(&mut data)["token"], "gba-session-token");
+    assert_eq!(read(&mut control)["token"], "gba-session-token");
+    let mut frames = 0;
+    let mut polls = 0;
+    while frames < 4 {
+        let header = read(&mut data);
+        if header["poll"] == true {
+            polls += 1;
+            write(&mut control, serde_json::json!({"keys":[40]}));
+        } else {
+            frames += 1;
+            assert_eq!(header["width"], 240);
+            assert_eq!(header["height"], 160);
+            let mut pixels = vec![0; 240 * 160 * 4];
+            data.read_exact(&mut pixels).unwrap();
+        }
+    }
+    assert!(polls >= 1);
+    drop(data);
+    drop(control);
+    let result = child.wait_with_output().unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
 }
 
 #[cfg(feature = "gpu")]

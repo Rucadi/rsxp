@@ -1,0 +1,21 @@
+[package]
+name = "rsxp-core-gba"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "GPL-2.0-or-later"
+description = "Game Boy Advance core adapter for RSXP (RustBoyAdvance-NG backend)"
+publish = false
+
+[lib]
+name = "rsxp_core_gba"
+path = "src/lib.rs"
+
+[dependencies]
+rsxp-core = { path = "../../../crates/rsxp-core" }
+# RustBoyAdvance-NG is MIT licensed and exposes its emulator as a library
+# (rustboyadvance-core). Pin the revision so builds are reproducible; the
+# workspace's Cargo.lock also records it.
+rustboyadvance-core = { git = "https://github.com/michelhe/rustboyadvance-ng", rev = "1d7ff23a6adb42d803ebd393c3d27d94e4fea15e", default-features = false }
+rustboyadvance-utils = { git = "https://github.com/michelhe/rustboyadvance-ng", rev = "1d7ff23a6adb42d803ebd393c3d27d94e4fea15e", default-features = false }
+bytemuck = "1"

@@ -9,6 +9,11 @@ pub enum PixelFormat {
     Rgba8,
     /// 4 bytes per pixel, blue in the lowest addressed byte.
     Bgra8,
+    /// 4 bytes per pixel, blue in the lowest addressed byte. The fourth byte
+    /// is padding and must be treated as opaque.
+    Bgrx8,
+    /// 3 bytes per pixel in red, green, blue order.
+    Rgb24,
     /// 2 bytes per pixel, native little-endian RGB565.
     Rgb565,
     /// One byte per pixel plus a palette supplied by the core separately.
@@ -18,7 +23,8 @@ pub enum PixelFormat {
 impl PixelFormat {
     pub const fn bytes_per_pixel(self) -> usize {
         match self {
-            Self::Rgba8 | Self::Bgra8 => 4,
+            Self::Rgba8 | Self::Bgra8 | Self::Bgrx8 => 4,
+            Self::Rgb24 => 3,
             Self::Rgb565 => 2,
             Self::Indexed8 => 1,
         }
@@ -61,6 +67,14 @@ impl<'a> VideoFrame<'a> {
 
     pub fn bgra8(width: u32, height: u32, stride: usize, pixels: &'a [u8]) -> Self {
         Self::new(width, height, stride, PixelFormat::Bgra8, pixels)
+    }
+
+    pub fn bgrx8(width: u32, height: u32, stride: usize, pixels: &'a [u8]) -> Self {
+        Self::new(width, height, stride, PixelFormat::Bgrx8, pixels)
+    }
+
+    pub fn rgb24(width: u32, height: u32, stride: usize, pixels: &'a [u8]) -> Self {
+        Self::new(width, height, stride, PixelFormat::Rgb24, pixels)
     }
 
     pub fn rgb565(width: u32, height: u32, stride: usize, pixels: &'a [u8]) -> Self {

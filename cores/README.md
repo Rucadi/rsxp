@@ -9,7 +9,8 @@ cores/
   rgss/
     core/     # RGSS adapter implementing the core contract
     ruby/     # embedded MRI and Magnus bindings
-  gba/        # future
+  gba/
+    core/     # GBA adapter using RustBoyAdvance-NG (MIT)
   gb/         # future
   nds/        # future
 ```

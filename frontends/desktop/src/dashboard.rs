@@ -48,6 +48,7 @@ use serde_json::{json, Value};
 #[cfg(not(windows))]
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::{
+    path::PathBuf,
     process::{Child, Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -622,10 +623,18 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
             frame = Bitmap::new(640, 480)?;
             gpu_view = false;
             logical_size = (640, 480);
-            let root = args
+            let game_path = args
                 .windows(2)
                 .find(|a| a[0] == "--game")
-                .and_then(|a| std::fs::canonicalize(&a[1]).ok());
+                .map(|a| PathBuf::from(&a[1]));
+            let gba = game_path.as_ref().filter(|path| {
+                path.extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("gba"))
+            });
+            let root = game_path
+                .as_ref()
+                .filter(|_| gba.is_none())
+                .and_then(|path| std::fs::canonicalize(path).ok());
             if let Some(root) = &root {
                 if let Err(error) = rsxp::runtime_patch::load_user_patches(root) {
                     eprintln!("Could not load runtime patches: {error}");
@@ -646,7 +655,20 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
                     panel.paused = false;
                     panel.status = "Starting…".into();
                     panel.error = None;
-                    if let Some(root) = &root {
+                    if let Some(rom) = gba {
+                        let title = rom
+                            .file_stem()
+                            .map(|stem| stem.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| "GBA game".into());
+                        panel.title = title.clone();
+                        panel.source = rom.to_string_lossy().into_owned();
+                        panel.save_directory = super::library::data_directory(&title)
+                            .map(|path| path.to_string_lossy().into_owned())
+                            .unwrap_or_default();
+                        if let Err(e) = super::library::remember(&mut panel.recent, rom) {
+                            panel.error = Some(format!("Could not remember game: {e}"));
+                        }
+                    } else if let Some(root) = &root {
                         panel.title = super::library::title(root);
                         panel.source = root.to_string_lossy().into_owned();
                         panel.save_directory = super::library::save_directory(&panel.title)
@@ -795,32 +817,34 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
         let actions = std::mem::take(&mut display.workspace_mut().session_actions);
         if actions.browse {
             if let Some(path) = rfd::FileDialog::new()
-                .set_title("Choose an RPG Maker game folder")
+                .set_title("Choose an RPG Maker game folder or GBA ROM")
                 .pick_folder()
             {
                 let panel = display.workspace_mut().session.as_mut().unwrap();
                 panel.source = path.to_string_lossy().into_owned();
-                if let Ok(root) = super::library::discover(&panel.source) {
-                    panel.source = root.to_string_lossy().into_owned();
-                    launch = Some(vec!["--game".into(), panel.source.clone()]);
-                    panel.open = false;
-                } else {
-                    panel.error =
-                        Some("That folder does not contain a supported RPG Maker game.".into());
+                match super::library::discover(&panel.source) {
+                    Ok(source) => {
+                        panel.source = source.path().to_string_lossy().into_owned();
+                        launch = Some(vec!["--game".into(), panel.source.clone()]);
+                        panel.open = false;
+                    }
+                    Err(_) => {
+                        panel.error = Some("That folder does not contain a supported game.".into());
+                    }
                 }
             }
         }
         if actions.browse_game_file {
             if let Some(path) = rfd::FileDialog::new()
-                .set_title("Choose Game.ini")
-                .add_filter("RPG Maker project", &["ini"])
+                .set_title("Choose Game.ini or a GBA ROM")
+                .add_filter("Games", &["ini", "gba"])
                 .pick_file()
             {
                 let panel = display.workspace_mut().session.as_mut().unwrap();
                 panel.source = path.to_string_lossy().into_owned();
                 match super::library::discover(&panel.source) {
-                    Ok(root) => {
-                        panel.source = root.to_string_lossy().into_owned();
+                    Ok(source) => {
+                        panel.source = source.path().to_string_lossy().into_owned();
                         launch = Some(vec!["--game".into(), panel.source.clone()]);
                         panel.open = false;
                     }
@@ -843,8 +867,11 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
         }
         if let Some(path) = actions.open {
             match super::library::discover(&path) {
-                Ok(root) if save_task.is_none() => {
-                    launch = Some(vec!["--game".into(), root.to_string_lossy().into_owned()])
+                Ok(source) if save_task.is_none() => {
+                    launch = Some(vec![
+                        "--game".into(),
+                        source.path().to_string_lossy().into_owned(),
+                    ])
                 }
                 Ok(_) => {}
                 Err(error) => display.workspace_mut().session.as_mut().unwrap().error = Some(error),

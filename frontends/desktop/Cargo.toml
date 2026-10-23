@@ -8,6 +8,9 @@ publish = false
 
 [dependencies]
 rsxp = { path = "../../crates/rsxp-rgss", features = ["gpu", "ui", "game-api", "portable-media"] }
+rsxp-core = { path = "../../crates/rsxp-core" }
+rsxp-frontend = { path = "../../crates/rsxp-frontend" }
+rsxp-core-gba = { path = "../../cores/gba/core" }
 ruby_rgss_core = { package = "rsxp-rgss-ruby", path = "../../cores/rgss/ruby" }
 getrandom = "0.4.3"
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "vulkan", "gles", "metal", "wgsl"] }
@@ -19,6 +22,7 @@ egui-winit = { version = "0.37.0", default-features = false, features = ["waylan
 fontdue = "0.9"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp"] }
 kira = { version = "0.12.5", default-features = false, features = ["cpal", "flac", "mp3", "ogg", "pcm", "vorbis", "wav"] }
+cpal = "0.18"
 winit = { version = "0.30.13", features = ["rwh_06", "wayland", "x11"] }
 rfd = "0.17.2"
 serde_json = "1"

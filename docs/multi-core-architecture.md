@@ -33,6 +33,7 @@ Cargo.toml                     # virtual workspace
 crates/
   rsxp-core/                   # core contract: no RGSS, MRI, wgpu or egui
   rsxp-frontend/               # core registry, content routing, session driver
+  rsxp-cores/                  # build-time registry (feature-selected cores)
   rsxp-rgss/                   # RGSS engine + Ruby shim + RGSS UI (for now)
     src/                       # engine, graphics, gpu, data, media, Ruby shim
     api/                       # game bridge / MCP source
@@ -42,10 +43,12 @@ cores/
   rgss/
     core/                      # RGSS adapter implementing rsxp-core
     ruby/                      # embedded MRI and Magnus bindings
-  gba/                         # future
+  gba/
+    core/                      # GBA adapter (RustBoyAdvance-NG backend)
   gb/                          # future
   nds/                         # future
 frontends/
+  core-runner/                 # headless generic runner for core validation
   desktop/                     # winit + egui + Kira desktop frontend
   web/                         # wasm frontend (separate workspace today)
   mobile/                      # iOS/Android host (separate workspace today)
@@ -244,9 +247,27 @@ loading must never silently reset a running game.
   `rgss`.
 - Add the core selector to the desktop library UI.
 
+## Implemented cores
+
+| Core | Backend | Status |
+| --- | --- | --- |
+| `rgss` | Embedded MRI + Rust RGSS engine | Adapter available and headless-tested; desktop runner migration in progress |
+| `gba` | [RustBoyAdvance-NG](https://github.com/michelhe/rustboyadvance-ng) (MIT) | Adapter available and headless-tested |
+
+The GBA adapter embeds the open-source Normmatt/VBA-M BIOS replacement from
+[ReGBA](https://github.com/Nebuleon/ReGBA/blob/master/bios/gba_bios.bin), so no
+external BIOS is required. `RSXP_GBA_BIOS` or a `gba_bios.bin`/`bios.bin`
+beside the ROM or in the save directory can override it. The adapter runs the
+BIOS boot without presenting frames, which skips the startup image while
+preserving BIOS initialization and SWI services.
+
+GBA battery saves are written through the backend to `<rom-stem>.sav` in the
+frontend save directory. Save states are emitted as opaque blobs through
+`CoreEvent::SaveState`.
+
 ### Phase 3 — first non-RGSS core
 
-- Add `cores/gba` (or GB first, which is simpler) behind the same contract.
+- Added `cores/gba` using RustBoyAdvance-NG.
 - Validate the performance rules with a frame-time trace and allocation checks.
 - Add a headless core test harness that asserts deterministic frame hashes,
   audio sample counts and save-state round trips.

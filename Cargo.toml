@@ -1,10 +1,13 @@
 [workspace]
 members = [
     "crates/rsxp-core",
+    "crates/rsxp-cores",
     "crates/rsxp-frontend",
     "crates/rsxp-rgss",
+    "cores/gba/core",
     "cores/rgss/core",
     "cores/rgss/ruby",
+    "frontends/core-runner",
     "frontends/desktop",
 ]
 default-members = ["frontends/desktop"]
@@ -22,4 +25,21 @@ codegen-units = 1
 opt-level = 3
 
 [profile.dev.package.rsxp]
+opt-level = 2
+
+# GBA cores are interpreted CPU emulators; unoptimized builds run below real
+# time. Keep development builds responsive without changing release settings.
+[profile.dev.package.rsxp-core-gba]
+opt-level = 3
+
+[profile.dev.package.rustboyadvance-core]
+opt-level = 3
+
+[profile.dev.package.arm7tdmi]
+opt-level = 3
+
+[profile.dev.package.rustboyadvance-utils]
+opt-level = 3
+
+[profile.dev.package.rsxp-desktop]
 opt-level = 2

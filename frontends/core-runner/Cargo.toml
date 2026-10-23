@@ -1,0 +1,22 @@
+[package]
+name = "rsxp-core-runner"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "GPL-2.0-or-later"
+description = "Headless runner for any RSXP core"
+publish = false
+
+[features]
+default = ["gba"]
+gba = ["rsxp-cores/gba"]
+rgss = ["rsxp-cores/rgss"]
+
+[dependencies]
+rsxp-core = { path = "../../crates/rsxp-core" }
+rsxp-frontend = { path = "../../crates/rsxp-frontend" }
+rsxp-cores = { path = "../../crates/rsxp-cores", default-features = false }
+
+[[bin]]
+name = "rsxp-core-runner"
+path = "src/main.rs"

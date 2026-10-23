@@ -59,6 +59,12 @@ pub fn run(args: &[String]) -> Result<u8, Box<dyn Error>> {
         output,
         version,
     } = options::RunOptions::parse(args)?;
+    if let Some(rom) = game.as_ref().or(script.as_ref()).filter(|path| {
+        path.extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("gba"))
+    }) {
+        return crate::gba::run(rom.clone(), headless, frames, output).map_err(Into::into);
+    }
     // Remember where the command was launched so a reset can restart from there
     // (the game directory becomes the working directory below).
     let launch_dir = std::env::current_dir()?;

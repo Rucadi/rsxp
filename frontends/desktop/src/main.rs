@@ -33,6 +33,7 @@ mod bundled_runtime;
 mod controller;
 #[cfg(feature = "gpu")]
 mod dashboard;
+mod gba;
 #[cfg(feature = "gpu")]
 mod gpu_present;
 mod host;

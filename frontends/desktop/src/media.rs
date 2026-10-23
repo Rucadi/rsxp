@@ -61,7 +61,9 @@ pub fn text(
     if !(1..=512).contains(&size) {
         return Err("font size must be 1..512".into());
     }
-    let bytes = font_bytes.unwrap_or(include_bytes!("../../assets/liberation.ttf"));
+    let bytes = font_bytes.unwrap_or(include_bytes!(
+        "../../../crates/rsxp-rgss/assets/liberation.ttf"
+    ));
     let font = font(bytes)?;
     let scale = size as f32;
     // Anchor the text box at the line ascent and include descenders, matching

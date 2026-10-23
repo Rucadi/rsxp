@@ -73,7 +73,7 @@ node tools/benchmark-web.mjs /path/to/before/pkg /path/to/before/rgss.rb
 
 cargo test -p rsxp --lib --no-default-features
 cargo test -p rsxp-desktop --test cli
-RSXP_WEB_FIXTURE=src/testdata/rgss_sync_lifecycle.rb node tools/benchmark-web.mjs
+RSXP_WEB_FIXTURE=crates/rsxp-rgss/testdata/rgss_sync_lifecycle.rb node tools/benchmark-web.mjs
 npm --prefix web test
 ```
 

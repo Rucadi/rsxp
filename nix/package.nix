@@ -61,7 +61,7 @@ pkgs.rustPlatform.buildRustPackage {
     $out/bin/rsxp --version
     $out/bin/rsxp --headless --frames 2 --output smoke.ppm
     test -s smoke.ppm
-    $out/bin/rsxp run --script ${root}/src/testdata/rgss_smoke.rb --headless
+    $out/bin/rsxp run --script ${root}/crates/rsxp-rgss/testdata/rgss_smoke.rb --headless
     runHook postInstallCheck
   '';
 

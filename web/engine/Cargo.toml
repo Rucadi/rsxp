@@ -11,7 +11,7 @@ name = "rsxp_web"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-rsxp = { path = "../..", default-features = false, features = ["ui", "game-api", "portable-media"] }
+rsxp = { path = "../../crates/rsxp-rgss", default-features = false, features = ["ui", "game-api", "portable-media"] }
 # The browser workspace renders through wgpu's WebGL2 backend, which the browser
 # software-emulates when the GPU is disabled, so no GPU is required.
 wgpu = { version = "30.0.1", default-features = false, features = ["webgl", "webgpu", "wgsl", "std"] }

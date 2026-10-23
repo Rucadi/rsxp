@@ -5,10 +5,13 @@ architecture, features and compatibility are still being explored and may
 change substantially. Expect incomplete behavior and breaking changes; do not
 rely on it for production use or on compatibility with any particular game.
 
-RSXP runs RPG Maker RGSS game scripts on a Rust engine. Desktop execution embeds
-MRI Ruby through Magnus; the browser runs Ruby and the Rust engine in separate
-WebAssembly modules. The shared engine owns graphics resources, input state,
-archive decoding and frame execution. Game logic remains Ruby.
+RSXP is being reorganized as a multi-core emulator shell. The first core runs
+RPG Maker RGSS game scripts on a Rust engine; GBA, GB/GBC and DS cores can use
+the same frontend contract without linking MRI, RPG Maker data code or RGSS
+panels. Desktop RGSS execution embeds MRI Ruby through Magnus; the browser runs
+Ruby and the Rust engine in separate WebAssembly modules. The shared engine owns
+graphics resources, input state, archive decoding and frame execution. Game
+logic remains Ruby. See [multi-core architecture](docs/multi-core-architecture.md).
 
 Compatibility is incomplete. Selecting RGSS 1, 2 or 3 loads the corresponding
 RPG data definitions and compatibility behavior; it does not guarantee that a
@@ -16,8 +19,8 @@ game or its plugins will run. See [runtime behavior and compatibility](docs/rust
 
 ## Build and launch
 
-The root package requires Rust 1.95 or newer. Default Cargo features are
-`desktop` and `gpu`. Desktop builds need shared MRI Ruby and development headers,
+The workspace requires Rust 1.95 or newer. The desktop package default
+features are `gpu` and its own frontend; the engine enables GPU composition. Desktop builds need shared MRI Ruby and development headers,
 a C compiler, libclang and the platform audio/window dependencies. Ruby and its
 standard libraries, including Zlib, must be available. The Nix development shell
 provides the native build tools and dependencies.
@@ -41,7 +44,7 @@ Interactive `run` starts a dashboard and an isolated game process. Headless
 execution runs the Ruby runtime directly and uses silent audio:
 
 ```sh
-cargo run --release -p rsxp-desktop --bin rsxp -- run --script src/testdata/rgss_demo.rb \
+cargo run --release -p rsxp-desktop --bin rsxp -- run --script crates/rsxp-rgss/testdata/rgss_demo.rb \
   --headless --frames 60 --output /tmp/rgss.ppm
 ```
 
@@ -70,7 +73,7 @@ The parser does not accept `--fps`, `--fast-forward` or `--uncapped`.
 
 The repository also supplies `flake.nix`, `default.nix` and `shell.nix`. The
 flake declares x86-64 and AArch64 Linux. Its package source filter currently
-omits `api/`, although the default desktop build includes files from that
+omits `crates/rsxp-rgss/api/`, although the default desktop build includes files from that
 directory; use the development-shell Cargo workflow above until packaging is
 updated. Platform declarations alone are not evidence of successful builds.
 
@@ -92,7 +95,9 @@ compatibility limits.
   and desktop transport.
 - [Browser frontend](web/README.md): build, assets, cooperative Ruby execution
   and browser limitations.
-- [Live game API](api/README.md): HTTP inspection/control and the MCP executable.
+- [Live game API](crates/rsxp-rgss/api/README.md): HTTP inspection/control and the MCP executable.
+- [Multi-core architecture](docs/multi-core-architecture.md): core contract,
+  content routing, performance rules and the path for GBA/GB/DS cores.
 
 The performance documents describe particular workloads and measurements,
 not expected FPS for every game: [renderer](docs/rsxp-performance.md),
@@ -106,13 +111,16 @@ not expected FPS for every game: [renderer](docs/rsxp-performance.md),
 cargo test -p rsxp --lib --no-default-features
 cargo test -p rsxp --lib
 cargo test -p rsxp-desktop --test cli
+cargo test -p rsxp-core -p rsxp-frontend
+nix-shell --run 'cargo test -p rsxp-core-rgss --test headless'
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 npm --prefix web test
 ```
 
 The first command exercises the portable CPU core on the host; it does not
-cross-compile WebAssembly. GPU-dependent checks are ignored by default and
+cross-compile WebAssembly. The RGSS adapter test needs MRI and therefore runs
+inside the development shell. GPU-dependent checks are ignored by default and
 require an adapter when explicitly enabled. Some game-specific integration
 checks are also ignored. Build the browser with `cargo xtask web`.
 

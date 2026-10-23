@@ -16,7 +16,7 @@ this is not a copy of its OpenGL rendering implementation.
 
 ## Native ownership and draw ordering
 
-`src/graphics/tilemap.rs` owns the atlas and geometry:
+`crates/rsxp-rgss/src/graphics/tilemap.rs` owns the atlas and geometry:
 
 - Cells are keyed by source bitmap ID and source rectangle. Multiple tile
   instances share one packed GPU atlas cell. Autotile frame selection refers

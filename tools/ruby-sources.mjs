@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
-const declarations = readFileSync(resolve(root, 'src/ruby.rs'), 'utf8');
+const declarations = readFileSync(resolve(root, 'crates/rsxp-rgss/src/ruby.rs'), 'utf8');
 
 export function rubySource(name) {
   const match = declarations.match(new RegExp(`pub const ${name}: &str = concat!\\(([\\s\\S]*?)\\);`));

@@ -173,7 +173,7 @@ jobs:
         run: |
           binary="target/$BUILD_TARGET/release/rsxp$EXE_SUFFIX"
           "$binary" --version
-          "$binary" run --script src/testdata/rgss_smoke.rb --headless
+          "$binary" run --script crates/rsxp-rgss/testdata/rgss_smoke.rb --headless
       - name: Bundle Ruby and native dependencies
         env:
           BUILD_TARGET: ${{ matrix.target }}

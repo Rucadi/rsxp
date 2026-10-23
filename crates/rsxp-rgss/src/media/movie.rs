@@ -269,7 +269,7 @@ mod tests {
         // ffmpeg -f lavfi -i testsrc=size=32x32:rate=10:duration=1 \
         //   -pix_fmt yuv420p -c:v libtheora -q:v 5 -page_duration 1000000 \
         //   -an movie_timing.ogv
-        let bytes = include_bytes!("../testdata/movie_timing.ogv").to_vec();
+        let bytes = include_bytes!("../../testdata/movie_timing.ogv").to_vec();
         let mut packets = PacketReader::new(Cursor::new(bytes.clone()));
         let mut shared_page_frames = 0;
         while let Some(packet) = packets.read_packet().unwrap() {
@@ -304,7 +304,7 @@ mod tests {
         // Same generation as above, but testsrc2 and default page duration:
         // at this size the encoder omits some unchanged frames.
         let mut movie =
-            Movie::open(include_bytes!("../testdata/movie_sparse.ogv").to_vec()).unwrap();
+            Movie::open(include_bytes!("../../testdata/movie_sparse.ogv").to_vec()).unwrap();
         movie.frame_at(0.0).unwrap();
         assert!((movie.pending.as_ref().unwrap().0 - 0.2).abs() < 1e-9);
         movie.frame_at(0.15).unwrap();

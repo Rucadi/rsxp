@@ -1004,7 +1004,7 @@ impl Workspace {
 mod tests {
     use super::*;
     fn fixture() -> Value {
-        serde_json::from_str(include_str!("../testdata/registry_dex.json")).unwrap()
+        serde_json::from_str(include_str!("../../testdata/registry_dex.json")).unwrap()
     }
     #[test]
     fn move_filters_combine_and_preserve_zero_and_missing_values() {

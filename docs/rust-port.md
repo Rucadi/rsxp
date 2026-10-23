@@ -6,12 +6,12 @@ specification. See the [README](../README.md) for launch commands and
 
 ## Game loading
 
-`desktop/runtime/options.rs` accepts exactly one of `--script` and `--game`.
+`frontends/desktop/src/runtime/options.rs` accepts exactly one of `--script` and `--game`.
 Script mode canonicalizes the script and uses its parent as the working directory;
 game mode uses the selected directory. Relative capture output paths are resolved
 before that directory change.
 
-`desktop/runtime/game.rs` reads `Title` and `Scripts` from Game.ini. `--rgss 1|2|3`
+`frontends/desktop/src/runtime/game.rs` reads `Title` and `Scripts` from Game.ini. `--rgss 1|2|3`
 overrides inference; otherwise the configured script extension, standard archive
 names and standard script files select the version, falling back to RGSS1.
 Default bundles are `Data/Scripts.rxdata`, `.rvdata` and `.rvdata2`. Recognized
@@ -19,7 +19,7 @@ Default bundles are `Data/Scripts.rxdata`, `.rvdata` and `.rvdata2`. Recognized
 Engine asset lookup supports loose files, archives, normalized separators and
 ASCII case-insensitive resolution.
 
-`src/ruby/` supplies the Ruby API and script loader, assembled at compile time
+`crates/rsxp-rgss/src/ruby/` supplies the Ruby API and script loader, assembled at compile time
 as `rsxp::ruby::RGSS_SOURCE`. Bundles contain Marshal
 arrays of `[id, name, zlib_source]`; sources are decoded and evaluated in order
 in TOPLEVEL_BINDING, with decoded text retained in `$RGSS_SCRIPTS` slot 3.
@@ -35,8 +35,8 @@ forwarding and in-memory repairs of redundant plugin self-inheritance.
 
 ## Implemented API areas
 
-The definitions in `src/ruby/`, desktop `src/ruby/desktop/bindings/`, and operations in
-`src/engine/commands.rs` are the authoritative API surface. This table is an
+The definitions in `crates/rsxp-rgss/src/ruby/`, `cores/rgss/ruby/src/bindings/`, and operations in
+`crates/rsxp-rgss/src/engine/commands.rs` are the authoritative API surface. This table is an
 overview, not a promise that every original RGSS method is supported.
 
 | Area | Implemented behavior |
@@ -86,7 +86,7 @@ input with physical scancodes:
 
 ```sh
 RSXP_INPUT=60:40:3 cargo run --release -p rsxp-desktop --bin rsxp -- run \
-  --script src/testdata/rgss_demo.rb --headless --frames 90
+  --script crates/rsxp-rgss/testdata/rgss_demo.rb --headless --frames 90
 ```
 
 Each comma-separated `FRAME:SCANCODE[:HOLD]` entry presses a key for HOLD updates
@@ -112,7 +112,7 @@ execution. These are runtime controls, not `--fps`/`--uncapped` CLI arguments.
 | `RSXP_NATIVE_TILEMAP=0` | Disable native tile sprite optimization |
 | `RSXP_SCENE_CACHE=0` | Disable retained scene ordering |
 
-Runtime patches are cataloged in `src/patches/mod.rs`, with Ruby bodies beside
+Runtime patches are cataloged in `crates/rsxp-rgss/src/patches/mod.rs`, with Ruby bodies beside
 it. The engine tracks toggles/values; the Ruby shim fetches a newly enabled
 patch, evaluates it and calls its apply/revert/value callbacks. The built-in
 `map_panoramic` patch targets Essentials map rendering and stays inert when its
@@ -125,7 +125,7 @@ The browser uses a separate Ruby WASM module, a serialized bridge and a Fiber
 scheduler. Its filesystem, audio, save persistence and thread/network shims have
 additional constraints; see [browser documentation](../web/README.md).
 
-`src/tests/cli.rs` exercises embedded Ruby, all three RGSS modes, rendering,
+`frontends/desktop/tests/cli.rs` exercises embedded Ruby, all three RGSS modes, rendering,
 Table GC/Marshal, scripted input, failures/exit status, frame limits, compressed
 bundles, encrypted games and isolated runner transport. Unit tests cover core
 rendering/input/data operations. GPU checks and some local-game checks are

@@ -1,0 +1,15 @@
+[package]
+name = "rsxp-rgss-ruby"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "GPL-2.0-or-later"
+description = "Embedded Ruby VM and RGSS-native bindings for the RGSS core"
+
+[lib]
+name = "ruby_rgss_core"
+path = "src/lib.rs"
+
+[dependencies]
+magnus = { version = "0.9.2", default-features = false, features = ["embed"] }
+rsxp = { path = "../../../crates/rsxp-rgss", default-features = false, features = ["game-api"] }

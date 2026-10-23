@@ -108,7 +108,7 @@ terminal forwarding preserves the original bytes.
   has no direct Ruby, filesystem, runtime-setting, or transport operations.
   `workspace_services::LocalServices` adapts the existing runtime services.
   Game asset decoding uses a bounded background queue.
-- Each panel lives in its own file under `src/ui/`. Game-specific inspectors are
+- Each panel lives in its own file under `crates/rsxp-rgss/src/ui/`. Game-specific inspectors are
   kept separate from the library, session controls, saves, and game view.
 
 The browser keeps its existing cooperative Ruby/WASM execution and loader. It

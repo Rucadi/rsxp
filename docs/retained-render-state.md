@@ -14,7 +14,7 @@ their existing Ruby validation/copy behavior. Desktop observers notify a native
 dirty-resource registry when those
 properties change; only dirty objects resolve and submit a new snapshot.
 
-`src/ruby/desktop/bindings/retained.rs` stores IDs, dirty sets, and resource dependencies. It
+`cores/rgss/ruby/src/bindings/retained.rs` stores IDs, dirty sets, and resource dependencies. It
 stores no Ruby `Value`s or strong Ruby object references. A mutex shares change
 notifications across Ruby threads. Ruby conversions and property access happen
 outside its lock and outside engine borrows. `retained.rb` supplies the API
@@ -43,7 +43,7 @@ the resource to polling.
 
 ## Retained maps
 
-`src/engine/retained_map.rs` selects visible cells using native `Table` storage.
+`crates/rsxp-rgss/src/engine/retained_map.rs` selects visible cells using native `Table` storage.
 The desktop binding supplies map/table identity, table revision, dimensions and
 camera tile offsets. An unchanged input returns without traversing the grid.
 Changed inputs resolve the grid in Rust and return only changed cells to Ruby.
@@ -61,7 +61,7 @@ priority helpers, preserving terrain/bridge/reflection and resource behavior.
 It retains animated-tile membership rather than finding animated tiles through
 a full Ruby map traversal every frame.
 
-`src/engine/map_chunks.rs` caches 16×16×3 tile-ID chunks in world coordinates.
+`crates/rsxp-rgss/src/engine/map_chunks.rs` caches 16×16×3 tile-ID chunks in world coordinates.
 It prefetches a 16-tile margin around the viewport, including nearby connected
 maps. Hidden chunks remain cached and are reused when revisited. The default
 budget is 128 chunks (192 KiB of tile-ID payload, plus bookkeeping); least
@@ -72,7 +72,7 @@ texture for every hidden tile. A Table revision validates cached chunk contents;
 only chunks whose cells changed replace their data. Hidden stale chunks are
 validated before reuse.
 
-`src/engine/world_map.rs` retains world placements for compatible tile sprites
+`crates/rsxp-rgss/src/engine/world_map.rs` retains world placements for compatible tile sprites
 and applies one shared camera. Ordinary pixel scrolling updates this camera
 without walking the Ruby sprite pool or rewriting every tile's x/y/z. Tile
 boundaries bind only newly exposed cells. Ruby's public x/y/z getters resolve

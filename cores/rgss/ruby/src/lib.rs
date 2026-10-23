@@ -12,13 +12,25 @@ mod bridge;
 /// An initialized MRI VM with all RGSS native bindings and scripts installed.
 pub struct RubyCore {
     ruby: Cleanup,
-    startup_status: Result<i64, String>,
+    startup_status: Option<Result<i64, String>>,
 }
 
 impl RubyCore {
     /// Create an RGSS VM, install bindings, then evaluate the embedded RGSS core.
     pub fn new() -> Result<Self, String> {
-        // SAFETY: one VM is initialized on the desktop main thread per process.
+        let mut core = Self::prepare()?;
+        core.start()?;
+        Ok(core)
+    }
+
+    /// Initialize MRI and install bindings without starting the game scripts.
+    ///
+    /// Core adapters use this so content loading and the actual game loop can
+    /// happen in separate `Core::load` and `Core::run` phases.
+    pub fn prepare() -> Result<Self, String> {
+        // SAFETY: one VM is initialized per process. The caller must not create
+        // concurrent Ruby VMs; the desktop runner and RGSS core both do this on
+        // their dedicated game thread.
         let ruby = unsafe { magnus::embed::init() };
         // The Windows dashboard uses stdout for framed runner IPC. Keep Ruby's
         // normal `puts`/`print` output on stderr so game scripts cannot corrupt
@@ -35,17 +47,32 @@ impl RubyCore {
             .map_err(|error| error.to_string())?;
         ruby.define_global_function("__mkxp_native", function!(bridge::native_call, 1))
             .map_err(|error| error.to_string())?;
-        let startup_status = Self::eval::<i64>(&ruby, rsxp::ruby::RGSS_SOURCE, "rgss.rb")
-            .map_err(|error| error.to_string());
         Ok(Self {
             ruby,
-            startup_status,
+            startup_status: None,
         })
+    }
+
+    /// Evaluate the embedded RGSS shim and, for a game bundle, run the game.
+    ///
+    /// Returns the game's exit status. Calling this twice returns the first
+    /// result without evaluating the scripts again.
+    pub fn start(&mut self) -> Result<i64, String> {
+        if let Some(status) = &self.startup_status {
+            return status.clone();
+        }
+        let status = Self::eval::<i64>(&self.ruby, rsxp::ruby::RGSS_SOURCE, "rgss.rb")
+            .map_err(|error| error.to_string());
+        self.startup_status = Some(status.clone());
+        status
     }
 
     /// Result code returned by the embedded RGSS game scripts.
     pub fn startup_status(&self) -> Result<i64, String> {
-        self.startup_status.clone()
+        match &self.startup_status {
+            Some(status) => status.clone(),
+            None => Err("Ruby core has not been started".into()),
+        }
     }
 
     /// Evaluate source in the VM. The result is discarded at this boundary.

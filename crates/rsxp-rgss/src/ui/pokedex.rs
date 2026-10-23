@@ -1160,7 +1160,7 @@ mod tests {
             for world_map in [false, true] {
                 let mut workspace = Workspace::new();
                 let fixture: Value =
-                    serde_json::from_str(include_str!("../testdata/pokedex.json")).unwrap();
+                    serde_json::from_str(include_str!("../../testdata/pokedex.json")).unwrap();
                 workspace.pokedex.open = !world_map;
                 workspace.pokedex.catalog = fixture["index"]["species"].as_array().unwrap().clone();
                 workspace.pokedex.selected = "BULBASAUR".into();
@@ -1216,7 +1216,7 @@ mod tests {
         let source = std::env::var("RSXP_POKEDEX_FIXTURE")
             .ok()
             .map(|path| std::fs::read_to_string(path).unwrap())
-            .unwrap_or_else(|| include_str!("../testdata/pokedex.json").to_owned());
+            .unwrap_or_else(|| include_str!("../../testdata/pokedex.json").to_owned());
         let fixture: Value = serde_json::from_str(&source).unwrap();
         let mut workspace = Workspace::new();
         workspace.pokedex.open = true;

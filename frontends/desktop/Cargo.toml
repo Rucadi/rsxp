@@ -7,8 +7,8 @@ license = "GPL-2.0-or-later"
 publish = false
 
 [dependencies]
-rsxp = { path = "..", features = ["gpu", "ui", "game-api", "portable-media"] }
-ruby_rgss_core = { path = "../ruby_rgss_core" }
+rsxp = { path = "../../crates/rsxp-rgss", features = ["gpu", "ui", "game-api", "portable-media"] }
+ruby_rgss_core = { package = "rsxp-rgss-ruby", path = "../../cores/rgss/ruby" }
 getrandom = "0.4.3"
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "vulkan", "gles", "metal", "wgsl"] }
 pollster = "1.0.1"
@@ -40,19 +40,18 @@ game-tests = []
 
 [[bin]]
 name = "rsxp"
-path = "../src/desktop/main.rs"
+path = "src/main.rs"
 
 [[test]]
 name = "cli"
-path = "../src/tests/cli.rs"
+path = "tests/cli.rs"
 
 # Manual tests requiring local game trees (`ericlostie/`, `pokemonz/`).
 [[test]]
 name = "game-tests"
-path = "../src/tests/game-tests.rs"
+path = "tests/game-tests.rs"
 required-features = ["game-tests"]
 
 [[example]]
 name = "session-bench"
-path = "../src/examples/session_bench.rs"
-
+path = "examples/session_bench.rs"

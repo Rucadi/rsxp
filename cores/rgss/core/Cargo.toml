@@ -1,0 +1,18 @@
+[package]
+name = "rsxp-core-rgss"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "GPL-2.0-or-later"
+description = "RGSS emulator core adapter for the RSXP multi-core contract"
+publish = false
+
+[lib]
+name = "rsxp_core_rgss"
+path = "src/lib.rs"
+
+[dependencies]
+rsxp-core = { path = "../../../crates/rsxp-core" }
+rsxp = { path = "../../../crates/rsxp-rgss", default-features = false, features = ["gpu", "game-api", "portable-media"] }
+ruby_rgss_core = { package = "rsxp-rgss-ruby", path = "../ruby" }
+bytemuck = "1"

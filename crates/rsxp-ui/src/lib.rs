@@ -91,6 +91,10 @@ impl SharedApp {
     pub fn set_bitmap(&mut self, context: &egui::Context, bitmap: &Bitmap) {
         let revision = bitmap.revision();
         let size = [bitmap.width() as usize, bitmap.height() as usize];
+        // The submitted frame is authoritative. Hosts may receive a frame
+        // before their session metadata update (notably cartridge sessions),
+        // so derive the layout aspect from the texture dimensions as well.
+        self.info.logical_size = (bitmap.width(), bitmap.height());
         if self.frame_revision == Some(revision) && self.frame_size == Some(size) {
             return;
         }

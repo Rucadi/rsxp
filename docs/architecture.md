@@ -35,9 +35,9 @@ flowchart TD
 Cargo features select what the binary links. `gba`, `nds` and `rgss` are enabled
 by default. `--no-default-features --features gba` builds a cartridge-only
 binary: `run --game ROM` routes through `rsxp_cores::catalog()` and the generic
-cartridge host, without MRI, the RGSS engine or the DS toolchain. Interactive
-cartridge sessions require the dashboard session transport; `--headless`
-supports PPM capture.
+cartridge host, without MRI, the RGSS engine, `rsxp-ui`, or the DS toolchain.
+The RGSS feature currently supplies the desktop dashboard, so a cartridge-only
+build supports headless execution and PPM capture rather than the dashboard.
 
 The dashboard uses eframe for its native window, egui application and UI
 presentation. The shared `rsxp-ui::SharedApp` owns the game workspace.
@@ -232,11 +232,11 @@ submission and readback. Native tile geometry and atlas caches live in
 `graphics/tilemap.rs`. Adjacent disjoint operations can share dispatches;
 unchanged compositions can be reused.
 
-The eframe dashboard currently asks child sessions to compose on the CPU and
-uploads bitmap revisions to the shared application texture. The earlier direct
-GPU command transport remains in the session protocol, but the new dashboard
-does not consume it yet. This preserves the shared runner path at the cost of
-CPU frame transfer until eframe paint-callback integration is complete.
+The eframe dashboard accepts both CPU frames and ordered GPU command packets.
+It installs `GameCallback` for accelerated RGSS sessions and retains asset
+updates even when superseded draw lists are dropped. CPU fallback uploads
+bitmap revisions to the shared application texture when acceleration is
+disabled or a scene is unsupported.
 
 ```mermaid
 flowchart TD
@@ -244,14 +244,14 @@ flowchart TD
     Eligible -->|"Yes"| Draws["Encode GPU draws and revision-based asset updates"]
     Eligible -->|"No"| CPU["Compose RGBA bitmap on CPU"]
     Draws --> Remote{"Dashboard session?"}
-    Remote -->|"Yes"| Packet["Current eframe dashboard uses CPU fallback"]
-    Packet --> Upload["Upload framebuffer as SharedApp texture"]
+    Remote -->|"Yes"| Packet["Send ordered GPU resource and draw packets"]
+    Packet --> Callback["Render through eframe GameCallback"]
     Remote -->|"No"| Local["Compose on local GPU"]
     CPU --> Pixels["Send pixels to dashboard, or use local host"]
     Pixels --> Upload
     Upload --> Display["Game texture plus shared eframe workspace"]
+    Callback --> Display
     Local --> Display
-    Upload --> Display
     Display --> Window["Present window surface"]
 ```
 

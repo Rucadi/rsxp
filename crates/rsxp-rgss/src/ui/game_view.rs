@@ -30,7 +30,12 @@ impl Workspace {
         }
     }
 
-    pub(super) fn draw_game_view(&mut self, ui: &mut egui::Ui, output: &mut WorkspaceOutput) {
+    pub(super) fn draw_game_view(
+        &mut self,
+        ui: &mut egui::Ui,
+        output: &mut WorkspaceOutput,
+        logical_size: (u32, u32),
+    ) {
         let context = ui.ctx().clone();
         if self.controls_visible && self.view_mode == ViewMode::Floating {
             egui::CentralPanel::default()
@@ -52,18 +57,48 @@ impl Workspace {
                 .show(&context, |ui| {
                     let (rect, _) =
                         ui.allocate_exact_size(ui.available_size(), egui::Sense::hover());
-                    output.game_rect = rect;
-                    self.paint_game(ui, rect);
+                    let game_rect = aspect_rect(rect, logical_size);
+                    output.game_rect = game_rect;
+                    self.paint_game(ui, game_rect);
                 });
         } else {
             output.game_rect = egui::CentralPanel::default()
                 .frame(egui::Frame::NONE)
                 .show(ui, |ui| {
-                    let rect = ui.max_rect();
-                    self.paint_game(ui, rect);
-                    rect
+                    let game_rect = aspect_rect(ui.max_rect(), logical_size);
+                    self.paint_game(ui, game_rect);
+                    game_rect
                 })
                 .inner;
         }
+    }
+}
+
+/// Fits the native framebuffer inside its available region without changing
+/// its aspect ratio. The unused space is intentionally left as letterbox
+/// margins so GBA (3:2) and DS (stacked 256:384) frames are not stretched.
+fn aspect_rect(available: egui::Rect, logical_size: (u32, u32)) -> egui::Rect {
+    let (width, height) = logical_size;
+    if width == 0 || height == 0 || available.width() <= 0.0 || available.height() <= 0.0 {
+        return available;
+    }
+    let scale = (available.width() / width as f32).min(available.height() / height as f32);
+    let size = egui::vec2(width as f32 * scale, height as f32 * scale);
+    egui::Rect::from_center_size(available.center(), size)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::aspect_rect;
+
+    #[test]
+    fn aspect_rect_preserves_native_ratio_and_centers_letterbox() {
+        let available =
+            egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(1000.0, 700.0));
+        let rect = aspect_rect(available, (240, 160));
+        assert!((rect.width() / rect.height() - 1.5).abs() < 0.0001);
+        assert!((rect.center().x - available.center().x).abs() < 0.0001);
+        assert!((rect.center().y - available.center().y).abs() < 0.0001);
+        assert!(rect.height() < available.height());
     }
 }

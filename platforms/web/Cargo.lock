@@ -3097,6 +3097,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsxp-cores"
+version = "0.1.0"
+dependencies = [
+ "rsxp-core",
+ "rsxp-core-gba",
+ "rsxp-core-nds",
+ "rsxp-frontend",
+]
+
+[[package]]
+name = "rsxp-frontend"
+version = "0.1.0"
+dependencies = [
+ "rsxp-core",
+]
+
+[[package]]
 name = "rsxp-ui"
 version = "0.1.0"
 dependencies = [
@@ -3121,8 +3138,8 @@ dependencies = [
  "js-sys",
  "rsxp",
  "rsxp-core",
- "rsxp-core-gba",
- "rsxp-core-nds",
+ "rsxp-cores",
+ "rsxp-frontend",
  "rsxp-ui",
  "serde_json",
  "wasm-bindgen",

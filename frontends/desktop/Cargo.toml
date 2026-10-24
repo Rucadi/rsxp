@@ -13,7 +13,7 @@ rsxp = { path = "../../crates/rsxp-rgss", features = ["gpu", "ui", "game-api", "
 rsxp-core = { path = "../../crates/rsxp-core" }
 rsxp-cores = { path = "../../crates/rsxp-cores", default-features = false }
 rsxp-frontend = { path = "../../crates/rsxp-frontend" }
-rsxp-ui = { path = "../../crates/rsxp-ui" }
+rsxp-ui = { path = "../../crates/rsxp-ui", optional = true }
 eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "default_fonts", "x11", "wayland", "clipboard", "system_fonts"] }
 ruby_rgss_core = { package = "rsxp-rgss-ruby", path = "../../cores/rgss/ruby", optional = true }
 getrandom = "0.4.3"
@@ -45,7 +45,7 @@ gif = "0.14"
 default = ["gpu", "gba", "nds", "rgss"]
 gba = ["dep:rsxp-core-gba", "rsxp-cores/gba"]
 nds = ["dep:rsxp-core-nds", "rsxp-cores/nds"]
-rgss = ["dep:rsxp", "dep:ruby_rgss_core", "rsxp-cores/rgss"]
+rgss = ["dep:rsxp", "dep:rsxp-ui", "dep:ruby_rgss_core", "rsxp-cores/rgss"]
 gpu = []
 game-tests = []
 

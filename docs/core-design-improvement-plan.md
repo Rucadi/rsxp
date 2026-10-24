@@ -2,6 +2,11 @@
 
 Reviewed 2026-10-24 against the current working tree, including the pending DS integration. This is a plan, not an implementation change.
 
+> **Historical scope:** this review records the core-convergence state at the
+> time it was written. Use [architecture.md](architecture.md) for current
+> behavior and [codebase-simplification-plan.md](codebase-simplification-plan.md)
+> for the active ownership and simplification sequence.
+
 > **Status (2026-10-24):** the desktop convergence items are implemented:
 > panic-safe completion and terminal events, content-keyed storage with a
 > versioned state envelope, bounded media/save workers, catalog routing, a

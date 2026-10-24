@@ -20,10 +20,9 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rsxp_core::{
     AudioConfig, AudioSink, Button, Content, CoreControl, CoreEvent, CoreLoadInfo,
     CoreRegistration, EventSink, FrameError, PcmBuffer, PcmRing, PcmRingConsumer, PcmRingProducer,
-    PcmStatus, PixelFormat, Platform, PlatformError, PlatformResult, SessionConfig, VideoFrame,
-    VideoSink,
+    PcmStatus, Platform, PlatformError, PlatformResult, SessionConfig, VideoFrame, VideoSink,
 };
-use rsxp_frontend::{ContentId, SaveStore, StorageSubmitter, StorageWorker};
+use rsxp_frontend::{video::convert_argb, ContentId, SaveStore, StorageSubmitter, StorageWorker};
 use std::collections::VecDeque;
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -182,57 +181,8 @@ impl Frame {
 
 /// Converts a borrowed contract frame into packed, native-endian ARGB.
 fn convert(frame: &VideoFrame<'_>, out: &mut Frame) -> Result<(), FrameError> {
-    frame.validate()?;
     out.prepare(frame.width, frame.height);
-    let width = frame.width as usize;
-    let bpp = frame.format.bytes_per_pixel();
-    for row in 0..frame.height as usize {
-        let start = row * frame.stride;
-        let source = &frame.pixels[start..start + width * bpp];
-        let target = &mut out.pixels[row * width..(row + 1) * width];
-        match frame.format {
-            PixelFormat::Bgra8 | PixelFormat::Bgrx8 => {
-                for (pixel, out) in source.chunks_exact(4).zip(target.iter_mut()) {
-                    let alpha = if frame.format == PixelFormat::Bgrx8 {
-                        255
-                    } else {
-                        pixel[3]
-                    };
-                    *out = u32::from_be_bytes([alpha, pixel[2], pixel[1], pixel[0]]);
-                }
-            }
-            PixelFormat::Rgba8 => {
-                for (pixel, out) in source.chunks_exact(4).zip(target.iter_mut()) {
-                    *out = u32::from_be_bytes([pixel[3], pixel[0], pixel[1], pixel[2]]);
-                }
-            }
-            PixelFormat::Rgb24 => {
-                for (pixel, out) in source.chunks_exact(3).zip(target.iter_mut()) {
-                    *out = u32::from_be_bytes([255, pixel[0], pixel[1], pixel[2]]);
-                }
-            }
-            PixelFormat::Rgb565 => {
-                for (pixel, out) in source.chunks_exact(2).zip(target.iter_mut()) {
-                    let value = u16::from_le_bytes([pixel[0], pixel[1]]);
-                    *out = u32::from_be_bytes([
-                        255,
-                        (((value >> 11) & 0x1f) as u8) << 3,
-                        (((value >> 5) & 0x3f) as u8) << 2,
-                        ((value & 0x1f) as u8) << 3,
-                    ]);
-                }
-            }
-            PixelFormat::Indexed8 => {
-                let palette = frame.palette.ok_or(FrameError::PaletteRequired)?;
-                for (index, out) in source.iter().zip(target.iter_mut()) {
-                    let offset = usize::from(*index) * 4;
-                    let rgba = &palette[offset..offset + 4];
-                    *out = u32::from_be_bytes([rgba[3], rgba[0], rgba[1], rgba[2]]);
-                }
-            }
-        }
-    }
-    Ok(())
+    convert_argb(frame, &mut out.pixels)
 }
 
 struct TransportVideo {

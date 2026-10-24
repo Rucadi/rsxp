@@ -13,8 +13,8 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 rsxp = { path = "../../../crates/rsxp-rgss", default-features = false, features = ["ui", "game-api", "portable-media"] }
 rsxp-core = { path = "../../../crates/rsxp-core" }
-rsxp-core-gba = { path = "../../../cores/gba/core" }
-rsxp-core-nds = { path = "../../../cores/nds/core" }
+rsxp-frontend = { path = "../../../crates/rsxp-frontend" }
+rsxp-cores = { path = "../../../crates/rsxp-cores", default-features = false, features = ["gba", "nds"] }
 rsxp-ui = { path = "../../../crates/rsxp-ui" }
 eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "default_fonts"] }
 # Feature-unify both browser rendering APIs for eframe's wgpu backend so

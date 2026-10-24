@@ -17,7 +17,17 @@ resolver = "3"
 
 [profile.release]
 # Keep source locations and symbols for perf while retaining release optimization.
-lto = true
+# The upstream ARM7TDMI interpreter has unsafe dispatch tables that are
+# miscompiled by full-LTO on real cartridges. Keep release optimization and
+# one codegen unit, but disable cross-crate LTO for a reliable binary.
+lto = false
+codegen-units = 1
+
+# RustBoyAdvance-NG contains performance-oriented unsafe interpreter tables.
+# These package-scoped settings are supported by Cargo; LTO itself cannot be
+# configured per package, so the workspace setting above is intentionally safe
+# for every core.
+[profile.release.package.rsxp-core-gba]
 codegen-units = 1
 
 # Real-time video decoding and per-pixel conversion are too slow without

@@ -727,7 +727,7 @@ impl Workspace {
         self.poll_pokemon_encounter_map();
 
         if !self.controls_visible {
-            self.draw_game_view(ui, &mut output);
+            self.draw_game_view(ui, &mut output, info.logical_size);
             return output;
         }
         self.draw_toolbar(ui, info, &mut output);
@@ -784,7 +784,7 @@ impl Workspace {
         #[cfg(feature = "game-api")]
         self.draw_world_map_window(&context);
 
-        self.draw_game_view(ui, &mut output);
+        self.draw_game_view(ui, &mut output, info.logical_size);
         self.draw_controller_settings(&context);
 
         if self.reset_confirm {

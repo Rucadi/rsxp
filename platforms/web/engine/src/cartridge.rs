@@ -15,8 +15,8 @@
 use crate::files::read_via_host;
 use rsxp::graphics::Bitmap;
 use rsxp_core::{
-    AudioConfig, AudioSink, Button, Content, Core, CoreCommand, CoreContext, CoreControl, CoreEvent,
-    EventSink, PcmBuffer, PixelFormat, Platform, PlatformError, PlatformResult, VideoFrame,
+    AudioConfig, AudioSink, Button, Content, Core, CoreCommand, CoreContext, CoreControl,
+    CoreEvent, EventSink, PcmBuffer, Platform, PlatformError, PlatformResult, VideoFrame,
     VideoSink,
 };
 use std::cell::RefCell;
@@ -36,7 +36,10 @@ impl SaveStore {
     }
 
     fn write(&self, name: &str, bytes: &[u8]) {
-        self.0.lock().unwrap().insert(name.to_owned(), bytes.to_vec());
+        self.0
+            .lock()
+            .unwrap()
+            .insert(name.to_owned(), bytes.to_vec());
     }
 }
 
@@ -92,69 +95,18 @@ impl Platform for CartridgePlatform {
 struct CartridgeVideo {
     frame: Arc<Mutex<Option<Bitmap>>>,
     frames: Arc<AtomicU64>,
+    rgba: Vec<u8>,
 }
 
 impl VideoSink for CartridgeVideo {
     fn present(&mut self, frame: VideoFrame<'_>) {
-        if let Ok(bitmap) = convert_frame(&frame) {
+        if rsxp_frontend::video::convert_rgba(&frame, &mut self.rgba).is_ok()
+            && let Ok(bitmap) = Bitmap::from_rgba(frame.width, frame.height, &self.rgba)
+        {
             *self.frame.lock().unwrap() = Some(bitmap);
             self.frames.fetch_add(1, Ordering::Relaxed);
         }
     }
-}
-
-fn convert_frame(frame: &VideoFrame<'_>) -> Result<Bitmap, String> {
-    frame.validate().map_err(|error| error.to_string())?;
-    let width = frame.width as usize;
-    let row_bytes = width * frame.format.bytes_per_pixel();
-    let mut rgba = vec![0u8; width * frame.height as usize * 4];
-    for (row, target) in (0..frame.height as usize).zip(rgba.chunks_exact_mut(width * 4)) {
-        let source = &frame.pixels[row * frame.stride..row * frame.stride + row_bytes];
-        match frame.format {
-            PixelFormat::Rgba8 | PixelFormat::Bgra8 | PixelFormat::Bgrx8 => {
-                for (pixel, out) in source.chunks_exact(4).zip(target.chunks_exact_mut(4)) {
-                    match frame.format {
-                        PixelFormat::Rgba8 => out.copy_from_slice(pixel),
-                        _ => {
-                            out[0] = pixel[2];
-                            out[1] = pixel[1];
-                            out[2] = pixel[0];
-                            out[3] = if frame.format == PixelFormat::Bgra8 {
-                                pixel[3]
-                            } else {
-                                255
-                            };
-                        }
-                    }
-                }
-            }
-            PixelFormat::Rgb24 => {
-                for (pixel, out) in source.chunks_exact(3).zip(target.chunks_exact_mut(4)) {
-                    out[..3].copy_from_slice(pixel);
-                    out[3] = 255;
-                }
-            }
-            PixelFormat::Rgb565 => {
-                for (pixel, out) in source.chunks_exact(2).zip(target.chunks_exact_mut(4)) {
-                    let value = u16::from_le_bytes([pixel[0], pixel[1]]);
-                    out[0] = (((value >> 11) & 0x1f) as u8) << 3;
-                    out[1] = (((value >> 5) & 0x3f) as u8) << 2;
-                    out[2] = ((value & 0x1f) as u8) << 3;
-                    out[3] = 255;
-                }
-            }
-            PixelFormat::Indexed8 => {
-                let palette = frame
-                    .palette
-                    .ok_or_else(|| "indexed frame has no palette".to_string())?;
-                for (&index, out) in source.iter().zip(target.chunks_exact_mut(4)) {
-                    let offset = usize::from(index) * 4;
-                    out.copy_from_slice(&palette[offset..offset + 4]);
-                }
-            }
-        }
-    }
-    Bitmap::from_rgba(frame.width, frame.height, &rgba).map_err(|error| error.to_string())
 }
 
 struct CartridgeEvents {
@@ -254,7 +206,10 @@ impl AudioSink for CartridgeAudio {
                 return;
             };
             source.set_buffer(Some(&buffer));
-            if source.connect_with_audio_node(&state.context.destination()).is_err() {
+            if source
+                .connect_with_audio_node(&state.context.destination())
+                .is_err()
+            {
                 return;
             }
             let now = state.context.current_time();
@@ -296,14 +251,6 @@ thread_local! {
     static SESSION: RefCell<Option<CartridgeSession>> = const { RefCell::new(None) };
 }
 
-fn registration(extension: &str) -> Option<rsxp_core::CoreRegistration> {
-    match extension {
-        "gba" => Some(rsxp_core_gba::registration()),
-        "nds" => Some(rsxp_core_nds::registration()),
-        _ => None,
-    }
-}
-
 /// Loads a GBA or DS ROM. Returns the core id (`gba`/`nds`).
 #[wasm_bindgen]
 pub fn web_core_init(name: &str, bytes: &[u8]) -> Result<String, JsValue> {
@@ -313,8 +260,11 @@ pub fn web_core_init(name: &str, bytes: &[u8]) -> Result<String, JsValue> {
         .and_then(|extension| extension.to_str())
         .map(str::to_ascii_lowercase)
         .ok_or_else(|| JsValue::from_str("The ROM must be a .gba or .nds file"))?;
-    let registration = registration(&extension)
-        .ok_or_else(|| JsValue::from_str("Unsupported ROM type; choose a .gba or .nds file"))?;
+    let path = Path::new(name);
+    let probe = rsxp_core::ContentProbe::new(path, false, bytes);
+    let registration = rsxp_cores::catalog()
+        .route_probe(&probe)
+        .map_err(|error| JsValue::from_str(&error.to_string()))?;
 
     // The core reads through `Platform::read_content`, which falls back to the
     // virtual filesystem. Store the ROM under both the chosen name and a short
@@ -339,6 +289,7 @@ pub fn web_core_init(name: &str, bytes: &[u8]) -> Result<String, JsValue> {
         Box::new(CartridgeVideo {
             frame: Arc::clone(&frame),
             frames: Arc::clone(&frames),
+            rgba: Vec::new(),
         }),
         Box::new(CartridgeAudio),
         Box::new(CartridgeEvents {

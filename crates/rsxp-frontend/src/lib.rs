@@ -21,6 +21,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 pub mod storage;
+pub mod video;
 
 pub use storage::{
     ContentId, FsStorage, MemoryStorage, SaveStore, Storage, StorageError, StorageSubmitter,
@@ -88,11 +89,19 @@ impl CoreCatalog {
             })?;
         }
         let probe = ContentProbe::new(&content.path, is_dir, &header);
+        self.route_probe(&probe)
+    }
+
+    /// Chooses a core from a probe whose bytes were supplied by the caller.
+    ///
+    /// Browser and archive-backed hosts already own the content bytes and use
+    /// this entry point to share routing policy without native filesystem I/O.
+    pub fn route_probe(&self, probe: &ContentProbe<'_>) -> Result<CoreRegistration, RouteError> {
         self.registry
-            .select(&probe)
+            .select(probe)
             .copied()
             .ok_or_else(|| RouteError::NoCore {
-                path: content.path.display().to_string(),
+                path: probe.path.display().to_string(),
             })
     }
 
@@ -392,6 +401,15 @@ mod tests {
         let routed = catalog.route(&content).unwrap();
         assert_eq!(routed.info.id, "test");
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn catalog_routes_a_caller_supplied_probe_without_file_io() {
+        let mut catalog = CoreCatalog::new();
+        catalog.register(registration());
+        let path = Path::new("browser-content.test");
+        let probe = ContentProbe::new(path, false, b"already loaded");
+        assert_eq!(catalog.route_probe(&probe).unwrap().info.id, "test");
     }
 
     #[test]

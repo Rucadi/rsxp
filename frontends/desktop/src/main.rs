@@ -37,6 +37,7 @@ mod cartridge;
 mod controller;
 #[cfg(all(feature = "gpu", feature = "rgss"))]
 mod dashboard;
+#[cfg(all(feature = "gpu", feature = "rgss"))]
 mod gpu_callback;
 #[cfg(all(feature = "gpu", feature = "rgss"))]
 mod gpu_present;

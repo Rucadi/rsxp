@@ -364,6 +364,8 @@ enum Tool {
 }
 
 pub struct Workspace {
+    pub(crate) frame_texture: Option<egui::TextureId>,
+    pub(crate) game_paint_callback: Option<egui::PaintCallback>,
     pub logs: Vec<String>,
     #[cfg(feature = "game-api")]
     pokedex: pokedex::Pokedex,
@@ -492,6 +494,8 @@ pub struct Workspace {
 impl Default for Workspace {
     fn default() -> Self {
         Self {
+            frame_texture: None,
+            game_paint_callback: None,
             logs: Vec::new(),
             #[cfg(feature = "game-api")]
             pokedex: Default::default(),
@@ -649,8 +653,18 @@ impl Workspace {
         };
     }
 
-    pub fn draw(&mut self, context: &egui::Context, info: &WorkspaceInfo) -> WorkspaceOutput {
-        theme::apply(context);
+    pub fn set_frame_texture(&mut self, texture: Option<egui::TextureId>) {
+        self.frame_texture = texture;
+    }
+
+    /// Set a platform GPU callback for drawing the live game surface.
+    pub fn set_game_paint_callback(&mut self, callback: Option<egui::PaintCallback>) {
+        self.game_paint_callback = callback;
+    }
+
+    pub fn draw(&mut self, ui: &mut egui::Ui, info: &WorkspaceInfo) -> WorkspaceOutput {
+        let context = ui.ctx().clone();
+        theme::apply(&context);
         let mut output = WorkspaceOutput::default();
         let key_pressed = |wanted: egui::Key| {
             context.input(|input| {
@@ -692,18 +706,18 @@ impl Workspace {
         // Stopped sessions retain diagnostics even when controls were hidden.
         // Allocate output before the session's central library panel.
         if self.session.as_ref().is_some_and(|session| !session.active) && !self.logs.is_empty() {
-            self.draw_logs(context);
+            self.draw_logs(ui);
         }
         if let Some(session) = &mut self.session {
             if self.controls_visible || !session.active {
-                self.session_actions = session.draw(context);
+                self.session_actions = session.draw(ui);
             }
             if !session.active {
                 return output;
             }
         }
         if let Some((done, total)) = self.loading {
-            draw_loading(context, done, total);
+            draw_loading(ui, done, total);
             return output;
         }
 
@@ -713,74 +727,72 @@ impl Workspace {
         self.poll_pokemon_encounter_map();
 
         if !self.controls_visible {
-            self.draw_game_view(context, &mut output);
+            self.draw_game_view(ui, &mut output);
             return output;
         }
-        self.draw_toolbar(context, info, &mut output);
+        self.draw_toolbar(ui, info, &mut output);
 
         let fullscreen = self.is_workspace_fullscreen();
         if !fullscreen && self.panels_top {
-            context.root_ui(|root_ui| {
-                egui::Panel::top("workspace-top-panel")
-                    .resizable(false)
-                    .show(root_ui, |ui| {
-                        ui.add_space(8.0);
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label(egui::RichText::new("Dashboard").size(24.0).strong());
-                            ui.separator();
-                            ui.weak(format!(
-                                "{} × {} native resolution",
-                                info.logical_size.0, info.logical_size.1
-                            ));
-                            if info.fps > 0.0 {
-                                ui.label(
-                                    egui::RichText::new(format!("{:.0} FPS", info.fps))
-                                        .color(egui::Color32::from_rgb(127, 231, 200)),
-                                );
-                            }
-                        });
-                        ui.add_space(6.0);
-                        ui.horizontal_wrapped(|ui| {
-                            ui.toggle_value(&mut self.panels_left, "Game tools · F2");
-                            ui.toggle_value(&mut self.panels_output, "Activity · F3");
-                            ui.toggle_value(&mut self.panels_performance, "Performance · F10");
-                            if ui.button("Controller settings").clicked() {
-                                self.controller_settings_open = true;
-                            }
-                        });
-                        ui.add_space(8.0);
-                    })
-            });
+            egui::Panel::top("workspace-top-panel")
+                .resizable(false)
+                .show(ui, |ui| {
+                    ui.add_space(8.0);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(egui::RichText::new("Dashboard").size(24.0).strong());
+                        ui.separator();
+                        ui.weak(format!(
+                            "{} × {} native resolution",
+                            info.logical_size.0, info.logical_size.1
+                        ));
+                        if info.fps > 0.0 {
+                            ui.label(
+                                egui::RichText::new(format!("{:.0} FPS", info.fps))
+                                    .color(egui::Color32::from_rgb(127, 231, 200)),
+                            );
+                        }
+                    });
+                    ui.add_space(6.0);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.toggle_value(&mut self.panels_left, "Game tools · F2");
+                        ui.toggle_value(&mut self.panels_output, "Activity · F3");
+                        ui.toggle_value(&mut self.panels_performance, "Performance · F10");
+                        if ui.button("Controller settings").clicked() {
+                            self.controller_settings_open = true;
+                        }
+                    });
+                    ui.add_space(8.0);
+                });
         }
         if !fullscreen && self.panels_output {
-            self.draw_logs(context);
+            self.draw_logs(ui);
         }
         if !fullscreen && self.panels_left {
-            self.draw_patches_panel(context, info);
+            self.draw_patches_panel(ui, info);
         }
         if !fullscreen && self.panels_performance {
-            self.draw_performance_panel(context, info);
+            self.draw_performance_panel(ui, info);
         }
         #[cfg(feature = "game-api")]
-        self.draw_api_windows(context);
+        self.draw_api_windows(&context);
         #[cfg(feature = "game-api")]
-        self.draw_pokeapi_window(context);
+        self.draw_pokeapi_window(&context);
         #[cfg(feature = "game-api")]
-        self.draw_pokedex_window(context);
+        self.draw_pokedex_window(&context);
         #[cfg(feature = "game-api")]
-        self.draw_registry_dex_windows(context);
+        self.draw_registry_dex_windows(&context);
         #[cfg(feature = "game-api")]
-        self.draw_world_map_window(context);
+        self.draw_world_map_window(&context);
 
-        self.draw_game_view(context, &mut output);
-        self.draw_controller_settings(context);
+        self.draw_game_view(ui, &mut output);
+        self.draw_controller_settings(&context);
 
         if self.reset_confirm {
             egui::Window::new("Reset game?")
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-                .show(context, |ui| {
+                .show(&context, |ui| {
                     ui.label("Restart the game from the beginning? Unsaved progress is lost.");
                     ui.horizontal(|ui| {
                         if ui.button("Reset").clicked() {
@@ -806,28 +818,26 @@ fn display_json_value(value: &serde_json::Value) -> String {
     }
 }
 
-fn draw_loading(context: &egui::Context, done: u32, total: u32) {
-    context.root_ui(|root_ui| {
-        egui::CentralPanel::default()
-            .frame(egui::Frame::NONE)
-            .show(root_ui, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.add_space(ui.available_height() * 0.35);
-                    ui.heading("Loading game…");
-                    ui.add_space(8.0);
-                    let fraction = if total == 0 {
-                        0.0
-                    } else {
-                        done as f32 / total as f32
-                    };
-                    ui.add(
-                        egui::ProgressBar::new(fraction)
-                            .desired_width(360.0)
-                            .text(format!("{done} / {total}")),
-                    );
-                });
-            })
-    });
+fn draw_loading(ui: &mut egui::Ui, done: u32, total: u32) {
+    egui::CentralPanel::default()
+        .frame(egui::Frame::NONE)
+        .show(ui, |ui| {
+            ui.vertical_centered(|ui| {
+                ui.add_space(ui.available_height() * 0.35);
+                ui.heading("Loading game…");
+                ui.add_space(8.0);
+                let fraction = if total == 0 {
+                    0.0
+                } else {
+                    done as f32 / total as f32
+                };
+                ui.add(
+                    egui::ProgressBar::new(fraction)
+                        .desired_width(360.0)
+                        .text(format!("{done} / {total}")),
+                );
+            });
+        });
 }
 
 #[cfg(all(test, feature = "game-api"))]
@@ -911,7 +921,7 @@ mod workspace_tests {
         };
         let mut result = WorkspaceOutput::default();
         context
-            .run_pass(input, |context| result = workspace.draw(context, &info))
+            .run_ui(input, |ui| result = workspace.draw(ui, &info))
             .drop_without_applying_deltas();
         result
     }
@@ -1018,8 +1028,8 @@ mod workspace_tests {
             show_fullscreen: true,
             show_save_buttons: false,
         };
-        let mut output = context.run_pass(egui::RawInput::default(), |context| {
-            workspace.draw(context, &info);
+        let mut output = context.run_ui(egui::RawInput::default(), |ui| {
+            workspace.draw(ui, &info);
         });
         output.textures_delta.clear();
         fn contains_crash(shape: &egui::Shape) -> bool {
@@ -1060,8 +1070,8 @@ mod workspace_tests {
                 ..Default::default()
             };
             context
-                .run_pass(input, |context| {
-                    workspace.draw(context, &info);
+                .run_ui(input, |ui| {
+                    workspace.draw(ui, &info);
                 })
                 .drop_without_applying_deltas();
             assert_eq!(crate::runtime_settings::rate_override(), None);

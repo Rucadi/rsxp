@@ -38,12 +38,13 @@ impl NdsAdapter {
             .filter(|end| *end <= payload.len())
             .ok_or_else(invalid)?;
         // Decode into a fresh machine so a failed load cannot damage the running game.
-        let mut candidate = self.build(Some(payload[4..end].to_vec()))?;
+        let (mut candidate, gpu_output) = self.build(Some(payload[4..end].to_vec()))?;
         PersistentReadSavestate::new(&payload[end..])
             .and_then(|mut reader| reader.load_into(&mut candidate).map_err(drop))
             .map_err(|_| invalid())?;
         candidate.ds_slot.spi.mark_contents_dirty();
         self.emu = Some(candidate);
+        self.gpu_output = gpu_output;
         self.flush_audio();
         Ok(())
     }

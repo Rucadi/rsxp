@@ -2,39 +2,37 @@
 //! Compact, readable live session metrics.
 use super::*;
 impl Workspace {
-    pub(super) fn draw_performance_panel(&mut self, context: &egui::Context, info: &WorkspaceInfo) {
-        context.root_ui(|root_ui| {
-            egui::Panel::right("workspace-performance-panel")
-                .resizable(true)
-                .default_size(220.0)
-                .show(root_ui, |ui| {
-                    ui.add_space(8.0);
-                    ui.heading("Performance");
-                    ui.weak("Live session metrics");
-                    ui.add_space(16.0);
-                    metric(
-                        ui,
-                        "FRAMES PER SECOND",
-                        if info.fps > 0.0 {
-                            format!("{:.1}", info.fps)
-                        } else {
-                            "—".into()
-                        },
-                    );
-                    metric(
-                        ui,
-                        "AVERAGE FRAME INTERVAL",
-                        if info.fps > 0.0 {
-                            format!("{:.2} ms", 1000.0 / info.fps)
-                        } else {
-                            "—".into()
-                        },
-                    );
-                    metric(ui, "FRAMES RENDERED", info.frames.to_string());
-                    ui.add_space(8.0);
-                    ui.weak("F10 to hide this panel");
-                })
-        });
+    pub(super) fn draw_performance_panel(&mut self, ui: &mut egui::Ui, info: &WorkspaceInfo) {
+        egui::Panel::right("workspace-performance-panel")
+            .resizable(true)
+            .default_size(220.0)
+            .show(ui, |ui| {
+                ui.add_space(8.0);
+                ui.heading("Performance");
+                ui.weak("Live session metrics");
+                ui.add_space(16.0);
+                metric(
+                    ui,
+                    "FRAMES PER SECOND",
+                    if info.fps > 0.0 {
+                        format!("{:.1}", info.fps)
+                    } else {
+                        "—".into()
+                    },
+                );
+                metric(
+                    ui,
+                    "AVERAGE FRAME INTERVAL",
+                    if info.fps > 0.0 {
+                        format!("{:.2} ms", 1000.0 / info.fps)
+                    } else {
+                        "—".into()
+                    },
+                );
+                metric(ui, "FRAMES RENDERED", info.frames.to_string());
+                ui.add_space(8.0);
+                ui.weak("F10 to hide this panel");
+            });
     }
 }
 

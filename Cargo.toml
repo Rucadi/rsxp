@@ -3,6 +3,7 @@ members = [
     "crates/rsxp-core",
     "crates/rsxp-cores",
     "crates/rsxp-frontend",
+    "crates/rsxp-ui",
     "crates/rsxp-rgss",
     "cores/gba/core",
     "cores/nds/core",
@@ -56,6 +57,10 @@ opt-level = 3
 [profile.dev.package.dust-soft-2d-base]
 opt-level = 3
 [profile.dev.package.dust-soft-3d]
+opt-level = 3
+[profile.dev.package.dust-wgpu-2d]
+opt-level = 3
+[profile.dev.package.dust-wgpu-3d]
 opt-level = 3
 [profile.dev.package.rsxp-core-nds]
 opt-level = 3

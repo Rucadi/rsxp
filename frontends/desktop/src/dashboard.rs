@@ -22,13 +22,9 @@
 //!   while also pushing a bounded (300-entry), lossy UTF-8 view into
 //!   `Exchange::logs` for the embedded output panel. A closed terminal must
 //!   not stop log collection.
-//! - [`run`] is the main loop: it creates the winit [`Window`], a wgpu surface
-//!   and [`GpuDisplay`], and the egui workspace panel; then per frame it pumps
-//!   input, (re)launches or stops sessions via the workspace actions, folds
-//!   input into the runner `control` message, applies returned frames to the
-//!   GPU, and presents. Sessions restart on "restart", stop/launch requests,
-//!   or a reset requested through `rsxp::runtime_settings`; save backup/restore
-//!   runs on a detached thread and reports through a channel.
+//! - [`run`] starts eframe's native window and drives the shared `rsxp-ui`
+//!   application. Its App implementation polls sessions, translates egui input,
+//!   and executes launcher actions; eframe owns the window and presentation.
 //!
 //! Protocol notes enforced here: TCP sessions use a handshake, 30 s connect
 //! timeout, token check, and 5 s write timeout. Poll replies carry `control`;
@@ -38,11 +34,8 @@
 //! merged into a pending frame and, once queued upload bytes exceed 64 MiB,
 //! the I/O thread throttles to apply backpressure; ordered atlas deltas mean
 //! non-draw-list data must not be dropped.
-use crate::{
-    gpu_present::{GpuDisplay, Presentation},
-    session::{read_message, write_message},
-    window::Window,
-};
+use crate::gpu_callback::{GameCallback, GameGpu};
+use crate::session::{read_message, write_message};
 use rsxp::{graphics::Bitmap, input::Input};
 use serde_json::{json, Value};
 #[cfg(not(windows))]
@@ -414,16 +407,37 @@ type PlatformTransport = StdioTransport;
 type PlatformTransport = TcpTransport;
 
 impl Session {
-    fn start(args: &[String], jit: rsxp::ui::session::RubyJit) -> Result<Self, String> {
+    fn start(
+        args: &[String],
+        jit: rsxp::ui::session::RubyJit,
+        gpu_available: bool,
+    ) -> Result<Self, String> {
         let transport = Arc::new(PlatformTransport::new()?);
         let executable = std::env::current_exe()
             .map_err(|e| format!("could not locate runner executable: {e}"))?;
         let mut command = Command::new(executable);
+        let is_nds = args.windows(2).any(|pair| {
+            pair[0] == "--game"
+                && PathBuf::from(&pair[1])
+                    .extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("nds"))
+        });
         command
             .arg("run")
             .args(args)
             .env("RSXP_API", "0")
+            .env(
+                "RSXP_RENDERER",
+                if gpu_available { "wgpu" } else { "software" },
+            )
+            .env(
+                "RSXP_NDS_RENDERER",
+                if is_nds { "wgpu" } else { "software" },
+            )
             .env("RSXP_JIT", jit.as_str());
+        if !gpu_available {
+            command.args(["--renderer", "software"]);
+        }
         transport.configure(&mut command);
         let mut child = command
             .spawn()
@@ -554,284 +568,422 @@ impl Session {
 }
 
 pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error>> {
-    let mut window = Window::new(1100, 740)?;
-    window.set_title("rsxp · Game workspace")?;
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(
-        Box::new(window.native()),
-    ));
-    let surface = instance.create_surface(window.native())?;
-    let mut gpu = rsxp::gpu::GpuRenderer::new_for_surface(640, 480, instance, &surface)?;
-    let mut display = GpuDisplay::new(&gpu, surface, window.physical_size())?;
-    let mut panel = rsxp::ui::session::SessionPanel::default();
-    panel.ruby_jit = match std::env::var("RSXP_JIT").ok().as_deref() {
-        Some("zjit") => rsxp::ui::session::RubyJit::Zjit,
-        Some("off") => rsxp::ui::session::RubyJit::Disabled,
-        Some("yjit") => rsxp::ui::session::RubyJit::Yjit,
-        _ if std::env::var("RSXP_YJIT").as_deref() == Ok("0") => {
-            rsxp::ui::session::RubyJit::Disabled
-        }
-        _ => rsxp::ui::session::RubyJit::Yjit,
-    };
-    panel.recent = super::library::load();
-    display.workspace_mut().session = Some(panel);
     rsxp::api_bridge::start_from_env()?;
-    let mut session = None;
-    let mut last_args = initial.clone().unwrap_or_default();
-    let mut launch = initial;
-    let mut input = Input::default();
-    let mut frame = Bitmap::new(640, 480)?;
-    let mut gpu_view = false;
-    let mut logical_size = (640, 480);
-    let mut fullscreen = false;
-    let mut save_task: Option<std::sync::mpsc::Receiver<Result<(), String>>> = None;
-    loop {
-        let start = std::time::Instant::now();
-        if let Some(task) = &save_task
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_title("rsxp · Game workspace")
+            .with_inner_size([1100.0, 740.0])
+            .with_min_inner_size([700.0, 500.0]),
+        ..Default::default()
+    };
+    eframe::run_native(
+        "rsxp · Game workspace",
+        options,
+        Box::new(move |_| Ok(Box::new(DesktopApp::new(initial)))),
+    )?;
+    Ok(0)
+}
+
+struct DesktopApp {
+    shared: rsxp_ui::SharedApp,
+    session: Option<Session>,
+    input: Input,
+    frame: Bitmap,
+    logical_size: (u32, u32),
+    game_rect: egui::Rect,
+    launch: Option<Vec<String>>,
+    last_args: Vec<String>,
+    save_task: Option<std::sync::mpsc::Receiver<Result<(), String>>>,
+    text_input: bool,
+    fps: f64,
+    frames: u64,
+    gpu_view: bool,
+    gpu_state: Arc<Mutex<GameGpu>>,
+    gpu_callback: Option<Arc<GameCallback>>,
+}
+
+impl DesktopApp {
+    fn new(initial: Option<Vec<String>>) -> Self {
+        let mut panel = rsxp::ui::session::SessionPanel::default();
+        panel.capabilities = rsxp::ui::session::SessionCapabilities::DESKTOP;
+        panel.ruby_jit = match std::env::var("RSXP_JIT").ok().as_deref() {
+            Some("zjit") => rsxp::ui::session::RubyJit::Zjit,
+            Some("off") => rsxp::ui::session::RubyJit::Disabled,
+            Some("yjit") => rsxp::ui::session::RubyJit::Yjit,
+            _ if std::env::var("RSXP_YJIT").as_deref() == Ok("0") => {
+                rsxp::ui::session::RubyJit::Disabled
+            }
+            _ => rsxp::ui::session::RubyJit::Yjit,
+        };
+        panel.recent = super::library::load();
+        let mut shared = rsxp_ui::SharedApp::default();
+        shared.workspace.session = Some(panel);
+        Self {
+            shared,
+            session: None,
+            input: Input::default(),
+            frame: Bitmap::new(640, 480).expect("640×480 bitmap allocation"),
+            logical_size: (640, 480),
+            game_rect: egui::Rect::ZERO,
+            last_args: initial.clone().unwrap_or_default(),
+            launch: initial,
+            save_task: None,
+            text_input: false,
+            fps: 0.0,
+            frames: 0,
+            gpu_view: false,
+            gpu_state: Arc::new(Mutex::new(GameGpu {
+                renderer: None,
+                rect: egui::Rect::ZERO,
+                logical_size: (640, 480),
+            })),
+            gpu_callback: None,
+        }
+    }
+
+    fn start_game(&mut self, args: Vec<String>, ctx: &egui::Context) {
+        self.session.take();
+        self.input.release_all();
+        rsxp::runtime_settings::reset();
+        rsxp::runtime_patch::reset();
+        rsxp::api_bridge::end_session();
+        let panel = self.shared.workspace.session.take();
+        self.shared.workspace = rsxp::ui::Workspace::new();
+        self.shared.workspace.session = panel;
+        self.frame = Bitmap::new(640, 480).expect("640×480 bitmap allocation");
+        self.logical_size = (640, 480);
+        let game_path = args
+            .windows(2)
+            .find(|a| a[0] == "--game")
+            .map(|a| PathBuf::from(&a[1]));
+        let cartridge = game_path.as_ref().filter(|path| {
+            path.extension().is_some_and(|extension| {
+                extension.eq_ignore_ascii_case("gba") || extension.eq_ignore_ascii_case("nds")
+            })
+        });
+        let root = game_path
+            .as_ref()
+            .filter(|_| cartridge.is_none())
+            .and_then(|path| std::fs::canonicalize(path).ok());
+        if let Some(root) = &root {
+            if let Err(error) = rsxp::runtime_patch::load_user_patches(root) {
+                eprintln!("Could not load runtime patches: {error}");
+            }
+        }
+        if let Ok(patches) = std::env::var("RSXP_PATCH") {
+            rsxp::runtime_patch::enable_from(&patches);
+        }
+        self.shared.workspace.backend =
+            Box::new(rsxp::workspace_services::LocalServices::new(root.clone()));
+        let jit = self.shared.workspace.session.as_ref().unwrap().ruby_jit;
+        // Cartridge cores currently produce CPU bitmaps. Keep those frames on
+        // the shared eframe texture path instead of starting an unused RGSS
+        // remote compositor in the child process.
+        let game_uses_rgss_compositor = cartridge.is_none();
+        match Session::start(
+            &args,
+            jit,
+            self.gpu_callback.is_some() && game_uses_rgss_compositor,
+        ) {
+            Ok(session) => {
+                self.session = Some(session);
+                self.last_args = args;
+                let panel = self.shared.workspace.session.as_mut().unwrap();
+                panel.active = true;
+                panel.paused = false;
+                panel.status = "Starting…".into();
+                panel.error = None;
+                if let Some(rom) = cartridge {
+                    let title = rom
+                        .file_stem()
+                        .map(|stem| stem.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "Cartridge game".into());
+                    panel.title = title.clone();
+                    panel.source = rom.to_string_lossy().into_owned();
+                    panel.save_directory = super::library::data_directory(&title)
+                        .map(|path| path.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    if let Err(error) = super::library::remember(&mut panel.recent, rom) {
+                        panel.error = Some(format!("Could not remember game: {error}"));
+                    }
+                } else if let Some(root) = &root {
+                    panel.title = super::library::title(root);
+                    panel.source = root.to_string_lossy().into_owned();
+                    panel.save_directory = super::library::save_directory(&panel.title)
+                        .map(|path| path.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    if let Err(error) = super::library::remember(&mut panel.recent, root) {
+                        panel.error = Some(format!("Could not remember game: {error}"));
+                    }
+                } else {
+                    panel.title = "Script session".into();
+                }
+            }
+            Err(error) => self.shared.workspace.session.as_mut().unwrap().error = Some(error),
+        }
+        ctx.request_repaint();
+    }
+
+    fn collect_input(&mut self, ctx: &egui::Context) {
+        self.input.begin_frame();
+        if ctx.egui_wants_keyboard_input() {
+            self.input.release_all();
+            return;
+        }
+        let events = ctx.input(|input| input.events.clone());
+        for event in events {
+            match event {
+                egui::Event::Key {
+                    key,
+                    physical_key,
+                    pressed,
+                    repeat: false,
+                    ..
+                } => {
+                    if let Some(code) = egui_scancode(physical_key.unwrap_or(key)) {
+                        if pressed {
+                            if code == 68 {
+                                rsxp::runtime_settings::toggle_fast_forward();
+                            }
+                            self.input.key_down(code);
+                        } else {
+                            self.input.key_up(code);
+                        }
+                    }
+                }
+                egui::Event::Text(text) if self.text_input => self.input.push_text(&text),
+                egui::Event::PointerButton {
+                    button, pressed, ..
+                } if self.game_rect.contains(
+                    ctx.input(|input| input.pointer.latest_pos().unwrap_or(egui::Pos2::ZERO)),
+                ) && !ctx.egui_wants_pointer_input() =>
+                {
+                    let code = match button {
+                        egui::PointerButton::Primary => -1,
+                        egui::PointerButton::Middle => -2,
+                        egui::PointerButton::Secondary => -3,
+                        egui::PointerButton::Extra1 => -4,
+                        egui::PointerButton::Extra2 => -5,
+                    };
+                    if pressed {
+                        self.input.key_down(code);
+                    } else {
+                        self.input.key_up(code);
+                    }
+                }
+                egui::Event::MouseWheel { delta, .. }
+                    if self.game_rect.contains(
+                        ctx.input(|input| input.pointer.latest_pos().unwrap_or(egui::Pos2::ZERO)),
+                    ) && !ctx.egui_wants_pointer_input() =>
+                {
+                    self.input.scroll_v += delta.y.signum() as i32;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn poll_session(&mut self, ctx: &egui::Context) {
+        if let Some(task) = &self.save_task
             && let Ok(result) = task.try_recv()
         {
-            let panel = display.workspace_mut().session.as_mut().unwrap();
+            let panel = self.shared.workspace.session.as_mut().unwrap();
             panel.busy = false;
             match result {
                 Ok(()) => panel.status = "Save files copied".into(),
                 Err(error) => panel.error = Some(error),
             }
-            save_task = None;
+            self.save_task = None;
         }
-        input.begin_frame();
-        if !window.poll(&mut input, false) {
-            break;
+        let Some(session) = &mut self.session else {
+            return;
+        };
+        let mut state = session.exchange.lock().unwrap();
+        self.shared.workspace.logs = state.logs.iter().cloned().collect();
+        if let Some(frame) = state.frame.take() {
+            self.logical_size = (frame.width(), frame.height());
+            self.frame = frame;
+            let panel = self.shared.workspace.session.as_mut().unwrap();
+            panel.status = "Running".into();
         }
-        if window.egui_context().egui_wants_keyboard_input() {
-            input.release_all();
-        }
-        if window.egui_context().egui_wants_pointer_input() {
-            for key in -8..0 {
-                input.key_up(key);
-            }
-        }
-        if let Some(args) = launch.take() {
-            session.take();
-            input.release_all();
-            window.cursor(true);
-            window.text_input(false);
-            rsxp::runtime_settings::reset();
-            rsxp::runtime_patch::reset();
-            rsxp::api_bridge::end_session();
-            let panel = display.workspace_mut().session.take();
-            *display.workspace_mut() = rsxp::ui::Workspace::new();
-            display.workspace_mut().session = panel;
-            frame = Bitmap::new(640, 480)?;
-            gpu_view = false;
-            logical_size = (640, 480);
-            let game_path = args
-                .windows(2)
-                .find(|a| a[0] == "--game")
-                .map(|a| PathBuf::from(&a[1]));
-            let cartridge = game_path.as_ref().filter(|path| {
-                path.extension().is_some_and(|extension| {
-                    extension.eq_ignore_ascii_case("gba") || extension.eq_ignore_ascii_case("nds")
-                })
-            });
-            let root = game_path
-                .as_ref()
-                .filter(|_| cartridge.is_none())
-                .and_then(|path| std::fs::canonicalize(path).ok());
-            if let Some(root) = &root {
-                if let Err(error) = rsxp::runtime_patch::load_user_patches(root) {
-                    eprintln!("Could not load runtime patches: {error}");
+        if let Some(frame) = state.gpu_frame.take() {
+            let mut gpu = self.gpu_state.lock().unwrap();
+            gpu.logical_size = frame.size();
+            self.logical_size = frame.size();
+            if let Some(renderer) = &mut gpu.renderer {
+                if let Err(error) = renderer.apply_remote_frame(frame) {
+                    self.shared.workspace.session.as_mut().unwrap().error = Some(error);
                 }
             }
-            if let Ok(patches) = std::env::var("RSXP_PATCH") {
-                rsxp::runtime_patch::enable_from(&patches);
-            }
-            display.workspace_mut().backend =
-                Box::new(rsxp::workspace_services::LocalServices::new(root.clone()));
-            let jit = display.workspace_mut().session.as_ref().unwrap().ruby_jit;
-            match Session::start(&args, jit) {
-                Ok(s) => {
-                    session = Some(s);
-                    last_args = args;
-                    let panel = display.workspace_mut().session.as_mut().unwrap();
-                    panel.active = true;
-                    panel.paused = false;
-                    panel.status = "Starting…".into();
-                    panel.error = None;
-                    if let Some(rom) = cartridge {
-                        let title = rom
-                            .file_stem()
-                            .map(|stem| stem.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| "Cartridge game".into());
-                        panel.title = title.clone();
-                        panel.source = rom.to_string_lossy().into_owned();
-                        panel.save_directory = super::library::data_directory(&title)
-                            .map(|path| path.to_string_lossy().into_owned())
-                            .unwrap_or_default();
-                        if let Err(e) = super::library::remember(&mut panel.recent, rom) {
-                            panel.error = Some(format!("Could not remember game: {e}"));
-                        }
-                    } else if let Some(root) = &root {
-                        panel.title = super::library::title(root);
-                        panel.source = root.to_string_lossy().into_owned();
-                        panel.save_directory = super::library::save_directory(&panel.title)
-                            .map(|p| p.to_string_lossy().into_owned())
-                            .unwrap_or_default();
-                        if let Err(e) = super::library::remember(&mut panel.recent, root) {
-                            panel.error = Some(format!("Could not remember game: {e}"));
-                        }
-                    } else {
-                        panel.title = "Script session".into();
-                    }
-                }
-                Err(e) => display.workspace_mut().session.as_mut().unwrap().error = Some(e),
-            }
         }
-        if let Some(s) = &mut session {
-            let mut state = s.exchange.lock().unwrap();
-            display.workspace_mut().logs = state.logs.iter().cloned().collect();
-            let gpu_frame = state.gpu_frame.take();
-            gpu_view = state.gpu_view;
-            if let Some(next) = state.frame.take() {
-                logical_size = (next.width(), next.height());
-                frame = next;
-                display.workspace_mut().session.as_mut().unwrap().status = "Running".into();
-            }
-            display.set_game_metrics(state.fps, state.frames);
-            window.text_input(state.text_input);
-            window.cursor(state.cursor);
-            if let Some(frame) = &gpu_frame
-                && gpu_view
-            {
-                logical_size = frame.size();
-                display.workspace_mut().session.as_mut().unwrap().status = "Running".into();
-            }
-            if state.rate > 0 {
-                rsxp::runtime_settings::set_current_rate(state.rate);
-            }
-            let old_api = state.control["api"].as_str().unwrap_or("").to_owned();
-            let api = String::from_utf8_lossy(&rsxp::api_bridge::poll()).into_owned();
-            let scroll = state.control["scroll"].as_i64().unwrap_or(0) + i64::from(input.scroll_v);
-            let text = format!(
-                "{}{}",
-                state.control["text"].as_str().unwrap_or(""),
-                std::mem::take(&mut input.text)
-            );
-            if input.triggered(68) {
-                rsxp::runtime_settings::toggle_fast_forward();
-            }
-            let mut downs = state.control["downs"]
-                .as_array()
-                .cloned()
-                .unwrap_or_default();
-            let mut ups = state.control["ups"].as_array().cloned().unwrap_or_default();
-            downs.extend(
-                (-8..512)
-                    .filter(|k| ![58, 59, 60, 61, 67, 68].contains(k) && input.triggered(*k))
-                    .map(|k| json!(k)),
-            );
-            ups.extend(
-                (-8..512)
-                    .filter(|k| ![58, 59, 60, 61, 67, 68].contains(k) && input.released(*k))
-                    .map(|k| json!(k)),
-            );
-            let rect = display.game_pointer_rect();
-            let scale = (rect.width() / logical_size.0 as f32)
-                .min(rect.height() / logical_size.1 as f32)
+        self.gpu_view = state.gpu_view;
+        self.text_input = state.text_input;
+        self.fps = state.fps;
+        self.frames = state.frames;
+        if state.rate > 0 {
+            rsxp::runtime_settings::set_current_rate(state.rate);
+        }
+        let old_api = state.control["api"].as_str().unwrap_or("").to_owned();
+        let api = String::from_utf8_lossy(&rsxp::api_bridge::poll()).into_owned();
+        let mut downs = state.control["downs"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        let mut ups = state.control["ups"].as_array().cloned().unwrap_or_default();
+        downs.extend(
+            (-8..512)
+                .filter(|key| ![58, 59, 60, 61, 67, 68].contains(key) && self.input.triggered(*key))
+                .map(|key| json!(key)),
+        );
+        ups.extend(
+            (-8..512)
+                .filter(|key| ![58, 59, 60, 61, 67, 68].contains(key) && self.input.released(*key))
+                .map(|key| json!(key)),
+        );
+        let pointer = ctx.input(|input| input.pointer.latest_pos());
+        let rect = self.game_rect;
+        if let Some(position) = pointer {
+            let over_game = rect.contains(position) && !ctx.egui_wants_pointer_input();
+            let scale = (rect.width() / self.logical_size.0 as f32)
+                .min(rect.height() / self.logical_size.1 as f32)
                 .max(0.001);
             let origin = rect.center()
-                - egui::vec2(logical_size.0 as f32, logical_size.1 as f32) * scale * 0.5;
-            let mouse = (egui::pos2(input.mouse_x as f32, input.mouse_y as f32) - origin) / scale;
-            let paused = display.workspace_mut().session.as_ref().unwrap().paused;
-            if paused {
-                display.workspace_mut().session.as_mut().unwrap().status = "Paused".into();
-            }
-            state.control = json!({"paused":paused,"performance":display.performance_visible(),"downs":downs,"ups":ups,"keys":(-8..512).filter(|k| ![58,59,60,61,67,68].contains(k) && input.pressed(*k)).collect::<Vec<_>>(),"x":mouse.x as i32,"y":mouse.y as i32,"inside":!window.egui_context().egui_wants_pointer_input() && input.mouse_inside && mouse.x>=0.0 && mouse.y>=0.0 && mouse.x<logical_size.0 as f32 && mouse.y<logical_size.1 as f32,"scroll":scroll,"text":text,"fast":rsxp::runtime_settings::fast_forward(),"rate":rsxp::runtime_settings::rate_override(),"api":old_api+&api,"patches":rsxp::runtime_patch::patches().iter().map(|p|json!([p.id,rsxp::runtime_patch::is_enabled(&p.id),rsxp::runtime_patch::value(&p.id)])).collect::<Vec<_>>()});
-            if let Some(error) = state.error.take() {
-                display.workspace_mut().session.as_mut().unwrap().error = Some(error);
-            }
-            drop(state);
-            if let Some(frame) = gpu_frame {
-                gpu.apply_remote_frame(frame)?;
-            }
-            // Process exit can precede the pipe readers consuming the backtrace.
-            // Keep polling the UI until both readers reach EOF, then copy the
-            // final logs before releasing the session. Never join a live reader
-            // on the UI thread.
-            if let Some(status) = s.child.try_wait()?
-                && s.output_threads
-                    .iter()
-                    .all(std::thread::JoinHandle::is_finished)
+                - egui::vec2(self.logical_size.0 as f32, self.logical_size.1 as f32) * scale * 0.5;
+            let game_position = (position - origin) / scale;
+            self.input.mouse_x = game_position.x as i32;
+            self.input.mouse_y = game_position.y as i32;
+            self.input.mouse_inside = over_game
+                && game_position.x >= 0.0
+                && game_position.y >= 0.0
+                && game_position.x < self.logical_size.0 as f32
+                && game_position.y < self.logical_size.1 as f32;
+        } else {
+            self.input.mouse_inside = false;
+        }
+        let scale = (rect.width() / self.logical_size.0 as f32)
+            .min(rect.height() / self.logical_size.1 as f32)
+            .max(0.001);
+        let mouse = pointer
+            .map(|point| {
+                (point - rect.center()) / scale
+                    + egui::vec2(self.logical_size.0 as f32, self.logical_size.1 as f32) * 0.5
+            })
+            .unwrap_or(egui::Pos2::ZERO.to_vec2());
+        let paused = self.shared.workspace.session.as_ref().unwrap().paused;
+        if paused {
+            self.shared.workspace.session.as_mut().unwrap().status = "Paused".into();
+        }
+        state.control = json!({"paused":paused,"performance":self.shared.workspace.performance_visible(),
+            "downs":downs,"ups":ups,"keys":(-8..512).filter(|key| ![58,59,60,61,67,68].contains(key) && self.input.pressed(*key)).collect::<Vec<_>>(),
+            "x":mouse.x as i32,"y":mouse.y as i32,"inside":self.input.mouse_inside,
+            "scroll":self.input.scroll_v,"text":std::mem::take(&mut self.input.text),"fast":rsxp::runtime_settings::fast_forward(),
+            "rate":rsxp::runtime_settings::rate_override(),"api":old_api+&api,
+            "patches":rsxp::runtime_patch::patches().iter().map(|patch|json!([patch.id,rsxp::runtime_patch::is_enabled(&patch.id),rsxp::runtime_patch::value(&patch.id)])).collect::<Vec<_>>()});
+        if let Some(error) = state.error.take() {
+            self.shared.workspace.session.as_mut().unwrap().error = Some(error);
+        }
+        drop(state);
+        if let Ok(Some(status)) = session.child.try_wait() {
+            if session
+                .output_threads
+                .iter()
+                .all(std::thread::JoinHandle::is_finished)
             {
-                for thread in s.output_threads.drain(..) {
+                for thread in session.output_threads.drain(..) {
                     let _ = thread.join();
                 }
-                display.workspace_mut().logs =
-                    s.exchange.lock().unwrap().logs.iter().cloned().collect();
-                if !status.success() {
-                    let message = format!("Game exited: {status}");
-                    eprintln!("rsxp: {message}");
-                    display.workspace_mut().logs.push(message);
-                }
-                let panel = display.workspace_mut().session.as_mut().unwrap();
+                self.shared.workspace.logs = session
+                    .exchange
+                    .lock()
+                    .unwrap()
+                    .logs
+                    .iter()
+                    .cloned()
+                    .collect();
+                let panel = self.shared.workspace.session.as_mut().unwrap();
                 panel.active = false;
                 panel.status = format!("Stopped · {status}");
-                if status.success() {
-                    panel.error = None;
-                } else {
-                    panel.error = Some(format!("Game exited: {status}. See Runtime output below."));
-                }
-                session.take();
+                panel.error = (!status.success())
+                    .then(|| format!("Game exited: {status}. See Runtime output below."));
+                self.session.take();
                 rsxp::api_bridge::end_session();
             }
         }
-        if session.is_none() {
-            rsxp::api_bridge::end_session();
+    }
+}
+
+impl eframe::App for DesktopApp {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+        if self.gpu_callback.is_none() {
+            if let Some(state) = frame.wgpu_render_state() {
+                let render_state = state.clone();
+                match rsxp::gpu::GpuRenderer::new_with_device(
+                    640,
+                    480,
+                    render_state.instance.clone(),
+                    render_state.adapter.clone(),
+                    render_state.device.clone(),
+                    render_state.queue.clone(),
+                ) {
+                    Ok(renderer) => {
+                        self.gpu_state.lock().unwrap().renderer = Some(renderer);
+                        self.gpu_callback = Some(Arc::new(GameCallback::new(
+                            &render_state.device,
+                            self.gpu_state.clone(),
+                            render_state.target_format,
+                        )));
+                    }
+                    Err(error) => eprintln!("Could not initialize shared GPU compositor: {error}"),
+                }
+            }
         }
-        let context = window.egui_context().clone();
-        if context.egui_wants_keyboard_input() {
-            input.release_all();
+        self.collect_input(&ctx);
+        self.poll_session(&ctx);
+        if let Some(args) = self.launch.take() {
+            self.start_game(args, &ctx);
         }
-        let dropped =
-            context.input(|i| i.raw.dropped_files.first().map(|f| f.path().to_path_buf()));
-        if let Some(path) = dropped {
-            let panel = display.workspace_mut().session.as_mut().unwrap();
-            panel.source = path.to_string_lossy().into_owned();
-            panel.open = true;
-            panel.show_saves = false;
-        }
-        let presentation = Presentation {
-            size: window.physical_size(),
-            context: &context,
-            input: window.take_egui_input(),
-            global_fullscreen: fullscreen,
+        let info = rsxp::ui::WorkspaceInfo {
+            logical_size: self.logical_size,
+            fps: self.fps,
+            frames: self.frames,
+            global_fullscreen: ctx.input(|input| input.viewport().fullscreen.unwrap_or(false)),
+            show_fullscreen: true,
+            show_save_buttons: false,
         };
-        let output = if gpu_view {
-            display.present(&gpu, presentation)?
+        self.shared.set_info(info);
+        if self.gpu_view {
+            if let Some(callback) = &self.gpu_callback {
+                self.shared
+                    .set_game_paint_callback(Some(callback.paint_callback(self.game_rect)));
+            } else {
+                self.shared.set_game_paint_callback(None);
+                self.shared.set_bitmap(&ctx, &self.frame);
+            }
         } else {
-            display.present_bitmap(&gpu, &frame, presentation)?
-        };
-        window.set_game_pointer_rect(display.game_pointer_rect());
-        window.handle_egui_platform_output(output);
-        if let Some(value) = display.take_global_fullscreen_request() {
-            window.fullscreen(value)?;
-            fullscreen = value;
+            self.shared.set_game_paint_callback(None);
+            self.shared.set_bitmap(&ctx, &self.frame);
         }
-        let actions = std::mem::take(&mut display.workspace_mut().session_actions);
+        self.shared.draw(ui);
+        self.game_rect = self.shared.take_output().game_rect;
+        self.gpu_state.lock().unwrap().rect = self.game_rect;
+        if self.session.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(16));
+        }
+        let actions = std::mem::take(&mut self.shared.workspace.session_actions);
         if actions.browse {
             if let Some(path) = rfd::FileDialog::new()
                 .set_title("Choose an RPG Maker game folder or GBA/DS ROM")
                 .pick_folder()
             {
-                let panel = display.workspace_mut().session.as_mut().unwrap();
-                panel.source = path.to_string_lossy().into_owned();
-                match super::library::discover(&panel.source) {
+                let panel = self.shared.workspace.session.as_mut().unwrap();
+                match super::library::discover(&path.to_string_lossy()) {
                     Ok(source) => {
                         panel.source = source.path().to_string_lossy().into_owned();
-                        launch = Some(vec!["--game".into(), panel.source.clone()]);
+                        self.launch = Some(vec!["--game".into(), panel.source.clone()]);
                         panel.open = false;
                     }
-                    Err(_) => {
-                        panel.error = Some("That folder does not contain a supported game.".into());
-                    }
+                    Err(error) => panel.error = Some(error),
                 }
             }
         }
@@ -841,63 +993,108 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
                 .add_filter("Games", &["ini", "gba", "nds"])
                 .pick_file()
             {
-                let panel = display.workspace_mut().session.as_mut().unwrap();
-                panel.source = path.to_string_lossy().into_owned();
-                match super::library::discover(&panel.source) {
+                let panel = self.shared.workspace.session.as_mut().unwrap();
+                match super::library::discover(&path.to_string_lossy()) {
                     Ok(source) => {
                         panel.source = source.path().to_string_lossy().into_owned();
-                        launch = Some(vec!["--game".into(), panel.source.clone()]);
+                        self.launch = Some(vec!["--game".into(), panel.source.clone()]);
                         panel.open = false;
                     }
                     Err(error) => panel.error = Some(error),
                 }
             }
         }
-        if actions.stop {
-            session.take();
-            rsxp::api_bridge::end_session();
-            input.release_all();
-            window.cursor(true);
-            window.text_input(false);
-            let panel = display.workspace_mut().session.as_mut().unwrap();
-            panel.active = false;
-            panel.status = "Stopped".into();
-        }
-        if actions.restart || rsxp::runtime_settings::reset_requested() {
-            launch = Some(last_args.clone());
-        }
         if let Some(path) = actions.open {
             match super::library::discover(&path) {
-                Ok(source) if save_task.is_none() => {
-                    launch = Some(vec![
+                Ok(source) => {
+                    self.launch = Some(vec![
                         "--game".into(),
                         source.path().to_string_lossy().into_owned(),
                     ])
                 }
-                Ok(_) => {}
-                Err(error) => display.workspace_mut().session.as_mut().unwrap().error = Some(error),
+                Err(error) => self.shared.workspace.session.as_mut().unwrap().error = Some(error),
             }
+        }
+        if actions.stop {
+            self.session.take();
+            rsxp::api_bridge::end_session();
+            self.input.release_all();
+            let panel = self.shared.workspace.session.as_mut().unwrap();
+            panel.active = false;
+            panel.status = "Stopped".into();
+        }
+        if actions.restart || rsxp::runtime_settings::reset_requested() {
+            self.launch = Some(self.last_args.clone());
         }
         for (restore, operation) in [(false, actions.backup), (true, actions.restore)] {
-            if let Some((from, to)) = operation {
-                let panel = display.workspace_mut().session.as_mut().unwrap();
-                if save_task.is_none() && session.is_none() {
-                    let (sender, receiver) = std::sync::mpsc::channel();
-                    panel.busy = true;
-                    panel.error = None;
-                    std::thread::spawn(move || {
-                        let _ = sender.send(
-                            super::saves::copy(&from, &to, restore).map_err(|e| e.to_string()),
-                        );
-                    });
-                    save_task = Some(receiver);
-                }
+            if let Some((from, to)) = operation
+                && self.save_task.is_none()
+                && self.session.is_none()
+            {
+                let (sender, receiver) = std::sync::mpsc::channel();
+                self.shared.workspace.session.as_mut().unwrap().busy = true;
+                std::thread::spawn(move || {
+                    let _ = sender.send(
+                        super::saves::copy(&from, &to, restore).map_err(|error| error.to_string()),
+                    );
+                });
+                self.save_task = Some(receiver);
             }
         }
-        std::thread::sleep(Duration::from_millis(16).saturating_sub(start.elapsed()));
+        ctx.request_repaint_after(Duration::from_millis(16));
     }
-    drop(session);
-    Ok(0)
+}
+
+fn egui_scancode(key: egui::Key) -> Option<i32> {
+    use egui::Key::*;
+    Some(match key {
+        A => 4,
+        B => 5,
+        C => 6,
+        D => 7,
+        E => 8,
+        F => 9,
+        G => 10,
+        H => 11,
+        I => 12,
+        J => 13,
+        K => 14,
+        L => 15,
+        M => 16,
+        N => 17,
+        O => 18,
+        P => 19,
+        Q => 20,
+        R => 21,
+        S => 22,
+        T => 23,
+        U => 24,
+        V => 25,
+        W => 26,
+        X => 27,
+        Y => 28,
+        Z => 29,
+        Num1 => 30,
+        Num2 => 31,
+        Num3 => 32,
+        Num4 => 33,
+        Num5 => 34,
+        Num6 => 35,
+        Num7 => 36,
+        Num8 => 37,
+        Num9 => 38,
+        Num0 => 39,
+        Enter => 40,
+        Escape => 41,
+        Backspace => 42,
+        Tab => 43,
+        Space => 44,
+        ArrowRight => 79,
+        ArrowLeft => 80,
+        ArrowDown => 81,
+        ArrowUp => 82,
+        _ => return None,
+    })
 }
 
 #[cfg(test)]

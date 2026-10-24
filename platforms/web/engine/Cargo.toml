@@ -1,0 +1,49 @@
+[package]
+name = "rsxp-web-engine"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "GPL-2.0-or-later"
+description = "Browser (WebAssembly) frontend for the rsxp engine"
+
+[lib]
+name = "rsxp_web"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+rsxp = { path = "../../../crates/rsxp-rgss", default-features = false, features = ["ui", "game-api", "portable-media"] }
+rsxp-ui = { path = "../../../crates/rsxp-ui" }
+eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "default_fonts"] }
+# Feature-unify both browser rendering APIs for eframe's wgpu backend so
+# WebGL2 remains available when WebGPU is unavailable.
+wgpu = { version = "30.0.1", default-features = false, features = ["webgl", "webgpu", "wgsl", "std"] }
+# The browser workspace renders through wgpu's WebGL2 backend, which the browser
+# software-emulates when the GPU is disabled, so no GPU is required.
+wasm-bindgen = "=0.2.129"
+js-sys = "=0.3.106"
+wasm-bindgen-futures = "=0.4.79"
+web-sys = { version = "=0.3.106", features = [
+    "AudioContext",
+    "AudioDestinationNode",
+    "AudioNode",
+    "AudioParam",
+    "Blob",
+    "BlobPropertyBag",
+    "Document",
+    "Element",
+    "Event",
+    "EventTarget",
+    "GainNode",
+    "HtmlCanvasElement",
+    "HtmlAudioElement",
+    "HtmlMediaElement",
+    "MediaElementAudioSourceNode",
+    "Performance",
+    "Url",
+    "Window",
+] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp"] }
+fontdue = "0.9.5"
+console_error_panic_hook = "0.1"
+serde_json = "1"
+

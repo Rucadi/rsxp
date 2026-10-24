@@ -1,6 +1,6 @@
 [alias]
 api-openapi = "run --quiet --no-default-features --features api-docs --bin rsxp-mcp -- --openapi"
-xtask = "run --quiet --manifest-path web/xtask/Cargo.toml --"
+xtask = "run --quiet --manifest-path platforms/web/xtask/Cargo.toml --"
 
 # Statically link the MinGW C runtime and libgcc so the portable Windows build
 # does not depend on shipping libgcc_s_seh-1.dll / libwinpthread-1.dll /

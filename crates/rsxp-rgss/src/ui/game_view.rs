@@ -15,17 +15,31 @@
 //! input mapping.
 use super::*;
 impl Workspace {
-    pub(super) fn draw_game_view(&mut self, context: &egui::Context, output: &mut WorkspaceOutput) {
+    fn paint_game(&self, ui: &egui::Ui, rect: egui::Rect) {
+        if let Some(callback) = &self.game_paint_callback {
+            let mut callback = callback.clone();
+            callback.rect = rect;
+            ui.painter().add(egui::Shape::Callback(callback));
+        } else if let Some(texture) = self.frame_texture {
+            ui.painter().image(
+                texture,
+                rect,
+                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+        }
+    }
+
+    pub(super) fn draw_game_view(&mut self, ui: &mut egui::Ui, output: &mut WorkspaceOutput) {
+        let context = ui.ctx().clone();
         if self.controls_visible && self.view_mode == ViewMode::Floating {
-            context.root_ui(|root_ui| {
-                egui::CentralPanel::default()
-                    .frame(egui::Frame::NONE)
-                    .show(root_ui, |ui| {
-                        ui.centered_and_justified(|ui| {
-                            ui.label("Game view is floating. Choose Docked to return it here.");
-                        });
-                    })
-            });
+            egui::CentralPanel::default()
+                .frame(egui::Frame::NONE)
+                .show(ui, |ui| {
+                    ui.centered_and_justified(|ui| {
+                        ui.label("Game view is floating. Choose Docked to return it here.");
+                    });
+                });
             egui::Window::new("Game")
                 .id(egui::Id::unique("floating-game-view"))
                 .default_size(egui::vec2(640.0, 480.0))
@@ -35,17 +49,19 @@ impl Workspace {
                 .frame(
                     egui::Frame::window(&context.global_style()).fill(egui::Color32::TRANSPARENT),
                 )
-                .show(context, |ui| {
+                .show(&context, |ui| {
                     let (rect, _) =
                         ui.allocate_exact_size(ui.available_size(), egui::Sense::hover());
                     output.game_rect = rect;
+                    self.paint_game(ui, rect);
                 });
         } else {
-            output.game_rect = context
-                .root_ui(|root_ui| {
-                    egui::CentralPanel::default()
-                        .frame(egui::Frame::NONE)
-                        .show(root_ui, |ui| ui.max_rect())
+            output.game_rect = egui::CentralPanel::default()
+                .frame(egui::Frame::NONE)
+                .show(ui, |ui| {
+                    let rect = ui.max_rect();
+                    self.paint_game(ui, rect);
+                    rect
                 })
                 .inner;
         }

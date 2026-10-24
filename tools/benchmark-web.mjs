@@ -6,12 +6,12 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { DefaultRubyVM } from '../web/node_modules/@ruby/wasm-wasi/dist/esm/browser.js';
-import { WASI_TMPDIR_COMPAT } from '../web/browser/ruby-host.js';
+import { DefaultRubyVM } from '../platforms/web/node_modules/@ruby/wasm-wasi/dist/esm/browser.js';
+import { WASI_TMPDIR_COMPAT } from '../platforms/web/browser/ruby-host.js';
 import { rubySource } from './ruby-sources.mjs';
 
 const root = resolve(import.meta.dirname, '..');
-const pkg = resolve(process.argv[2] || `${root}/web/dist/pkg`);
+const pkg = resolve(process.argv[2] || `${root}/platforms/web/dist/pkg`);
 const shim = process.argv[3] ? readFileSync(process.argv[3], 'utf8') : rubySource('RGSS_SOURCE');
 const engine = await import(pathToFileURL(`${pkg}/rsxp_web.js`));
 await engine.default({ module_or_path: readFileSync(`${pkg}/rsxp_web_bg.wasm`) });
@@ -31,7 +31,7 @@ globalThis.RSXP = {
 };
 globalThis.MKXP = globalThis.RSXP;
 const { vm } = await DefaultRubyVM(await WebAssembly.compile(
-  readFileSync(`${root}/web/dist/ruby/ruby+stdlib.wasm`),
+  readFileSync(`${root}/platforms/web/dist/ruby/ruby+stdlib.wasm`),
 ), { env: {
   HOME: '/', LANG: 'en_US.UTF-8',
   ...Object.fromEntries(['RSXP_SPRITE_CACHE']

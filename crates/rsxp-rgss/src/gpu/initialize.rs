@@ -51,6 +51,21 @@ impl GpuRenderer {
         pollster::block_on(Self::initialize(width, height, instance, Some(surface)))
     }
 
+    /// Initializes a compositor on an existing renderer device (for example,
+    /// eframe's device), so game composition and UI presentation share one GPU.
+    pub fn new_with_device(
+        width: u32,
+        height: u32,
+        instance: wgpu::Instance,
+        adapter: wgpu::Adapter,
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+    ) -> Result<Self, String> {
+        pollster::block_on(Self::initialize_with_device(
+            width, height, instance, adapter, device, queue,
+        ))
+    }
+
     async fn initialize(
         width: u32,
         height: u32,
@@ -85,6 +100,17 @@ impl GpuRenderer {
             })
             .await
             .map_err(|e| e.to_string())?;
+        Self::initialize_with_device(width, height, instance, adapter, device, queue).await
+    }
+
+    async fn initialize_with_device(
+        width: u32,
+        height: u32,
+        instance: wgpu::Instance,
+        adapter: wgpu::Adapter,
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+    ) -> Result<Self, String> {
         let error_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("RGSS packed-pixel compositor"),

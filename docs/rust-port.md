@@ -123,7 +123,7 @@ universal RGSS compatibility fixes.
 
 The browser uses a separate Ruby WASM module, a serialized bridge and a Fiber
 scheduler. Its filesystem, audio, save persistence and thread/network shims have
-additional constraints; see [browser documentation](../web/README.md).
+additional constraints; see [browser documentation](../platforms/web/README.md).
 
 `frontends/desktop/tests/cli.rs` exercises embedded Ruby, all three RGSS modes, rendering,
 Table GC/Marshal, scripted input, failures/exit status, frame limits, compressed

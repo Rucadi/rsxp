@@ -38,8 +38,42 @@ impl RubyJit {
     }
 }
 
+/// Host services, independent of OS and window runner (winit/eframe).
+/// A sandboxed mobile host can enable document/archive import without exposing
+/// filesystem paths, directory backups, or Ruby JIT controls.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SessionCapabilities {
+    pub paths: bool,
+    pub directory_backups: bool,
+    pub ruby_jit: bool,
+    pub zip_import: bool,
+    pub torrent_import: bool,
+}
+impl SessionCapabilities {
+    pub const DESKTOP: Self = Self {
+        paths: true,
+        directory_backups: true,
+        ruby_jit: true,
+        zip_import: false,
+        torrent_import: false,
+    };
+    pub const BROWSER: Self = Self {
+        paths: false,
+        directory_backups: false,
+        ruby_jit: false,
+        zip_import: true,
+        torrent_import: true,
+    };
+}
+impl Default for SessionCapabilities {
+    fn default() -> Self {
+        Self::DESKTOP
+    }
+}
+
 #[derive(Default)]
 pub struct SessionPanel {
+    pub capabilities: SessionCapabilities,
     pub ruby_jit: RubyJit,
     pub source: String,
     pub title: String,
@@ -70,82 +104,80 @@ pub struct SessionActions {
     pub restart: bool,
     pub backup: Option<(String, String)>,
     pub restore: Option<(String, String)>,
+    pub import_zip: bool,
+    pub download: Option<String>,
+    pub cancel: bool,
 }
 impl SessionPanel {
-    pub fn draw(&mut self, context: &egui::Context) -> SessionActions {
+    pub fn draw(&mut self, ui: &mut egui::Ui) -> SessionActions {
+        let context = ui.ctx().clone();
         let mut actions = SessionActions::default();
-        context.root_ui(|root_ui| {
-            egui::Panel::top("session-header").show(root_ui, |ui| {
-                ui.add_space(6.0);
-                ui.horizontal(|ui| {
+        egui::Panel::top("session-header").show(ui, |ui| {
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("rsxp")
+                        .size(23.0)
+                        .strong()
+                        .color(egui::Color32::from_rgb(104, 211, 176)),
+                );
+                ui.add_space(12.0);
+                ui.label(if self.title.is_empty() {
+                    "Game workspace"
+                } else {
+                    &self.title
+                });
+                if !self.status.is_empty() {
                     ui.label(
-                        egui::RichText::new("rsxp")
-                            .size(23.0)
-                            .strong()
+                        egui::RichText::new(&self.status)
+                            .small()
                             .color(egui::Color32::from_rgb(104, 211, 176)),
                     );
-                    ui.add_space(12.0);
-                    ui.label(if self.title.is_empty() {
-                        "Game workspace"
-                    } else {
-                        &self.title
-                    });
-                    if !self.status.is_empty() {
-                        ui.label(
-                            egui::RichText::new(&self.status)
-                                .small()
-                                .color(egui::Color32::from_rgb(104, 211, 176)),
-                        );
-                    }
-                });
-                ui.horizontal_wrapped(|ui| {
-                    if ui
-                        .selectable_label(
-                            !self.show_saves && (!self.active || self.open),
-                            "Library",
-                        )
-                        .clicked()
-                    {
-                        self.open = !self.open || self.show_saves;
-                        self.show_saves = false;
-                    }
-                    if ui
+                }
+            });
+            ui.horizontal_wrapped(|ui| {
+                if ui
+                    .selectable_label(!self.show_saves && (!self.active || self.open), "Library")
+                    .clicked()
+                {
+                    self.open = !self.open || self.show_saves;
+                    self.show_saves = false;
+                }
+                if self.capabilities.directory_backups
+                    && ui
                         .selectable_label(self.show_saves && (!self.active || self.open), "Saves")
                         .clicked()
-                    {
-                        self.open = !self.open || !self.show_saves;
-                        self.show_saves = true;
-                    }
-                    if self.active {
-                        ui.toggle_value(&mut self.paused, "Pause").on_hover_text(
-                            "Pause game execution; inspector requests wait until resumed",
-                        );
-                        if ui.button("Stop").clicked() {
-                            self.confirm_stop = true;
-                        }
-                        if ui.button("Restart").clicked() {
-                            self.confirm_restart = true;
-                        }
-                    }
-                });
-                if let Some(error) = &self.error {
-                    ui.colored_label(ui.visuals().error_fg_color, error);
+                {
+                    self.open = !self.open || !self.show_saves;
+                    self.show_saves = true;
                 }
-                ui.add_space(6.0);
-            })
+                if self.active {
+                    ui.toggle_value(&mut self.paused, "Pause").on_hover_text(
+                        "Pause game execution; inspector requests wait until resumed",
+                    );
+                    if ui.button("Stop").clicked() {
+                        self.confirm_stop = true;
+                    }
+                    if ui.button("Restart").clicked() {
+                        self.confirm_restart = true;
+                    }
+                }
+            });
+            if let Some(error) = &self.error {
+                ui.colored_label(ui.visuals().error_fg_color, error);
+            }
+            ui.add_space(6.0);
         });
         if !self.active {
-            context.root_ui(|root_ui| {
-                egui::CentralPanel::default().show(root_ui, |ui| {
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        ui.add_space(8.0);
-                        if self.show_saves {
-                            self.draw_saves(ui, &mut actions);
-                        } else {
-                            self.draw_library(ui, &mut actions);
-                        }
-                    });
-                })
+            egui::CentralPanel::default().show(ui, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.add_space(8.0);
+                    if self.show_saves {
+                        self.draw_saves(ui, &mut actions);
+                    } else {
+                        self.draw_library(ui, &mut actions);
+                    }
+                });
             });
         } else if self.open {
             egui::Window::new(if self.show_saves {
@@ -156,7 +188,7 @@ impl SessionPanel {
             .id(egui::Id::unique("session-library"))
             .default_width(860.0)
             .collapsible(false)
-            .show(context, |ui| {
+            .show(&context, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     if self.show_saves {
                         self.draw_saves(ui, &mut actions);
@@ -171,7 +203,7 @@ impl SessionPanel {
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-                .show(context, |ui| {
+                .show(&context, |ui| {
                     ui.label("Unsaved progress will be lost. Save in the game before continuing.");
                     ui.horizontal(|ui| {
                         if ui

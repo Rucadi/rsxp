@@ -17,49 +17,47 @@
 //!   networking is unavailable.
 use super::*;
 impl Workspace {
-    pub(super) fn draw_patches_panel(&mut self, context: &egui::Context, _info: &WorkspaceInfo) {
-        context.root_ui(|root_ui| {
-            egui::Panel::left("workspace-game-panel")
-                .resizable(true)
-                .default_size(280.0)
-                .size_range(230.0..=500.0)
-                .show(root_ui, |ui| {
+    pub(super) fn draw_patches_panel(&mut self, ui: &mut egui::Ui, _info: &WorkspaceInfo) {
+        egui::Panel::left("workspace-game-panel")
+            .resizable(true)
+            .default_size(280.0)
+            .size_range(230.0..=500.0)
+            .show(ui, |ui| {
+                ui.add_space(8.0);
+                ui.heading("Game tools");
+                ui.weak("Customize your session");
+                ui.add_space(12.0);
+                ui.vertical(|ui| {
+                    ui.style_mut().spacing.button_padding = egui::vec2(12.0, 8.0);
+                    ui.selectable_value(&mut self.tool, Tool::Runtime, "Runtime");
+                    ui.selectable_value(&mut self.tool, Tool::Essentials, "Pokémon Essentials");
+                    #[cfg(feature = "game-api")]
+                    ui.selectable_value(&mut self.tool, Tool::PokeApi, "pokeAPI");
+                    #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
+                    ui.selectable_value(&mut self.tool, Tool::OnlinePlay, "Online play");
+                });
+                ui.add_space(12.0);
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.separator();
                     ui.add_space(8.0);
-                    ui.heading("Game tools");
-                    ui.weak("Customize your session");
-                    ui.add_space(12.0);
-                    ui.vertical(|ui| {
-                        ui.style_mut().spacing.button_padding = egui::vec2(12.0, 8.0);
-                        ui.selectable_value(&mut self.tool, Tool::Runtime, "Runtime");
-                        ui.selectable_value(&mut self.tool, Tool::Essentials, "Pokémon Essentials");
-                        #[cfg(feature = "game-api")]
-                        ui.selectable_value(&mut self.tool, Tool::PokeApi, "pokeAPI");
+                    match self.tool {
+                        Tool::Runtime => self.draw_patch_catalog(ui, true),
                         #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
-                        ui.selectable_value(&mut self.tool, Tool::OnlinePlay, "Online play");
-                    });
-                    ui.add_space(12.0);
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        ui.separator();
-                        ui.add_space(8.0);
-                        match self.tool {
-                            Tool::Runtime => self.draw_patch_catalog(ui, true),
-                            #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
-                            Tool::OnlinePlay => self.draw_cable_club_panel(ui),
-                            Tool::Essentials => {
-                                self.draw_patch_catalog(ui, false);
-                                #[cfg(feature = "game-api")]
-                                self.draw_essentials_tools(ui);
-                            }
+                        Tool::OnlinePlay => self.draw_cable_club_panel(ui),
+                        Tool::Essentials => {
+                            self.draw_patch_catalog(ui, false);
                             #[cfg(feature = "game-api")]
-                            Tool::PokeApi => {
-                                if ui.button("Open API + testing window").clicked() {
-                                    self.api_tools_open = true;
-                                }
+                            self.draw_essentials_tools(ui);
+                        }
+                        #[cfg(feature = "game-api")]
+                        Tool::PokeApi => {
+                            if ui.button("Open API + testing window").clicked() {
+                                self.api_tools_open = true;
                             }
                         }
-                    });
-                })
-        });
+                    }
+                });
+            });
     }
 
     fn draw_patch_catalog(&mut self, ui: &mut egui::Ui, user_patches: bool) {

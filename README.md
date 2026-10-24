@@ -121,7 +121,7 @@ compatibility limits.
   supported API areas, limitations and debugging controls.
 - [Game workspace](docs/dashboard.md): game library, session controls, saves
   and desktop transport.
-- [Browser frontend](web/README.md): build, assets, cooperative Ruby execution
+- [Browser frontend](platforms/web/README.md): build, assets, cooperative Ruby execution
   and browser limitations.
 - [Live game API](crates/rsxp-rgss/api/README.md): HTTP inspection/control and the MCP executable.
 - [Multi-core architecture](docs/multi-core-architecture.md): core contract,
@@ -147,7 +147,7 @@ cargo check -p rsxp-desktop --no-default-features --features gba
 nix-shell --run 'cargo test -p rsxp-core-rgss --test headless'
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
-npm --prefix web test
+npm --prefix platforms/web test
 ```
 
 The first command exercises the portable CPU core on the host; it does not

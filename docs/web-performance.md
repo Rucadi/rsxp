@@ -63,10 +63,10 @@ measurements.
 ```sh
 # Inside the development shell, from the repository root:
 cargo xtask web
-npm --prefix web run benchmark
+npm --prefix platforms/web run benchmark
 
 # Compare the legacy Ruby synchronization path using the same engine binary:
-RSXP_SPRITE_CACHE=0 npm --prefix web run benchmark
+RSXP_SPRITE_CACHE=0 npm --prefix platforms/web run benchmark
 
 # Compare saved before/after artifacts, including CPU renderer changes:
 node tools/benchmark-web.mjs /path/to/before/pkg /path/to/before/rgss.rb
@@ -74,7 +74,7 @@ node tools/benchmark-web.mjs /path/to/before/pkg /path/to/before/rgss.rb
 cargo test -p rsxp --lib --no-default-features
 cargo test -p rsxp-desktop --test cli
 RSXP_WEB_FIXTURE=crates/rsxp-rgss/testdata/rgss_sync_lifecycle.rb node tools/benchmark-web.mjs
-npm --prefix web test
+npm --prefix platforms/web test
 ```
 
 The lifecycle fixture compares native, cached serialized and legacy serialized

@@ -397,24 +397,24 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            web/engine -> target
-            web/xtask -> target
+            platforms/web/engine -> target
+            platforms/web/xtask -> target
             web -> target
           key: browser
       - name: Build browser player
         run: nix develop --command cargo xtask web
       - name: Check build tool and browser runtime
         run: |
-          nix develop --command cargo test --locked --manifest-path web/xtask/Cargo.toml
-          nix develop --command cargo test --locked --manifest-path web/Cargo.toml
-          nix develop --command npm --prefix web test
-          nix develop --command npm --prefix web run test:cli
+          nix develop --command cargo test --locked --manifest-path platforms/web/xtask/Cargo.toml
+          nix develop --command cargo test --locked --manifest-path platforms/web/Cargo.toml
+          nix develop --command npm --prefix platforms/web test
+          nix develop --command npm --prefix platforms/web run test:cli
       - name: Export the standalone player page
-        run: nix develop --command web/target/release/rsxp-web export web/dist/rsxp.html
+        run: nix develop --command platforms/web/target/release/rsxp-web export platforms/web/dist/rsxp.html
       - uses: actions/upload-artifact@v4
         with:
           name: rsxp.html
-          path: web/dist/rsxp.html
+          path: platforms/web/dist/rsxp.html
           if-no-files-found: error
 
   web-player:
@@ -451,31 +451,31 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: rsxp.html
-          path: web/dist
+          path: platforms/web/dist
       - name: Stage the exported page as the compile-time embed
-        run: cp web/dist/rsxp.html web/dist/player.html
+        run: cp platforms/web/dist/rsxp.html platforms/web/dist/player.html
       - name: Build native web player
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
-            nix develop --command cargo build --locked --release --manifest-path web/Cargo.toml
+            nix develop --command cargo build --locked --release --manifest-path platforms/web/Cargo.toml
           else
-            cargo build --locked --release --manifest-path web/Cargo.toml
+            cargo build --locked --release --manifest-path platforms/web/Cargo.toml
           fi
       - name: Smoke-test export
         env:
           EXE_SUFFIX: ${{ matrix.suffix }}
         run: |
-          "web/target/release/rsxp-web$EXE_SUFFIX" --help
-          "web/target/release/rsxp-web$EXE_SUFFIX" export web/dist/export-test.html
-          cmp web/dist/player.html web/dist/export-test.html
+          "platforms/web/target/release/rsxp-web$EXE_SUFFIX" --help
+          "platforms/web/target/release/rsxp-web$EXE_SUFFIX" export platforms/web/dist/export-test.html
+          cmp platforms/web/dist/player.html platforms/web/dist/export-test.html
       - name: Package web player
         env:
           PLATFORM: ${{ matrix.platform }}
           EXE_SUFFIX: ${{ matrix.suffix }}
         run: |
           mkdir -p artifacts/rsxp-web
-          cp "web/target/release/rsxp-web$EXE_SUFFIX" artifacts/rsxp-web/
-          cp COPYING web/README.md artifacts/rsxp-web/
+          cp "platforms/web/target/release/rsxp-web$EXE_SUFFIX" artifacts/rsxp-web/
+          cp COPYING platforms/web/README.md artifacts/rsxp-web/
           tar -czf "artifacts/rsxp-web-$PLATFORM.tar.gz" -C artifacts rsxp-web
       - uses: actions/upload-artifact@v4
         with:

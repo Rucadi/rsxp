@@ -9,6 +9,12 @@ publish = false
 rsxp-core = { path = "../../../crates/rsxp-core" }
 serde_json = "1"
 chrono = "0.4"
-dust-core = { git = "https://github.com/kelpsyberry/dust", branch = "main", features = ["xq-audio"] }
-dust-soft-2d = { git = "https://github.com/kelpsyberry/dust", branch = "main" }
-dust-soft-3d = { git = "https://github.com/kelpsyberry/dust", branch = "main" }
+dust-core = { git = "https://github.com/kelpsyberry/dust", rev = "76d79f25e4ea3ce355c4ac868f5ac9a233e64b89", features = ["xq-audio"] }
+dust-soft-2d = { git = "https://github.com/kelpsyberry/dust", rev = "76d79f25e4ea3ce355c4ac868f5ac9a233e64b89" }
+dust-soft-3d = { git = "https://github.com/kelpsyberry/dust", rev = "76d79f25e4ea3ce355c4ac868f5ac9a233e64b89" }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+dust-wgpu-2d = { path = "../vendor/dust-wgpu-2d" }
+dust-wgpu-3d = { path = "../vendor/dust-wgpu-3d", features = ["threaded"] }
+wgpu23 = { package = "wgpu", version = "23.0" }
+pollster = "1.0.1"

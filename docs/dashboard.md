@@ -115,14 +115,11 @@ The browser keeps its existing cooperative Ruby/WASM execution and loader. It
 uses the same panel modules and local service adapter without the desktop
 launcher or subprocess transport. Web save export/import remains available.
 
-The native GPU path transports draw commands, tile geometry, and revision-based
-asset uploads. The dashboard composes directly on its presentation GPU: ordinary
-game frames perform no GPU readback and do not upload a finished framebuffer.
-Queued views merge without losing ordered asset updates. Explicit screenshots,
-freeze, and snap operations materialize the runner's current scene on demand.
-Software fallback still transports pixels, using a bulk write and uploading only
-when the received bitmap revision changes. See [transport performance](session-performance.md)
-for the benchmark and regression checks.
+The eframe dashboard currently requests software-composed child frames and
+uploads changed bitmaps to the shared eframe game texture. This keeps native and
+browser rendering on the same `SharedApp` path while the native GPU command
+stream is adapted to eframe paint callbacks. It trades the previous no-readback
+GPU path for CPU frame transfer during this migration.
 
 ## Save files
 
@@ -154,3 +151,8 @@ of the shared UI. Independent multi-VM support is outside the single-game design
 Android support, document pickers, and lifecycle integration are not implemented
 by this change. Native library and directory-backup controls currently use path
 text fields behind the shared session intent interface.
+
+The browser launcher uses the same `SessionPanel` and library widgets. Platform
+capabilities select native path/backup/JIT controls or browser import controls;
+adapters execute the resulting actions. See [shared frontend](shared-frontend.md)
+for the eframe and mobile migration boundaries.

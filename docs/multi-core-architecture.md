@@ -50,7 +50,7 @@ cores/
 frontends/
   core-runner/                 # headless generic runner for core validation
   desktop/                     # winit + egui + Kira desktop frontend
-  web/                         # wasm frontend (separate workspace today)
+  platforms/web/                         # wasm frontend (separate workspace today)
   mobile/                      # iOS/Android host (separate workspace today)
 ```
 
@@ -255,7 +255,7 @@ loading must never silently reset a running game.
 | Core | Backend | Status |
 | --- | --- | --- |
 | `rgss` | Embedded MRI + Rust RGSS engine | Adapter available; desktop isolated-runner path retained |
-| `nds` | [Dust](https://github.com/kelpsyberry/dust) (GPL-3.0) | Optional `nds` feature; software 2D/3D, stacked screens and touch. The Dust dependency uses unstable features, so this feature builds on nightly (or with `RUSTC_BOOTSTRAP=1` for local checks) |
+| `nds` | [Dust](https://github.com/kelpsyberry/dust) (GPL-3.0) | Optional `nds` feature; desktop uses Dust wgpu 2D/3D with software fallback, stacked screens and touch. CPU frame readback is currently required by the process-separated video transport. The Dust dependency uses unstable features, so this feature builds on nightly (or with `RUSTC_BOOTSTRAP=1` for local checks) |
 | `gba` | [RustBoyAdvance-NG](https://github.com/michelhe/rustboyadvance-ng) (MIT) | Adapter available; desktop and core-runner cartridge path |
 
 The desktop binary has `gba`, `nds` and `rgss` features. They are all enabled by

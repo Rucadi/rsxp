@@ -1,0 +1,14 @@
+[package]
+name = "dust-wgpu-2d"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+dust-core = { git = "https://github.com/kelpsyberry/dust", rev = "76d79f25e4ea3ce355c4ac868f5ac9a233e64b89" }
+emu-utils = { git = "https://github.com/kelpsyberry/emu-utils", features = ["triple-buffer", "app"] }
+dust-soft-2d-base = { git = "https://github.com/kelpsyberry/dust", rev = "76d79f25e4ea3ce355c4ac868f5ac9a233e64b89" }
+proc-bitfield = { version = "0.5", features = ["nightly"] }
+wgpu = "23.0"
+crossbeam-channel = "0.5"
+parking_lot = "0.12"

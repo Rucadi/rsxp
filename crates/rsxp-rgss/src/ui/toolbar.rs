@@ -4,96 +4,90 @@ use super::*;
 impl Workspace {
     pub(super) fn draw_toolbar(
         &mut self,
-        context: &egui::Context,
+        ui: &mut egui::Ui,
         info: &WorkspaceInfo,
         output: &mut WorkspaceOutput,
     ) {
-        context.root_ui(|root_ui| {
-            egui::Panel::top("workspace-toolbar").show(root_ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    if self.session.is_none() {
-                        ui.heading("rsxp");
+        egui::Panel::top("workspace-toolbar").show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                if self.session.is_none() {
+                    ui.heading("rsxp");
+                }
+                ui.menu_button("Layout", |ui| {
+                    ui.checkbox(&mut self.panels_top, "Dashboard overview");
+                    ui.checkbox(&mut self.panels_left, "Game tools (F2)");
+                    ui.checkbox(&mut self.panels_performance, "Performance (F10)");
+                    ui.checkbox(&mut self.panels_output, "Activity (F3)");
+                    ui.separator();
+                    ui.label("Game presentation");
+                    ui.selectable_value(&mut self.view_mode, ViewMode::Docked, "Docked");
+                    ui.selectable_value(
+                        &mut self.view_mode,
+                        ViewMode::WorkspaceFullscreen,
+                        "Workspace fullscreen",
+                    );
+                    ui.selectable_value(&mut self.view_mode, ViewMode::Floating, "Floating window");
+                });
+                if ui
+                    .button("Controls")
+                    .on_hover_text("Remap controller buttons and adjust stick sensitivity")
+                    .clicked()
+                {
+                    self.controller_settings_open = true;
+                }
+                ui.menu_button("Speed", |ui| {
+                    ui.label("Game speed");
+                    let mut fast_forward = self.backend.fast_forward();
+                    if ui.checkbox(&mut fast_forward, "Uncapped (F11)").changed() {
+                        self.backend.set_fast_forward(fast_forward);
                     }
-                    ui.menu_button("Layout", |ui| {
-                        ui.checkbox(&mut self.panels_top, "Dashboard overview");
-                        ui.checkbox(&mut self.panels_left, "Game tools (F2)");
-                        ui.checkbox(&mut self.panels_performance, "Performance (F10)");
-                        ui.checkbox(&mut self.panels_output, "Activity (F3)");
-                        ui.separator();
-                        ui.label("Game presentation");
-                        ui.selectable_value(&mut self.view_mode, ViewMode::Docked, "Docked");
-                        ui.selectable_value(
-                            &mut self.view_mode,
-                            ViewMode::WorkspaceFullscreen,
-                            "Workspace fullscreen",
-                        );
-                        ui.selectable_value(
-                            &mut self.view_mode,
-                            ViewMode::Floating,
-                            "Floating window",
-                        );
-                    });
+                    let current_rate = self.backend.current_rate();
+                    let mut fps = if current_rate == 0 { 60 } else { current_rate };
                     if ui
-                        .button("Controls")
-                        .on_hover_text("Remap controller buttons and adjust stick sensitivity")
-                        .clicked()
+                        .add_enabled(
+                            current_rate > 0,
+                            egui::DragValue::new(&mut fps)
+                                .range(1..=1000)
+                                .speed(1.0)
+                                .prefix("FPS "),
+                        )
+                        .changed()
                     {
-                        self.controller_settings_open = true;
+                        self.backend.set_rate_override(fps);
                     }
-                    ui.menu_button("Speed", |ui| {
-                        ui.label("Game speed");
-                        let mut fast_forward = self.backend.fast_forward();
-                        if ui.checkbox(&mut fast_forward, "Uncapped (F11)").changed() {
-                            self.backend.set_fast_forward(fast_forward);
+                    ui.weak("Changing the frame rate may change gameplay speed.");
+                });
+                if info.show_save_buttons {
+                    ui.menu_button("Save files", |ui| {
+                        if ui.button("Export save").clicked() {
+                            output.export_saves = true;
                         }
-                        let current_rate = self.backend.current_rate();
-                        let mut fps = if current_rate == 0 { 60 } else { current_rate };
-                        if ui
-                            .add_enabled(
-                                current_rate > 0,
-                                egui::DragValue::new(&mut fps)
-                                    .range(1..=1000)
-                                    .speed(1.0)
-                                    .prefix("FPS "),
-                            )
-                            .changed()
-                        {
-                            self.backend.set_rate_override(fps);
+                        if ui.button("Import save").clicked() {
+                            output.import_saves = true;
                         }
-                        ui.weak("Changing the frame rate may change gameplay speed.");
                     });
-                    if info.show_save_buttons {
-                        ui.menu_button("Save files", |ui| {
-                            if ui.button("Export save").clicked() {
-                                output.export_saves = true;
-                            }
-                            if ui.button("Import save").clicked() {
-                                output.import_saves = true;
-                            }
-                        });
-                    }
-                    if info.show_fullscreen
-                        && ui
-                            .button(if info.global_fullscreen {
-                                "Exit fullscreen · F4"
-                            } else {
-                                "Fullscreen · F4"
-                            })
-                            .clicked()
-                    {
-                        output.fullscreen_request = Some(!info.global_fullscreen);
-                        if !info.global_fullscreen {
-                            self.controls_visible = false;
-                        }
-                    }
-                    if self.session.is_none() && ui.button("Reset game").clicked() {
-                        self.reset_confirm = true;
-                    }
-                    if ui.button("Return to game · F1").clicked() {
+                }
+                if info.show_fullscreen
+                    && ui
+                        .button(if info.global_fullscreen {
+                            "Exit fullscreen · F4"
+                        } else {
+                            "Fullscreen · F4"
+                        })
+                        .clicked()
+                {
+                    output.fullscreen_request = Some(!info.global_fullscreen);
+                    if !info.global_fullscreen {
                         self.controls_visible = false;
                     }
-                });
-            })
+                }
+                if self.session.is_none() && ui.button("Reset game").clicked() {
+                    self.reset_confirm = true;
+                }
+                if ui.button("Return to game · F1").clicked() {
+                    self.controls_visible = false;
+                }
+            });
         });
     }
 

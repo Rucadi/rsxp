@@ -13,6 +13,8 @@ rsxp = { path = "../../crates/rsxp-rgss", features = ["gpu", "ui", "game-api", "
 rsxp-core = { path = "../../crates/rsxp-core" }
 rsxp-cores = { path = "../../crates/rsxp-cores", default-features = false }
 rsxp-frontend = { path = "../../crates/rsxp-frontend" }
+rsxp-ui = { path = "../../crates/rsxp-ui" }
+eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "default_fonts", "x11", "wayland", "clipboard", "system_fonts"] }
 ruby_rgss_core = { package = "rsxp-rgss-ruby", path = "../../cores/rgss/ruby", optional = true }
 getrandom = "0.4.3"
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "vulkan", "gles", "metal", "wgsl"] }

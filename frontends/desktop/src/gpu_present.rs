@@ -312,8 +312,8 @@ impl GpuDisplay {
         };
         let mut game_rect = egui::Rect::ZERO;
         let mut fullscreen_request = None;
-        let mut output = context.run_pass(input, |context| {
-            let result = self.workspace.draw(context, &workspace_info);
+        let mut output = context.run_ui(input, |ui| {
+            let result = self.workspace.draw(ui, &workspace_info);
             game_rect = result.game_rect;
             fullscreen_request = result.fullscreen_request;
         });

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Nintendo DS adapter using Dust's interpreter and software renderers.
+//! Nintendo DS adapter using Dust's interpreter and GPU renderers on desktop.
 mod renderer;
 mod rtc;
 mod save;
@@ -114,6 +114,7 @@ impl dust_core::audio::Backend for Audio {
 struct NdsAdapter {
     context: Option<CoreContext>,
     emu: Option<Emu<Interpreter>>,
+    gpu_output: Option<renderer::GpuOutput>,
     rom: Vec<u8>,
     bios7: Option<Box<Bytes<{ arm7::BIOS_SIZE }>>>,
     bios9: Option<Box<Bytes<{ arm9::BIOS_SIZE }>>>,
@@ -204,7 +205,10 @@ fn validate_rom(rom: &[u8]) -> CoreResult<()> {
     Ok(())
 }
 impl NdsAdapter {
-    fn build(&self, saved: Option<Vec<u8>>) -> CoreResult<Emu<Interpreter>> {
+    fn build(
+        &self,
+        saved: Option<Vec<u8>>,
+    ) -> CoreResult<(Emu<Interpreter>, Option<renderer::GpuOutput>)> {
         let mut rom = BoxedByteSlice::new_zeroed(self.rom.len().next_power_of_two());
         rom[..self.rom.len()].copy_from_slice(&self.rom);
         let mut fw = BoxedByteSlice::new_zeroed(self.firmware.len());
@@ -214,7 +218,7 @@ impl NdsAdapter {
             firmware::id_for_model(Model::Lite),
         )
         .map_err(|_| CoreError::content("invalid DS firmware size"))?;
-        let (tx, rx) = renderer::new();
+        let renderers = renderer::new();
         let mut builder = emu::Builder::new(
             firmware,
             Some(Box::new(rom)),
@@ -224,8 +228,8 @@ impl NdsAdapter {
             }),
             None,
             Box::<rtc::Clock>::default(),
-            Box::new(dust_soft_2d::sync::Renderer::new(rx)),
-            tx,
+            renderers.rx,
+            renderers.tx,
             None,
         );
         builder.model = Model::Lite;
@@ -233,16 +237,19 @@ impl NdsAdapter {
         builder.arm9_bios = self.bios9.clone();
         builder.audio_custom_sample_rate = NonZeroU32::new(self.sample_rate);
         builder.audio_sample_chunk_size = 512;
-        builder.build(Interpreter).map_err(|error| {
-            CoreError::content(match error {
-                emu::BuildError::RomNeedsDecryptionButNoBiosProvided => {
-                    "encrypted DS ROM needs your BIOS dump (RSXP_NDS_BIOS7)"
-                }
-                emu::BuildError::MissingSysFiles => "missing DS BIOS/firmware",
-                emu::BuildError::MissingRom => "missing DS ROM",
-                emu::BuildError::RomCreation(_) => "invalid DS cartridge",
+        builder
+            .build(Interpreter)
+            .map(|emu| (emu, renderers.gpu_output))
+            .map_err(|error| {
+                CoreError::content(match error {
+                    emu::BuildError::RomNeedsDecryptionButNoBiosProvided => {
+                        "encrypted DS ROM needs your BIOS dump (RSXP_NDS_BIOS7)"
+                    }
+                    emu::BuildError::MissingSysFiles => "missing DS BIOS/firmware",
+                    emu::BuildError::MissingRom => "missing DS ROM",
+                    emu::BuildError::RomCreation(_) => "invalid DS cartridge",
+                })
             })
-        })
     }
     fn flush_save(&mut self, emit: bool) -> CoreResult<()> {
         let emu = self.emu.as_mut().unwrap();
@@ -282,7 +289,9 @@ impl NdsAdapter {
             CoreCommand::Reset => {
                 self.flush_save(false)?;
                 let saved = self.emu.as_ref().unwrap().ds_slot.spi.contents().to_vec();
-                self.emu = Some(self.build(Some(saved))?);
+                let (emu, gpu_output) = self.build(Some(saved))?;
+                self.emu = Some(emu);
+                self.gpu_output = gpu_output;
                 self.flush_audio();
                 CommandOutcome::Succeeded
             }
@@ -403,7 +412,9 @@ impl Core for NdsAdapter {
                 )))
             }
         };
-        self.emu = Some(self.build(saved)?);
+        let (emu, gpu_output) = self.build(saved)?;
+        self.emu = Some(emu);
+        self.gpu_output = gpu_output;
         self.context = Some(context);
         self.context
             .as_mut()
@@ -505,15 +516,27 @@ impl Core for NdsAdapter {
             if emu.run() == RunOutput::Shutdown {
                 break;
             }
-            for (pixel, out) in emu
-                .gpu
-                .renderer_2d()
-                .framebuffer()
-                .iter()
-                .flatten()
-                .zip(self.video.chunks_exact_mut(4))
-            {
-                out.copy_from_slice(&pixel.to_le_bytes());
+            if let Some(gpu_output) = &mut self.gpu_output {
+                let pixels = gpu_output
+                    .next_rgba()
+                    .ok_or_else(|| CoreError::runtime("Dust wgpu frame readback failed"))?;
+                if pixels.len() != self.video.len() {
+                    return Err(CoreError::runtime(
+                        "Dust wgpu returned an invalid frame size",
+                    ));
+                }
+                self.video.copy_from_slice(&pixels);
+            } else {
+                for (pixel, out) in emu
+                    .gpu
+                    .renderer_2d()
+                    .framebuffer()
+                    .iter()
+                    .flatten()
+                    .zip(self.video.chunks_exact_mut(4))
+                {
+                    out.copy_from_slice(&pixel.to_le_bytes());
+                }
             }
             let context = self.context.as_mut().unwrap();
             context
@@ -531,6 +554,9 @@ impl Core for NdsAdapter {
                 }
             }
             frames += 1;
+            if std::env::var_os("RSXP_NDS_TRACE").is_some() && frames % 60 == 0 {
+                eprintln!("frame {frames}: arm9={:?} arm7={:?}", self.emu.as_ref().unwrap().arm9.regs(), self.emu.as_ref().unwrap().arm7.regs());
+            }
             if control.frame_limit().is_some_and(|limit| frames >= limit) {
                 break;
             }

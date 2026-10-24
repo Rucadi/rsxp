@@ -39,7 +39,8 @@ cartridge host, without MRI, the RGSS engine or the DS toolchain. Interactive
 cartridge sessions require the dashboard session transport; `--headless`
 supports PPM capture.
 
-The dashboard owns winit, egui and its presentation GPU on the main thread.
+The dashboard uses eframe for its native window, egui application and UI
+presentation. The shared `rsxp-ui::SharedApp` owns the game workspace.
 `dashboard::Session` starts the same executable with `run`, a loopback address
 and a per-launch random token. Background threads collect output and exchange
 frames and controls. Dropping a session kills and waits for the child. This is
@@ -63,19 +64,20 @@ RGSS application.
 | `crates/rsxp-core/` | Emulator-core contract: video/audio/input/control/events, no RGSS or frontend dependencies |
 | `crates/rsxp-frontend/` | Generic core catalog, content routing and dedicated core-thread driver |
 | `crates/rsxp-cores/` | Build-time registry; features select which cores a frontend links |
-| `crates/rsxp-rgss/` | The `rsxp` engine package: graphics, GPU compositor, archives, media, Ruby shim and current RGSS workspace UI |
+| `crates/rsxp-rgss/` | The `rsxp` engine package: graphics, GPU compositor, archives, media, Ruby shim and shared RGSS workspace UI |
+| `crates/rsxp-ui/` | Cross-platform eframe `App` and shared game-frame texture presentation |
 | `cores/rgss/core/` | RGSS adapter implementing `rsxp_core::Core` |
 | `cores/rgss/ruby/` | MRI embedding and all Magnus bindings (package `rsxp-rgss-ruby`) |
 | `cores/gba/core/` | GBA adapter implementing `rsxp_core::Core` (RustBoyAdvance-NG backend) |
 | `frontends/core-runner/` | Headless generic runner for core validation |
 | `frontends/desktop/` | Desktop binary, dashboard, window, audio, presentation and session transport |
-| `web/` | Browser frontend (separate Cargo workspace) |
+| `platforms/web/` | Browser frontend (separate Cargo workspace) |
 | `mobile/` | iOS/Android host (separate Cargo workspace) |
 
 The engine package still uses the library name `rsxp`, so existing engine and
 frontend imports remain valid. The MCP binary is built by the engine package
 from `crates/rsxp-rgss/api/main.rs`. The browser crate has its own manifest in
-`web/engine/`.
+`platforms/web/engine/`.
 
 See [multi-core architecture](multi-core-architecture.md) for the core contract,
 hot-path rules and migration phases.
@@ -90,9 +92,9 @@ hot-path rules and migration phases.
 
 The engine library defaults to `gpu`; the desktop package enables its `gpu`
 frontend and the needed engine features. The MCP binary requires `api-docs`.
-The browser depends on the engine library with `ui` and `game-api`, and
-separately uses wgpu for canvas presentation. Browser game composition is
-software: using wgpu for the workspace does not enable the shared GPU compositor.
+The browser depends on `rsxp-ui` and starts it with eframe's `WebRunner`.
+Browser game composition remains software and its output is uploaded as a
+texture to the shared UI.
 Magnus is a private dependency of `rsxp-rgss-ruby`; the engine library and
 desktop application use the crate's Rust-only interface.
 
@@ -230,14 +232,11 @@ submission and readback. Native tile geometry and atlas caches live in
 `graphics/tilemap.rs`. Adjacent disjoint operations can share dispatches;
 unchanged compositions can be reused.
 
-In dashboard sessions, the GPU path records and transports draw commands,
-geometry and asset updates for composition on the dashboard device. This is
-not cross-process sharing of a GPU texture. Software sessions send pixels for
-upload. Captures and snapshot/freeze operations materialize pixels when needed;
-ordinary remote GPU frames avoid framebuffer readback.
-
-The rendering decision is separate from presentation. In particular, a software
-composed frame still needs the dashboard GPU to appear in its window.
+The eframe dashboard currently asks child sessions to compose on the CPU and
+uploads bitmap revisions to the shared application texture. The earlier direct
+GPU command transport remains in the session protocol, but the new dashboard
+does not consume it yet. This preserves the shared runner path at the cost of
+CPU frame transfer until eframe paint-callback integration is complete.
 
 ```mermaid
 flowchart TD
@@ -245,12 +244,12 @@ flowchart TD
     Eligible -->|"Yes"| Draws["Encode GPU draws and revision-based asset updates"]
     Eligible -->|"No"| CPU["Compose RGBA bitmap on CPU"]
     Draws --> Remote{"Dashboard session?"}
-    Remote -->|"Yes"| Packet["Send draw commands, geometry and asset updates"]
-    Packet --> Replay["Compose on dashboard GPU"]
+    Remote -->|"Yes"| Packet["Current eframe dashboard uses CPU fallback"]
+    Packet --> Upload["Upload framebuffer as SharedApp texture"]
     Remote -->|"No"| Local["Compose on local GPU"]
     CPU --> Pixels["Send pixels to dashboard, or use local host"]
-    Pixels --> Upload["Upload framebuffer for interactive display"]
-    Replay --> Display["Game texture plus egui workspace"]
+    Pixels --> Upload
+    Upload --> Display["Game texture plus shared eframe workspace"]
     Local --> Display
     Upload --> Display
     Display --> Window["Present window surface"]
@@ -287,7 +286,7 @@ flowchart TD
     Update --> Bridge["Base64 bridge: Ruby to JavaScript to Rust WASM"]
     Bridge --> Compose["Shared engine composes software framebuffer"]
     Compose --> Yield["Fiber.yield returns control to JavaScript"]
-    Yield --> Present["Upload framebuffer; draw game and egui on canvas"]
+    Yield --> Present["Upload framebuffer to SharedApp; eframe paints canvas"]
     Present --> Schedule
     Events["Browser keyboard, mouse and text events"] --> Queue["Queue engine input between resumes"]
     Queue -.-> Update
@@ -296,8 +295,8 @@ flowchart TD
 
 Startup also yields between batches of Ruby preparation work. The Fiber is
 cooperative: a long Ruby operation without a yield blocks page interaction.
-The wgpu canvas presenter does not change software game composition into GPU
-composition. See [browser setup and limitations](../web/README.md).
+The browser runner uses eframe for the canvas and shared UI; game composition
+remains software. See [browser setup and limitations](../platforms/web/README.md).
 
 ## Workspace and inspection
 
@@ -337,8 +336,8 @@ separate relay services, not a general HTTP implementation for game scripts.
 | Ruby VM, Magnus and Win32 adapters | `cores/rgss/ruby/src/` |
 | Workspace panels and services | `crates/rsxp-rgss/src/ui/`, `crates/rsxp-rgss/src/workspace_services/`, `crates/rsxp-rgss/src/workspace_services.rs` |
 | Runtime patch catalog and Ruby patch bodies | `crates/rsxp-rgss/src/patches/` |
-| Browser scheduling and Ruby adaptations | `web/browser/app.js` |
-| Browser exports, services and presentation | `web/engine/src/` |
+| Browser scheduling and Ruby adaptations | `platforms/web/browser/app.js` |
+| Browser exports, services and presentation | `platforms/web/engine/src/` |
 | HTTP/MCP and game-thread adapter | `crates/rsxp-rgss/api/`, `crates/rsxp-rgss/src/api_bridge.rs` |
 | Tests and benchmark workloads | `crates/rsxp-rgss/src/engine/tests.rs`, `crates/rsxp-rgss/src/graphics/tests.rs`, `crates/rsxp-rgss/src/gpu/tests.rs`, `frontends/desktop/tests/cli.rs`, `crates/rsxp-rgss/testdata/`, `crates/rsxp-rgss/examples/` |
 
@@ -346,7 +345,7 @@ Paths are relative to the repository root. Start a new RGSS operation in the
 Ruby shim and command dispatcher, keeping typed desktop paths consistent.
 Platform changes belong behind Host; pixel changes need CPU/GPU parity checks.
 See the [README](../README.md#development-checks) for validation commands and
-[browser guide](../web/README.md) for the actual wasm build.
+[browser guide](../platforms/web/README.md) for the actual wasm build.
 
 ## Shared workspace services
 
@@ -360,7 +359,7 @@ The browser does not need network access to inspect the running game.
 `LocalServices` accepts an asset reader for hosts without native files/workers.
 The browser injects its virtual file reader and caches decoded preview images;
 desktop keeps its background filesystem decoder. The shared UI uses a portable
-clock. Browser VM compatibility setup lives once in `web/browser/ruby-host.js`,
+clock. Browser VM compatibility setup lives once in `platforms/web/browser/ruby-host.js`,
 imported by the page and the headless integration runner. `Table` fallback
 storage lives in the shared RGSS shim, selected only without native bindings.
 

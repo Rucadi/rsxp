@@ -28,7 +28,12 @@ impl SessionPanel {
             }
             if self.busy {
                 ui.spinner();
-                ui.label("Opening game…");
+                ui.label("Preparing game…");
+                if (self.capabilities.zip_import || self.capabilities.torrent_import)
+                    && ui.button("Cancel").clicked()
+                {
+                    actions.cancel = true;
+                }
             }
         });
         ui.add_space(12.0);
@@ -233,46 +238,79 @@ impl SessionPanel {
         }
         ui.add_space(16.0);
         ui.separator();
-        egui::CollapsingHeader::new("Open from path, Game.ini, or GBA/DS ROM")
-            .default_open(self.recent.is_empty())
-            .show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.source)
-                            .desired_width((ui.available_width() - 170.0).max(100.0))
-                            .hint_text("Paste a game folder, Game.ini, or .gba/.nds path…"),
-                    );
-                    if ui
-                        .add_enabled(
-                            !self.busy && !self.source.trim().is_empty(),
-                            egui::Button::new("Open"),
-                        )
-                        .clicked()
-                    {
-                        actions.open = Some(self.source.trim().into());
-                        self.open = false;
-                    }
-                    if ui
-                        .add_enabled(!self.busy, egui::Button::new("Browse game file…"))
-                        .clicked()
-                    {
-                        actions.browse_game_file = true;
-                    }
-                });
-            });
-        egui::CollapsingHeader::new("Runtime options").show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.label("Ruby JIT");
-                egui::ComboBox::from_id_salt("ruby-jit")
-                    .selected_text(self.ruby_jit.label())
-                    .show_ui(ui, |ui| {
-                        for mode in [RubyJit::Yjit, RubyJit::Zjit, RubyJit::Disabled] {
-                            ui.selectable_value(&mut self.ruby_jit, mode, mode.label());
+        if self.capabilities.zip_import {
+            ui.label("Choose a game folder with Game.ini and Data, or open a ZIP archive.");
+            if ui
+                .add_enabled(!self.busy, egui::Button::new("Open ZIP archive…"))
+                .clicked()
+            {
+                actions.import_zip = true;
+            }
+            ui.weak("Folder and ZIP files are read locally on your device.");
+        }
+        if self.capabilities.torrent_import {
+            ui.add_space(12.0);
+            ui.label("WebTorrent magnet link or torrent URL");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.source)
+                    .desired_width(f32::INFINITY)
+                    .hint_text("magnet:?xt=urn:btih:…"),
+            );
+            if ui
+                .add_enabled(
+                    !self.busy && !self.source.trim().is_empty(),
+                    egui::Button::new("Download game"),
+                )
+                .clicked()
+            {
+                actions.download = Some(self.source.trim().into());
+            }
+            ui.weak("Torrents need WebRTC-compatible seeders. Your browser may share pieces while downloading.");
+        }
+        if self.capabilities.paths {
+            egui::CollapsingHeader::new("Open from path, Game.ini, or GBA/DS ROM")
+                .default_open(self.recent.is_empty())
+                .show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.source)
+                                .desired_width((ui.available_width() - 170.0).max(100.0))
+                                .hint_text("Paste a game folder, Game.ini, or .gba/.nds path…"),
+                        );
+                        if ui
+                            .add_enabled(
+                                !self.busy && !self.source.trim().is_empty(),
+                                egui::Button::new("Open"),
+                            )
+                            .clicked()
+                        {
+                            actions.open = Some(self.source.trim().into());
+                            self.open = false;
+                        }
+                        if ui
+                            .add_enabled(!self.busy, egui::Button::new("Browse game file…"))
+                            .clicked()
+                        {
+                            actions.browse_game_file = true;
                         }
                     });
-                ui.weak("Applies when starting or restarting a game.");
+                });
+        }
+        if self.capabilities.ruby_jit {
+            egui::CollapsingHeader::new("Runtime options").show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label("Ruby JIT");
+                    egui::ComboBox::from_id_salt("ruby-jit")
+                        .selected_text(self.ruby_jit.label())
+                        .show_ui(ui, |ui| {
+                            for mode in [RubyJit::Yjit, RubyJit::Zjit, RubyJit::Disabled] {
+                                ui.selectable_value(&mut self.ruby_jit, mode, mode.label());
+                            }
+                        });
+                    ui.weak("Applies when starting or restarting a game.");
+                });
             });
-        });
+        }
     }
 }
 

@@ -1,9 +1,7 @@
 # Nintendo DS core
 
-`rsxp-core-nds` adapts the `main` branch of
-[Dust](https://github.com/kelpsyberry/dust). Cargo.lock records the resolved
-commit for reproducible builds and `cargo update -p dust-core` advances it to
-the latest main branch revision. At the time of this update, upstream main is
+`rsxp-core-nds` adapts
+[Dust](https://github.com/kelpsyberry/dust) at pinned commit
 `76d79f25e4ea3ce355c4ac868f5ac9a233e64b89`. It is enabled in the default
 desktop, core registry and headless runner features. Dust uses unstable Rust
 features and the Rust 1.97 SIMD APIs; the Nix shell enables them for its
@@ -17,8 +15,15 @@ cargo test -p rsxp-core-nds
 ```
 
 Both screens are presented as a single 256×384 RGBA frame (top screen first).
-The backend uses Dust's interpreter, synchronous software 2D/3D rendering,
-and stereo PCM at 48 kHz or the desktop device rate. Pause, fast-forward,
+The backend uses Dust's interpreter and stereo PCM at 48 kHz or the desktop
+device rate. Desktop sessions use Dust's wgpu 2D/3D renderers when available;
+the 3D pass and 2D compositor submissions are serialized on the graphics
+thread to avoid cross-thread wgpu queue submission stalls. They fall back to
+Dust's synchronous software renderers if wgpu initialization fails.
+WebAssembly uses the same Dust software 2D/3D renderers and shared emulation/UI
+code; browser GPU threading is not required. Because the current cartridge
+transport carries CPU `VideoFrame`s between processes, desktop wgpu frames are
+read back before presentation. Pause, fast-forward,
 reset, frame limits, screenshots, cartridge saves and versioned save states
 use the shared core contract. RTC reads the host's local clock.
 
@@ -66,8 +71,8 @@ states through the cartridge command queue.
 
 ## Scope and compatibility
 
-Wi-Fi, microphone input, DSi mode, DLDI storage, alternate screen layouts and
-accelerated rendering are not exposed. The RTC host offset is not serialized.
+Wi-Fi, microphone input, DSi mode, DLDI storage, and alternate screen layouts
+are not exposed. The RTC host offset is not serialized.
 The tests use generated ARM programs without commercial ROMs; they do not
 establish retail-game compatibility or real-time performance for every title.
 

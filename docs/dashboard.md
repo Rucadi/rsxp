@@ -9,15 +9,11 @@ drag-and-drop, and remembers twelve recently opened games in
 There is one active game. Opening another replaces it. Stop and restart leave
 the dashboard open. The selected game's tools, textures, requests, and runtime
 settings are cleared when switching games. The sidebar presents Runtime,
-Pokémon Essentials, pokeAPI, and Online play separately; performance and runtime
-output are optional workspace panels. Pokémon Essentials contains its bundled
-patches, Load world map, Current-map encounters, Pokédex, Movedex, Itemdex, and a
-Debug mode toggle that reads and writes the game's own `$DEBUG` flag. The world map and encounters
-open their dedicated utility windows. Other map controls, party/status/NPC/battle
-requests live in pokeAPI. Cable Club connections have a dedicated Online play tab.
-pokeAPI opens an API and testing window with controls and the complete OpenAPI
-contract on the left, and the response on the right. Text is selectable for
-Ctrl+C copying, and the response and OpenAPI contract also have copy buttons.
+Pokémon Essentials, and Online play separately; performance and runtime output
+are optional workspace panels. Essentials tools, the panoramic/Cable Club
+compatibility controls, world map, encounters, Pokédex, Movedex, Itemdex, and
+Debug mode are supplied by Rhai plugins. The PokeAPI Explorer is also a
+plugin-owned HTML view with request presets and a copyable JSON response pane.
 
 The Pokédex has a fuzzy-searchable species/form list (name, species ID or numeric
 Pokédex ID), independent scrolling, and a pinned identity header. Overview shows

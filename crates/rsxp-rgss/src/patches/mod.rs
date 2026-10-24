@@ -2,14 +2,11 @@
 //! Runtime patches: small self-contained Ruby programs the workspace UI can
 //! turn on while a game is running.
 //!
-//! The engine owns the catalog, the enabled set and (for patches that expose
-//! one) a numeric parameter such as a zoom level. A host UI toggles patches and
-//! drives the parameter (the desktop egui panel and the browser page both do);
-//! the Ruby shim polls the state each frame (`RuntimePatches` in `rgss.rb`),
-//! fetches a patch's source the first time it is enabled, evaluates it and
-//! calls its `apply`/`revert`/`value` procs. Because the source only runs when
-//! enabled, a patch can touch game internals without affecting games that never
-//! enable it.
+//! The engine owns the generic user-patch catalog and enabled set. Essentials
+//! behavior is deliberately not compiled here: its Rhai plugins inject Ruby
+//! and own their controls and lifecycle. The Ruby shim still polls this state
+//! for generic user patches, evaluates their source, and calls their
+//! `apply`/`revert`/`value` procs.
 //!
 //! ## State
 //! The catalog, enabled set and parameter values all live in thread-locals, so
@@ -33,8 +30,8 @@ pub struct PatchParameter {
     pub suffix: &'static str,
 }
 
-/// One available patch. `source` is a Ruby program that evaluates to a hash of
-/// `apply`/`revert`/`value` procs; see `patches/map_panoramic.rb`.
+/// One available generic patch. `source` is a Ruby program that evaluates to a
+/// hash of `apply`/`revert`/`value` procs.
 #[derive(Clone)]
 pub struct RuntimePatch {
     pub id: Cow<'static, str>,
@@ -44,31 +41,11 @@ pub struct RuntimePatch {
     pub parameter: Option<PatchParameter>,
 }
 
-/// The catalog of built-in patches. Everything here is compiled into the engine
-/// and available to every game; game-specific behaviour is guarded inside the
-/// Ruby source with `defined?` checks.
-pub const PATCHES: &[RuntimePatch] = &[RuntimePatch {
-    id: Cow::Borrowed("map_panoramic"),
-    name: Cow::Borrowed("Map panoramic mode"),
-    description: Cow::Borrowed("Renders a wider slice of the current map and scales it to fit, \
-                  so more of the map is visible. Only active while a map is on \
-                  screen."),
-    source: Cow::Borrowed(include_str!("map_panoramic.rb")),
-    parameter: Some(PatchParameter {
-        label: "Zoom",
-        min: 1.0,
-        max: 3.0,
-        step: 0.1,
-        default: 1.5,
-        suffix: "×",
-    }),
-}, RuntimePatch {
-    id: Cow::Borrowed("cable_club_rng"),
-    name: Cow::Borrowed("Cable Club RNG compatibility"),
-    description: Cow::Borrowed("Repairs Cable Club's per-turn RNG sync in memory for Ruby versions where its Random#srand calls fail. Enable before starting an online battle."),
-    source: Cow::Borrowed(include_str!("cable_club_rng.rb")),
-    parameter: None,
-}];
+/// Essentials-specific patches are supplied by the `essentials-runtime-patches`
+/// Rhai plugin. Keeping the native catalog empty is intentional: generic user
+/// patches still use this registry, while game-specific Ruby never lives in
+/// the Rust binary.
+pub const PATCHES: &[RuntimePatch] = &[];
 
 thread_local! {
     static USER_PATCHES: RefCell<Vec<std::sync::Arc<RuntimePatch>>> = const { RefCell::new(Vec::new()) };
@@ -109,6 +86,27 @@ pub fn register_user_patch(name: &str, source: String) -> bool {
         user.sort_by(|a, b| a.id.cmp(&b.id));
     });
     true
+}
+
+/// Remove a host-provided patch after its Ruby `revert` callback has run.
+/// Built-in patches and patches loaded from the game's `patches/` directory
+/// are never removable through this API.
+pub fn remove_user_patch(name: &str) -> bool {
+    let id = name.strip_prefix("user/").unwrap_or(name);
+    if id.is_empty() || !id.starts_with("rhai-") {
+        return false;
+    }
+    let removed = USER_PATCHES.with(|user| {
+        let mut user = user.borrow_mut();
+        let before = user.len();
+        user.retain(|patch| patch.id != format!("user/{id}"));
+        user.len() != before
+    });
+    if removed {
+        ENABLED.with(|enabled| enabled.borrow_mut().remove(&format!("user/{id}")));
+        VALUES.with(|values| values.borrow_mut().remove(&format!("user/{id}")));
+    }
+    removed
 }
 
 /// Load Ruby files returning an apply/revert hash from a game's patches folder.
@@ -279,19 +277,18 @@ mod tests {
         let root = std::env::temp_dir().join(format!("rsxp-user-patches-{}", std::process::id()));
         std::fs::create_dir_all(root.join("patches")).unwrap();
         let source = "{ apply: proc {}, revert: proc {} }";
-        std::fs::write(root.join("patches/map_panoramic.rb"), source).unwrap();
+        std::fs::write(root.join("patches/test_patch.rb"), source).unwrap();
         std::fs::write(root.join("patches/readme.txt"), "not Ruby").unwrap();
         load_user_patches(&root).unwrap();
-        assert_eq!(find("user/map_panoramic").unwrap().source, source);
-        assert_ne!(find("map_panoramic").unwrap().source, source);
-        assert!(!is_enabled("user/map_panoramic"));
-        assert!(set_enabled("user/map_panoramic", true));
-        assert!(state_report().contains("user/map_panoramic=1\t\n"));
-        assert!(list_report().contains("patches/map_panoramic.rb"));
+        assert_eq!(find("user/test_patch").unwrap().source, source);
+        assert!(!is_enabled("user/test_patch"));
+        assert!(set_enabled("user/test_patch", true));
+        assert!(state_report().contains("user/test_patch=1\t\n"));
+        assert!(list_report().contains("patches/test_patch.rb"));
         reset();
-        assert!(find("user/map_panoramic").is_none());
-        assert!(!is_enabled("user/map_panoramic"));
-        assert!(find("map_panoramic").is_some());
+        assert!(find("user/test_patch").is_none());
+        assert!(!is_enabled("user/test_patch"));
+        assert!(patches().is_empty());
         std::fs::remove_dir_all(root).unwrap();
     }
 }

@@ -33,7 +33,9 @@ use js_sys::Uint8Array;
 use rsxp::engine::{self, Runtime, RuntimeOptions, ScriptedKey};
 use rsxp::graphics::Bitmap;
 use rsxp::host::InputEvent;
+use rsxp_extension_api::{OperationError, OperationRequest, OperationResponse};
 use std::cell::RefCell;
+use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 
@@ -43,6 +45,10 @@ thread_local! {
     // Retained storage keeps frame conversion allocation-free after the first
     // frame at each screen size (headless checks and canvas fallback paths).
     static FRAMEBUFFER: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+    static EXTENSION_BRIDGE: RefCell<HashMap<u64, (u64, u64)>> = RefCell::new(HashMap::new());
+    static PLUGIN_HTTP_BRIDGE: RefCell<HashMap<u64, Result<u64, (u16, String)>>> =
+        RefCell::new(HashMap::new());
+    static EXTENSIONS_ACTIVATED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// Milliseconds since page load, or zero when the browser clock is unavailable.
@@ -132,11 +138,254 @@ fn with_eframe_app<R>(f: impl FnOnce(&mut rsxp_ui::SharedApp) -> R) -> Option<R>
     })
 }
 
+fn pump_extensions() {
+    let requests = with_eframe_app(|app| app.take_extension_requests()).unwrap_or_default();
+    for request in requests {
+        if let Some(plugin_id) = request.operation.strip_suffix(".__webview.open") {
+            if let (Some(view_id), Some(title), Some(html)) = (
+                request
+                    .arguments
+                    .get("view_id")
+                    .and_then(serde_json::Value::as_str),
+                request
+                    .arguments
+                    .get("title")
+                    .and_then(serde_json::Value::as_str),
+                request
+                    .arguments
+                    .get("html")
+                    .and_then(serde_json::Value::as_str),
+            ) {
+                browser_webview_call(
+                    "__rsxp_openPluginWebview",
+                    serde_json::json!({
+                        "plugin_id": plugin_id,
+                        "view_id": view_id,
+                        "title": title,
+                        "html": html,
+                    })
+                    .to_string(),
+                );
+            }
+            let _ = with_eframe_app(|app| {
+                app.dispatch_extension_response(OperationResponse {
+                    id: request.id,
+                    generation: request.generation,
+                    result: Ok(serde_json::json!({"opened": true})),
+                })
+            });
+            continue;
+        }
+        if let Some(plugin_id) = request.operation.strip_suffix(".__webview.close") {
+            if let Some(view_id) = request
+                .arguments
+                .get("view_id")
+                .and_then(serde_json::Value::as_str)
+            {
+                browser_webview_call(
+                    "__rsxp_closePluginWebview",
+                    serde_json::json!({"plugin_id": plugin_id, "view_id": view_id}).to_string(),
+                );
+            }
+            let _ = with_eframe_app(|app| {
+                app.dispatch_extension_response(OperationResponse {
+                    id: request.id,
+                    generation: request.generation,
+                    result: Ok(serde_json::json!({"closed": true})),
+                })
+            });
+            continue;
+        }
+        let Some((operation, args)) = legacy_extension_call(&request) else {
+            let _ = with_eframe_app(|app| {
+                app.dispatch_extension_response(OperationResponse {
+                    id: request.id,
+                    generation: request.generation,
+                    result: Err(OperationError::new(
+                        "unsupported_operation",
+                        request.operation,
+                    )),
+                })
+            });
+            continue;
+        };
+        match rsxp::api_bridge::send_from_ui(operation, args) {
+            Ok(bridge_id) => EXTENSION_BRIDGE.with(|pending| {
+                pending
+                    .borrow_mut()
+                    .insert(bridge_id, (request.id, request.generation));
+            }),
+            Err(error) => {
+                let _ = with_eframe_app(|app| {
+                    app.dispatch_extension_response(OperationResponse {
+                        id: request.id,
+                        generation: request.generation,
+                        result: Err(OperationError::new("queue", error)),
+                    })
+                });
+            }
+        }
+    }
+
+    let pending: Vec<_> =
+        EXTENSION_BRIDGE.with(|pending| pending.borrow().keys().copied().collect());
+    for bridge_id in pending {
+        let Some(reply) = rsxp::api_bridge::take_ui_response(bridge_id) else {
+            continue;
+        };
+        let Some((id, generation)) =
+            EXTENSION_BRIDGE.with(|pending| pending.borrow_mut().remove(&bridge_id))
+        else {
+            continue;
+        };
+        let result = match reply {
+            Ok(body) => serde_json::from_str(&body)
+                .map_err(|error| OperationError::new("invalid_response", error.to_string())),
+            Err(error) => Err(OperationError::new("transport", error)),
+        };
+        let _ = with_eframe_app(|app| {
+            app.dispatch_extension_response(OperationResponse {
+                id,
+                generation,
+                result,
+            })
+        });
+    }
+}
+
+fn browser_webview_call(function_name: &str, payload: String) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Ok(function) = js_sys::Reflect::get(&window, &JsValue::from_str(function_name))
+        .and_then(|value| value.dyn_into::<js_sys::Function>())
+    else {
+        web_eframe_log(&format!(
+            "browser plugin webview hook {function_name} is unavailable"
+        ));
+        return;
+    };
+    let _ = function.call1(&JsValue::NULL, &JsValue::from_str(&payload));
+}
+
+/// Queues an HTTP request made by a browser plugin webview. The parent page
+/// owns the iframe, while this bridge reuses the same game-thread API queue as
+/// the desktop HTTP server.
+#[wasm_bindgen]
+pub fn web_eframe_plugin_http(
+    // Browser plugin request ids come from a JavaScript counter. Keep this
+    // binding numeric; wasm-bindgen exposes u64 as BigInt, while the browser
+    // host intentionally sends an ordinary safe integer.
+    request_id: u32,
+    method: &str,
+    target: &str,
+    _body: &str,
+) -> Result<(), JsValue> {
+    let route = rsxp::api_bridge::route_http(&method.to_ascii_uppercase(), target);
+    let result = match route {
+        Ok((operation, args)) => {
+            rsxp::api_bridge::send_from_ui(&operation, args).map_err(|error| (500, error))
+        }
+        Err((status, error)) => Err((status, error)),
+    };
+    PLUGIN_HTTP_BRIDGE.with(|pending| {
+        pending
+            .borrow_mut()
+            .insert(u64::from(request_id), result);
+    });
+    Ok(())
+}
+
+/// Resolves one game image through the shared Rust backend for a browser
+/// plugin webview. The backend crops Pokémon sprite sheets to their first
+/// square frame and returns a one-shot data URL; no plugin-side sprite cache
+/// is involved.
+#[wasm_bindgen]
+pub fn web_eframe_plugin_asset(category: &str, name: &str) -> String {
+    with_eframe_app(|app| app.plugin_asset_data_url(category, name))
+        .flatten()
+        .unwrap_or_default()
+}
+
+/// Returns completed browser webview HTTP requests as a small JSON array.
+#[wasm_bindgen]
+pub fn web_eframe_take_plugin_http_responses() -> String {
+    let ids =
+        PLUGIN_HTTP_BRIDGE.with(|pending| pending.borrow().keys().copied().collect::<Vec<_>>());
+    let mut completed = Vec::new();
+    for request_id in ids {
+        let state = PLUGIN_HTTP_BRIDGE.with(|pending| pending.borrow().get(&request_id).cloned());
+        let Some(state) = state else { continue };
+        let response = match state {
+            Err((status, error)) => Some((status, serde_json::json!({"error": error}).to_string())),
+            Ok(bridge_id) => {
+                rsxp::api_bridge::take_ui_response(bridge_id).map(|reply| match reply {
+                    Ok(body) => (200, body),
+                    Err(error) => (500, serde_json::json!({"error": error}).to_string()),
+                })
+            }
+        };
+        if let Some((status, body)) = response {
+            completed.push(serde_json::json!({"id": request_id, "status": status, "body": body}));
+            PLUGIN_HTTP_BRIDGE.with(|pending| {
+                pending.borrow_mut().remove(&request_id);
+            });
+        }
+    }
+    serde_json::Value::Array(completed).to_string()
+}
+
+fn activate_extensions_once() {
+    if EXTENSIONS_ACTIVATED.with(std::cell::Cell::get) {
+        return;
+    }
+    if let Some(result) = with_eframe_app(|app| app.activate_extensions()) {
+        if let Err(error) = result {
+            web_eframe_log(&format!("Extension activation failed: {error}"));
+        }
+        EXTENSIONS_ACTIVATED.with(|active| active.set(true));
+    }
+}
+
+fn legacy_extension_call(request: &OperationRequest) -> Option<(&str, Vec<String>)> {
+    if request.operation.ends_with(".__ruby.inject") {
+        let source = request.arguments.get("source")?.as_str()?;
+        let patch_name = format!("rhai-{}", request.id);
+        return Some((
+            "ruby_inject",
+            vec![patch_name, rsxp::api_bridge::hex_encode(source)],
+        ));
+    }
+    if request.operation.ends_with(".__ruby.unload") {
+        let handle = request.arguments.get("handle")?.as_i64()?;
+        if handle <= 0 {
+            return None;
+        }
+        return Some(("ruby_unload", vec![format!("rhai-{handle}")]));
+    }
+    let operation = request.operation.rsplit_once('.')?.1;
+    let arguments = request.arguments.as_object()?.values().map(|value| {
+        value
+            .as_str()
+            .map(str::to_owned)
+            .unwrap_or_else(|| value.to_string())
+    });
+    Some((operation, arguments.collect()))
+}
+
 #[wasm_bindgen]
 pub fn web_eframe_present() {
     let _ = engine::with_runtime(|runtime| {
         present_bitmap(runtime.target(), runtime.frame_count());
     });
+    pump_extensions();
+}
+
+/// Activates extensions for an RGSS session. Cartridge sessions deliberately
+/// do not call this until their cores expose compatible operations.
+#[wasm_bindgen]
+pub fn web_eframe_activate_extensions() {
+    activate_extensions_once();
 }
 
 #[wasm_bindgen]
@@ -186,7 +435,12 @@ pub fn web_eframe_loading(done: u32, total: u32) {
 
 #[wasm_bindgen]
 pub fn web_eframe_game_stopped(message: &str) {
+    EXTENSIONS_ACTIVATED.with(|active| active.set(false));
+    EXTENSION_BRIDGE.with(|pending| pending.borrow_mut().clear());
+    PLUGIN_HTTP_BRIDGE.with(|pending| pending.borrow_mut().clear());
+    browser_webview_call("__rsxp_closeAllPluginWebviews", "{}".into());
     let _ = with_eframe_app(|app| {
+        app.reset_extensions();
         app.workspace.game_stopped(message);
         app.request_repaint();
     });

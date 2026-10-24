@@ -536,7 +536,7 @@ impl EventSink for CartridgeEvents {
                 }
             }
             CoreEvent::Screenshot { .. } => {}
-            CoreEvent::CommandResult { id, outcome } => {
+            CoreEvent::CommandResult { id, outcome, .. } => {
                 if !outcome.succeeded() {
                     eprintln!("Cartridge: command {id}: {outcome:?}");
                 }
@@ -595,6 +595,7 @@ fn write_ppm(path: &Path, frame: &Frame) -> Result<(), Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rsxp_core::PixelFormat;
 
     fn frame(format: PixelFormat, pixels: &[u8]) -> VideoFrame<'_> {
         VideoFrame::new(2, 1, pixels.len(), format, pixels)

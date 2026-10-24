@@ -14,6 +14,202 @@ import { createGamePump, captureRubyOutput } from './game-pump.js';
 
 const canvas = document.getElementById('screen');
 
+// Plugin HTML views are DOM-owned overlays rather than a second rendering
+// surface. This keeps them available in browsers where native webviews are
+// unavailable, while the Rust engine still owns the game API queue.
+const pluginWebviews = new Map();
+const pluginHttpSources = new Map();
+let nextPluginHttpRequest = 1;
+
+function pluginViewKey(pluginId, viewId) {
+  return `${pluginId}\u0000${viewId}`;
+}
+
+function pluginWebviewBootstrap() {
+  return `<script>
+(() => {
+  const pending = new Map();
+  let next = 1;
+  const nativeFetch = window.fetch.bind(window);
+  window.RSXP = window.RSXP || {};
+  window.RSXP.api = (method, target, body) => new Promise((resolve, reject) => {
+    const id = next++;
+    pending.set(id, { resolve, reject });
+    parent.postMessage({ type: 'rsxp-plugin-http', id, method, target, body: body || '' }, '*');
+  });
+  // Compatibility alias for plugins that used the original bridge name.
+  window.RSXP.http = window.RSXP.api;
+  window.RSXP.asset = (category, name) => new Promise((resolve, reject) => {
+    const id = next++;
+    pending.set(id, { kind: 'asset', resolve, reject });
+    parent.postMessage({ type: 'rsxp-plugin-asset', id, category, name }, '*');
+  });
+  const requestTarget = input => {
+    const raw = typeof input === 'string' ? input : input.url;
+    if (raw.startsWith('/')) return raw;
+    const base = location.protocol === 'about:' ? 'http://rsxp-plugin.invalid/' : location.href;
+    const url = new URL(raw, base);
+    return url.origin === 'http://rsxp-plugin.invalid' ? url.pathname + url.search : url.href;
+  };
+  window.addEventListener('message', event => {
+    const message = event.data;
+    if (!message || message.type !== 'rsxp-plugin-http-response') return;
+    const request = pending.get(message.id);
+    if (!request) return;
+    pending.delete(message.id);
+    const response = new Response(message.body || '', {
+      status: message.status || 500,
+      headers: { 'content-type': 'application/json' },
+    });
+    request.resolve(response);
+  });
+  window.addEventListener('message', event => {
+    const message = event.data;
+    if (!message || message.type !== 'rsxp-plugin-asset-response') return;
+    const request = pending.get(message.id);
+    if (!request || request.kind !== 'asset') return;
+    pending.delete(message.id);
+    request.resolve(message.src || null);
+  });
+  window.fetch = (input, init = {}) => {
+    const target = requestTarget(input);
+    if (!target.startsWith('/v1/')) return nativeFetch(input, init);
+    const method = String(init.method || (typeof input === 'string' ? 'GET' : input.method) || 'GET').toUpperCase();
+    return window.RSXP.api(method, target, init.body || '');
+  };
+})();
+</script>`;
+}
+
+function closePluginWebview(pluginId, viewId) {
+  const key = pluginViewKey(pluginId, viewId);
+  const view = pluginWebviews.get(key);
+  if (!view) return;
+  view.root.remove();
+  pluginWebviews.delete(key);
+}
+
+globalThis.__rsxp_openPluginWebview = (payload) => {
+  const value = typeof payload === 'string' ? JSON.parse(payload) : payload;
+  const key = pluginViewKey(value.plugin_id, value.view_id);
+  closePluginWebview(value.plugin_id, value.view_id);
+
+  const root = document.createElement('section');
+  root.className = 'rsxp-plugin-webview';
+  Object.assign(root.style, {
+    position: 'fixed', left: 'min(320px, 5vw)', top: '5vh', width: 'min(720px, 90vw)',
+    height: 'min(560px, 85vh)', zIndex: '10000', display: 'flex', flexDirection: 'column',
+    background: '#202124', border: '1px solid #777', borderRadius: '6px',
+    boxShadow: '0 12px 40px rgba(0,0,0,.45)', overflow: 'hidden', resize: 'both',
+    minWidth: '420px', minHeight: '240px', maxWidth: '95vw', maxHeight: '90vh',
+  });
+  const header = document.createElement('header');
+  Object.assign(header.style, {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    minHeight: '32px', padding: '0 8px 0 12px', color: '#eee', font: '13px sans-serif',
+    cursor: 'grab', userSelect: 'none', touchAction: 'none',
+  });
+  const label = document.createElement('span');
+  label.textContent = String(value.title || value.view_id || 'Plugin');
+  const close = document.createElement('button');
+  close.type = 'button'; close.textContent = '×';
+  Object.assign(close.style, { color: '#eee', background: 'transparent', border: '0', fontSize: '22px', cursor: 'pointer' });
+  close.addEventListener('click', () => closePluginWebview(value.plugin_id, value.view_id));
+  header.append(label, close);
+
+  // Browser plugin views are ordinary DOM overlays, so give them the same
+  // basic window behavior as native plugin views. Keep the close button out
+  // of the drag gesture and clamp the window inside the viewport.
+  let dragging = false;
+  let dragOffsetX = 0;
+  let dragOffsetY = 0;
+  const clamp = (number, minimum, maximum) => Math.min(Math.max(number, minimum), maximum);
+  header.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || event.target.closest('button')) return;
+    const bounds = root.getBoundingClientRect();
+    dragging = true;
+    dragOffsetX = event.clientX - bounds.left;
+    dragOffsetY = event.clientY - bounds.top;
+    header.style.cursor = 'grabbing';
+    header.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  });
+  header.addEventListener('pointermove', event => {
+    if (!dragging) return;
+    const width = root.offsetWidth;
+    const height = root.offsetHeight;
+    root.style.left = `${clamp(event.clientX - dragOffsetX, 0, window.innerWidth - width)}px`;
+    root.style.top = `${clamp(event.clientY - dragOffsetY, 0, window.innerHeight - height)}px`;
+  });
+  const stopDragging = event => {
+    if (!dragging) return;
+    dragging = false;
+    header.style.cursor = 'grab';
+    if (event?.pointerId !== undefined) header.releasePointerCapture?.(event.pointerId);
+  };
+  header.addEventListener('pointerup', stopDragging);
+  header.addEventListener('pointercancel', stopDragging);
+
+  const iframe = document.createElement('iframe');
+  iframe.title = label.textContent;
+  iframe.srcdoc = `<!doctype html><html><head><meta charset="utf-8"></head><body>${pluginWebviewBootstrap()}${value.html || ''}</body></html>`;
+  Object.assign(iframe.style, { flex: '1', width: '100%', border: '0', background: '#fff' });
+  root.append(header, iframe);
+  document.body.appendChild(root);
+  pluginWebviews.set(key, { root, iframe });
+};
+
+globalThis.__rsxp_closePluginWebview = (payload) => {
+  const value = typeof payload === 'string' ? JSON.parse(payload) : payload;
+  closePluginWebview(value.plugin_id, value.view_id);
+};
+
+globalThis.__rsxp_closeAllPluginWebviews = () => {
+  for (const view of pluginWebviews.values()) view.root.remove();
+  pluginWebviews.clear();
+  pluginHttpSources.clear();
+};
+
+window.addEventListener('message', event => {
+  const message = event.data;
+  if (!message || message.type !== 'rsxp-plugin-http') return;
+  const view = [...pluginWebviews.values()].find(candidate => candidate.iframe.contentWindow === event.source);
+  if (!view) return;
+  const id = nextPluginHttpRequest++;
+  pluginHttpSources.set(id, { source: event.source, localId: Number(message.id) });
+  try {
+    engine.web_eframe_plugin_http(id, String(message.method || 'GET'), String(message.target || '/'), String(message.body || ''));
+  } catch (error) {
+    pluginHttpSources.delete(id);
+    event.source.postMessage({ type: 'rsxp-plugin-http-response', id: Number(message.id), status: 500, body: JSON.stringify({ error: String(error) }) }, '*');
+  }
+});
+
+window.addEventListener('message', event => {
+  const message = event.data;
+  if (!message || message.type !== 'rsxp-plugin-asset') return;
+  const view = [...pluginWebviews.values()].find(candidate => candidate.iframe.contentWindow === event.source);
+  if (!view) return;
+  let src = '';
+  try {
+    src = engine.web_eframe_plugin_asset(String(message.category || ''), String(message.name || ''));
+  } catch (_) { /* missing assets are represented by an empty source */ }
+  event.source.postMessage({ type: 'rsxp-plugin-asset-response', id: Number(message.id), src }, '*');
+});
+
+function pumpPluginHttp() {
+  if (engine.web_eframe_take_plugin_http_responses === undefined) return;
+  let replies;
+  try { replies = JSON.parse(engine.web_eframe_take_plugin_http_responses()); } catch { return; }
+  for (const reply of replies) {
+    const pending = pluginHttpSources.get(reply.id);
+    pluginHttpSources.delete(reply.id);
+    pending?.source.postMessage({
+      type: 'rsxp-plugin-http-response', ...reply, id: pending.localId,
+    }, '*');
+  }
+}
+
 // The workspace UI (toolbar, panels, performance, runtime patches, save
 // export/import) is drawn by egui inside the engine. The page only hosts the
 // canvas and the Ruby VM, so there is no HTML chrome to keep in sync.
@@ -374,6 +570,7 @@ async function mainCartridge() {
       for (const message of messages) status(message);
       engine.web_core_step();
       engine.web_core_present();
+      pumpPluginHttp();
       if (engine.web_eframe_take_reset()) {
         running = false;
         engine.web_core_stop();
@@ -467,6 +664,7 @@ async function main() {
   let preloading = true;
   const loadingFrame = () => {
     engine.web_eframe_present();
+    pumpPluginHttp();
     if (preloading) requestAnimationFrame(loadingFrame);
   };
   requestAnimationFrame(loadingFrame);
@@ -533,6 +731,7 @@ async function main() {
   vm.eval('$rsxp_fiber = Fiber.new { eval($rsxp_source, TOPLEVEL_BINDING, "rgss.rb", 1) }');
   const gameFiber = vm.eval('$rsxp_fiber');
   await nextAnimationFrame();
+  engine.web_eframe_activate_extensions();
 
   let gameRunning = true;
   const pump = createGamePump({
@@ -550,6 +749,7 @@ async function main() {
     },
     present: () => {
       engine.web_eframe_present();
+      pumpPluginHttp();
       if (!gameRunning && engine.web_eframe_take_reset()) location.reload();
     },
     requestFrame: requestAnimationFrame,

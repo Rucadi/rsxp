@@ -126,7 +126,16 @@ impl crate::ui::backend::Backend for LocalServices {
         }
         #[cfg(target_arch = "wasm32")]
         {
-            None
+            let key = format!("Graphics/{category}/{name}");
+            let bytes = crate::engine::with_runtime(|runtime| {
+                [key.clone(), format!("{key}.png"), format!("{key}.bmp")]
+                    .into_iter()
+                    .find_map(|path| runtime.asset(&path).ok())
+            })
+            .flatten()?;
+            image::load_from_memory(&bytes)
+                .ok()
+                .map(|image| std::sync::Arc::new(image.to_rgba8()))
         }
     }
     #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]

@@ -154,6 +154,33 @@ impl Runtime {
                     return Err(format!("unknown runtime patch: {id}"));
                 }
             }
+            // Rhai extensions inject only reversible runtime patches. The
+            // source is carried as the raw command payload so arbitrary Ruby
+            // whitespace and newlines never enter the tab-separated bridge.
+            "runtime_patch_register" => {
+                let name = args
+                    .get(1)
+                    .copied()
+                    .ok_or("runtime_patch_register requires a name")?;
+                let source = std::str::from_utf8(payload)
+                    .map_err(|_| "runtime patch source must be UTF-8")?;
+                if !crate::runtime_patch::register_user_patch(name, source.to_owned()) {
+                    return Err("invalid runtime patch name".into());
+                }
+                if !crate::runtime_patch::set_enabled(&format!("user/{name}"), true) {
+                    return Err("runtime patch could not be enabled".into());
+                }
+                return Ok(text(format!("user/{name}")));
+            }
+            "runtime_patch_unregister" => {
+                let id = args
+                    .get(1)
+                    .copied()
+                    .ok_or("runtime_patch_unregister requires an id")?;
+                if !crate::runtime_patch::remove_user_patch(id) {
+                    return Err(format!("unknown user runtime patch: {id}"));
+                }
+            }
             // Live frame pacing for hosts without a shared process (browser,
             // tests). The desktop workspace sets these in-process instead.
             "runtime_settings" => {

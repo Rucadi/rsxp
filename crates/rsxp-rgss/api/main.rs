@@ -5,12 +5,11 @@
 //! The binary speaks newline-delimited JSON-RPC 2.0 on stdin/stdout and answers
 //! the `initialize`, `ping`, `tools/list` and `tools/call` methods. Request
 //! parsing (`Parser`, `Json`) and response encoding are implemented here so the
-//! server needs no serialization dependency. `tools/call` maps each advertised
-//! tool (see `tools`) to a REST request handled by `src/api_bridge.rs`;
-//! `call_game` opens a short-lived loopback connection, picks the HTTP method
-//! from the path, and unwraps the JSON body (or its `error` field) into the MCP
-//! text result. Tool arguments are validated in Rust before any request is sent
-//! (for example `wild_encounter_path`).
+//! server needs no serialization dependency. `tools/call` maps the built-in
+//! tools and dynamically discovered extension operations to REST requests;
+//! `call_game` opens a short-lived loopback connection and unwraps the JSON
+//! body (or its `error` field) into the MCP text result. Extension validation
+//! and response construction stay in the extension's injected Ruby code.
 //!
 //! Environment: `RSXP_API_HOST` / `RSXP_API_PORT` select the game endpoint
 //! (defaults `127.0.0.1` / `47821`).
@@ -380,32 +379,219 @@ fn text_result(text: &str, is_error: bool) -> String {
     out
 }
 
-fn tools() -> &'static str {
-    r#"{"tools":[
-      {"name":"game_status","description":"Get live scene, frame, screen size, map dimensions, camera position and player state.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
-      {"name":"get_surroundings","description":"Inspect nearby tile IDs and events on the current map.","inputSchema":{"type":"object","properties":{"radius":{"type":"integer","minimum":1,"maximum":15,"default":5}},"additionalProperties":false}},
-      {"name":"world_map","description":"List all game maps, dimensions, metadata positions, and explicit map-connection offsets.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
-      {"name":"map_preview","description":"Get actual RGSS tile layers and tileset filenames for one map.","inputSchema":{"type":"object","properties":{"map_id":{"type":"integer","minimum":1}},"required":["map_id"],"additionalProperties":false}},
-      {"name":"teleport","description":"Transfer the player to any in-bounds tile on a game map.","inputSchema":{"type":"object","properties":{"map_id":{"type":"integer","minimum":1},"x":{"type":"integer","minimum":0},"y":{"type":"integer","minimum":0}},"required":["map_id","x","y"],"additionalProperties":false}},
-      {"name":"pokemon_essentials_movedex","description":"List all loaded game moves with power, type, category, accuracy, PP and descriptions.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
-      {"name":"pokemon_essentials_add_item","description":"Add a quantity of a game item to the current player bag, respecting capacity.","inputSchema":{"type":"object","properties":{"item":{"type":"string"},"quantity":{"type":"integer","minimum":1,"maximum":9999,"default":1}},"required":["item"],"additionalProperties":false}},
-      {"name":"pokemon_essentials_itemdex","description":"List all loaded game items with pockets, prices, use modes, flags and taught moves.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
-      {"name":"pokemon_essentials_pokedex","description":"List all loaded game species and forms with known acquisition evidence.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
-      {"name":"pokemon_essentials_species_entry","description":"Inspect game-specific species stats, full learnsets, evolution rules, abilities and encounter locations.","inputSchema":{"type":"object","properties":{"species":{"type":"string"}},"required":["species"],"additionalProperties":false}},
-      {"name":"pokemon_essentials_status","description":"Check Pokémon Essentials availability, trainer/map state and battle readiness.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
-      {"name":"pokemon_essentials_party","description":"List the Pokémon Essentials player's party.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
-      {"name":"pokemon_essentials_info","description":"Get a party Pokémon's stats, IVs, EVs, moves/PP and Essentials extension data.","inputSchema":{"type":"object","properties":{"slot":{"type":"integer","minimum":0,"maximum":5}},"required":["slot"],"additionalProperties":false}},
-      {"name":"pokemon_essentials_encounters","description":"Inspect current-map Essentials encounter tables, levels and per-slot selection percentages.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
-      {"name":"pokemon_essentials_npcs","description":"Inspect current-map events/NPCs, positions, page triggers, dialogue and likely trainer scripts.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
-      {"name":"pokemon_essentials_battle","description":"Inspect battle battlers, HP/status/stages/moves/PP and available fight/switch/bag/run options.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
-      {"name":"pokemon_essentials_wild_encounter","description":"Start a wild battle with the given species and optional level, shiny, form, gender, nature, ability, held item, max IVs and friendship. Only runs on the overworld with no battle, menu or dialogue open; the battle starts on the next game frame.","inputSchema":{"type":"object","properties":{"species":{"type":"string"},"level":{"type":"integer","minimum":1,"maximum":100,"default":5},"shiny":{"type":"boolean"},"form":{"type":"integer","minimum":0},"gender":{"type":"string","enum":["male","female"]},"nature":{"type":"string"},"ability":{"type":"string"},"item":{"type":"string"},"max_ivs":{"type":"boolean"},"friendship":{"type":"integer","minimum":0,"maximum":255}},"required":["species"],"additionalProperties":false}},
-      {"name":"pokemon_essentials_debug","description":"Read or set Pokémon Essentials debug mode ($DEBUG), which enables the game's debug menus and shortcuts. Omit enabled to read the current value; set it to true or false to change it.","inputSchema":{"type":"object","properties":{"enabled":{"type":"boolean"}},"additionalProperties":false}},
-      {"name":"press_key","description":"Press a control through RGSS input for 1–60 game updates.","inputSchema":{"type":"object","properties":{"key":{"type":"string","enum":["up","down","left","right","action","cancel"]},"frames":{"type":"integer","minimum":1,"maximum":60,"default":1}},"required":["key"],"additionalProperties":false}},
-      {"name":"release_all_keys","description":"Release controls held through this API.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}
-    ]}"#
+const CORE_TOOLS: &str = r#"{"tools":[
+  {"name":"game_status","description":"Get live scene, frame, screen size, map dimensions, camera position and player state.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
+  {"name":"get_surroundings","description":"Inspect nearby tile IDs and events on the current map.","inputSchema":{"type":"object","properties":{"radius":{"type":"integer","minimum":1,"maximum":15,"default":5}},"additionalProperties":false}},
+  {"name":"world_map","description":"List all game maps, dimensions, metadata positions, and explicit map-connection offsets.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
+  {"name":"map_preview","description":"Get actual RGSS tile layers and tileset filenames for one map.","inputSchema":{"type":"object","properties":{"map_id":{"type":"integer","minimum":1}},"required":["map_id"],"additionalProperties":false}},
+  {"name":"teleport","description":"Transfer the player to any in-bounds tile on a game map.","inputSchema":{"type":"object","properties":{"map_id":{"type":"integer","minimum":1},"x":{"type":"integer","minimum":0},"y":{"type":"integer","minimum":0}},"required":["map_id","x","y"],"additionalProperties":false}},
+  {"name":"press_key","description":"Press a control through RGSS input for 1–60 game updates.","inputSchema":{"type":"object","properties":{"key":{"type":"string","enum":["up","down","left","right","action","cancel"]},"frames":{"type":"integer","minimum":1,"maximum":60,"default":1}},"required":["key"],"additionalProperties":false}},
+  {"name":"release_all_keys","description":"Release controls held through this API.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}
+] }"#;
+
+#[derive(Clone, Debug)]
+struct ExtensionRoute {
+    method: String,
+    path: String,
+    operation: String,
+    arguments: Vec<String>,
+}
+
+fn extension_routes() -> Result<Vec<ExtensionRoute>, String> {
+    let value = Parser::parse(&call_game("/v1/extensions/routes")?)?;
+    let routes = value
+        .get("routes")
+        .and_then(|value| match value {
+            Json::Array(routes) => Some(routes),
+            _ => None,
+        })
+        .ok_or("extension route discovery returned no routes")?;
+    routes
+        .iter()
+        .map(|route| {
+            let arguments = route
+                .get("arguments")
+                .and_then(|value| match value {
+                    Json::Array(arguments) => Some(arguments),
+                    _ => None,
+                })
+                .map_or(&[][..], Vec::as_slice)
+                .iter()
+                .filter_map(Json::string)
+                .map(str::to_owned)
+                .collect();
+            Ok(ExtensionRoute {
+                method: route
+                    .get("method")
+                    .and_then(Json::string)
+                    .ok_or("extension route has no method")?
+                    .to_owned(),
+                path: route
+                    .get("path")
+                    .and_then(Json::string)
+                    .ok_or("extension route has no path")?
+                    .to_owned(),
+                operation: route
+                    .get("operation")
+                    .and_then(Json::string)
+                    .ok_or("extension route has no operation")?
+                    .to_owned(),
+                arguments,
+            })
+        })
+        .collect()
+}
+
+fn tools() -> String {
+    let mut listing = Parser::parse(CORE_TOOLS).expect("built-in MCP tools must be valid JSON");
+    let Json::Object(fields) = &mut listing else {
+        return CORE_TOOLS.to_owned();
+    };
+    let Some((_, Json::Array(tools))) = fields.iter_mut().find(|(key, _)| key == "tools") else {
+        return CORE_TOOLS.to_owned();
+    };
+    let Ok(routes) = extension_routes() else {
+        return json(&listing);
+    };
+    let mut seen = std::collections::HashSet::new();
+    for route in routes {
+        if !seen.insert(route.operation.clone())
+            || tools.iter().any(|tool| {
+                tool.get("name").and_then(Json::string) == Some(route.operation.as_str())
+            })
+        {
+            continue;
+        }
+        let properties = route
+            .arguments
+            .iter()
+            .map(|argument| {
+                (
+                    argument.clone(),
+                    Json::Object(vec![("type".into(), Json::String("string".into()))]),
+                )
+            })
+            .collect();
+        tools.push(Json::Object(vec![
+            ("name".into(), Json::String(route.operation.clone())),
+            (
+                "description".into(),
+                Json::String(format!("Extension operation {}.", route.operation)),
+            ),
+            (
+                "inputSchema".into(),
+                Json::Object(vec![
+                    ("type".into(), Json::String("object".into())),
+                    ("properties".into(), Json::Object(properties)),
+                    ("additionalProperties".into(), Json::Bool(false)),
+                ]),
+            ),
+        ]));
+    }
+    json(&listing)
+}
+
+fn url_encode(value: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut encoded = String::new();
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            encoded.push(byte as char);
+        } else {
+            encoded.push('%');
+            encoded.push(HEX[(byte >> 4) as usize] as char);
+            encoded.push(HEX[(byte & 0x0f) as usize] as char);
+        }
+    }
+    encoded
+}
+
+fn extension_route_target(route: &ExtensionRoute, args: &Json) -> Result<String, String> {
+    let mut path = String::new();
+    for (index, segment) in route.path.split('/').enumerate() {
+        if index > 0 {
+            path.push('/');
+        }
+        if let Some(name) = segment
+            .strip_prefix('{')
+            .and_then(|value| value.strip_suffix('}'))
+        {
+            let value = args
+                .get(name)
+                .ok_or_else(|| format!("missing extension argument: {name}"))?;
+            path.push_str(&url_encode(&json_argument(value)?));
+        } else {
+            path.push_str(segment);
+        }
+    }
+    let mut first = true;
+    for argument in &route.arguments {
+        if route.path.contains(&format!("{{{argument}}}")) {
+            continue;
+        }
+        let Some(value) = args.get(argument) else {
+            continue;
+        };
+        path.push(if first { '?' } else { '&' });
+        first = false;
+        path.push_str(&url_encode(argument));
+        path.push('=');
+        path.push_str(&url_encode(&json_argument(value)?));
+    }
+    Ok(path)
+}
+
+fn json_argument(value: &Json) -> Result<String, String> {
+    match value {
+        Json::String(value) => Ok(value.clone()),
+        Json::Bool(value) => Ok(value.to_string()),
+        Json::Number(value) => Ok(value.clone()),
+        _ => Err("extension arguments must be strings, booleans, or numbers".into()),
+    }
+}
+
+fn call_extension_tool(name: &str, args: &Json) -> Result<String, String> {
+    let routes = extension_routes()?;
+    let mut candidates = routes.into_iter().filter(|route| route.operation == name);
+    let mut selected = None;
+    while let Some(route) = candidates.next() {
+        if route
+            .path
+            .split('/')
+            .filter_map(|segment| segment.strip_prefix('{').and_then(|v| v.strip_suffix('}')))
+            .any(|name| args.get(name).is_none())
+        {
+            continue;
+        }
+        let score = route
+            .arguments
+            .iter()
+            .filter(|argument| args.get(argument).is_some())
+            .count();
+        if selected
+            .as_ref()
+            .is_none_or(|(_, previous_score): &(ExtensionRoute, usize)| score > *previous_score)
+        {
+            selected = Some((route, score));
+        }
+    }
+    let (route, _) = selected.ok_or_else(|| format!("unknown extension tool: {name}"))?;
+    let target = extension_route_target(&route, args)?;
+    call_game_with_method(&route.method, &target)
 }
 
 fn call_game(path: &str) -> Result<String, String> {
+    let method = if path == "/v1/input/held" {
+        "DELETE"
+    } else if path.starts_with("/v1/input/press") || path.starts_with("/v1/game/teleport") {
+        "POST"
+    } else {
+        "GET"
+    };
+    call_game_with_method(method, path)
+}
+
+fn call_game_with_method(method: &str, path: &str) -> Result<String, String> {
     let host = std::env::var("RSXP_API_HOST").unwrap_or_else(|_| "127.0.0.1".into());
     let port = std::env::var("RSXP_API_PORT").unwrap_or_else(|_| "47821".into());
     let mut stream = TcpStream::connect(format!("{host}:{port}"))
@@ -417,18 +603,6 @@ fn call_game(path: &str) -> Result<String, String> {
     stream
         .set_write_timeout(timeout)
         .map_err(|e| e.to_string())?;
-    let method = if path == "/v1/input/held" {
-        "DELETE"
-    } else if path.starts_with("/v1/input/press")
-        || path.starts_with("/v1/game/teleport")
-        || path.starts_with("/v1/pokemon-essentials/inventory/add")
-        || path.starts_with("/v1/pokemon-essentials/wild-encounter")
-        || path.starts_with("/v1/pokemon-essentials/debug?")
-    {
-        "POST"
-    } else {
-        "GET"
-    };
     write!(
         stream,
         "{method} {path} HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: close\r\n\r\n"
@@ -457,62 +631,6 @@ fn call_game(path: &str) -> Result<String, String> {
     Ok(body.to_string())
 }
 
-/// Builds the wild-encounter endpoint path from MCP tool arguments, validating
-/// values before they reach the game bridge.
-fn wild_encounter_path(args: &Json) -> Result<String, String> {
-    let species = args.get("species").and_then(Json::string).unwrap_or("");
-    if species.is_empty()
-        || !species
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-    {
-        return Err("species must be a game species ID".into());
-    }
-    let mut path = format!("/v1/pokemon-essentials/wild-encounter?species={species}");
-    if let Some(level) = args.get("level").and_then(Json::integer) {
-        if !(1..=100).contains(&level) {
-            return Err("level must be 1..100".into());
-        }
-        path.push_str(&format!("&level={level}"));
-    }
-    if let Some(form) = args.get("form").and_then(Json::integer) {
-        if form < 0 {
-            return Err("form must be zero or greater".into());
-        }
-        path.push_str(&format!("&form={form}"));
-    }
-    if let Some(friendship) = args.get("friendship").and_then(Json::integer) {
-        if !(0..=255).contains(&friendship) {
-            return Err("friendship must be 0..255".into());
-        }
-        path.push_str(&format!("&friendship={friendship}"));
-    }
-    for field in ["gender", "nature", "ability", "item"] {
-        if let Some(value) = args.get(field).and_then(Json::string) {
-            if value.is_empty() {
-                continue;
-            }
-            if !value
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-            {
-                return Err(format!("{field} contains invalid characters"));
-            }
-            path.push_str(&format!("&{field}={value}"));
-        }
-    }
-    for field in ["shiny", "max_ivs"] {
-        if let Some(value) = args.get(field) {
-            let flag = match value {
-                Json::Bool(flag) => *flag,
-                _ => return Err(format!("{field} must be a boolean")),
-            };
-            path.push_str(&format!("&{field}={flag}"));
-        }
-    }
-    Ok(path)
-}
-
 fn handle(message: Json) -> Option<String> {
     let id = message.get("id")?;
     let method = message.get("method").and_then(Json::string).unwrap_or("");
@@ -535,73 +653,15 @@ fn handle(message: Json) -> Option<String> {
             Some(response(id, &result))
         }
         "ping" => Some(response(id, "{}")),
-        "tools/list" => Some(response(id, tools())),
+        "tools/list" => {
+            let listing = tools();
+            Some(response(id, &listing))
+        }
         "tools/call" => {
             let name = params.get("name").and_then(Json::string).unwrap_or("");
             let args_obj = params.get("arguments").unwrap_or(&Json::Null);
             let result = match name {
                 "game_status" => call_game("/v1/game/status"),
-                "pokemon_essentials_movedex" => call_game("/v1/pokemon-essentials/movedex"),
-                "pokemon_essentials_add_item" => {
-                    let item = args_obj.get("item").and_then(Json::string).unwrap_or("");
-                    let quantity = args_obj
-                        .get("quantity")
-                        .map(Json::integer)
-                        .unwrap_or(Some(1));
-                    if item.is_empty()
-                        || !item
-                            .bytes()
-                            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-                    {
-                        Err("item must be a game item ID".into())
-                    } else if !quantity.is_some_and(|quantity| (1..=9999).contains(&quantity)) {
-                        Err("quantity must be an integer in 1..9999".into())
-                    } else {
-                        let quantity = quantity.unwrap();
-                        call_game(&format!(
-                            "/v1/pokemon-essentials/inventory/add?item={item}&quantity={quantity}"
-                        ))
-                    }
-                }
-                "pokemon_essentials_itemdex" => call_game("/v1/pokemon-essentials/itemdex"),
-                "pokemon_essentials_pokedex" => call_game("/v1/pokemon-essentials/pokedex"),
-                "pokemon_essentials_species_entry" => {
-                    let species = args_obj.get("species").and_then(Json::string).unwrap_or("");
-                    if species.is_empty()
-                        || !species
-                            .bytes()
-                            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-                    {
-                        Err("species must be a game species/form ID".into())
-                    } else {
-                        call_game(&format!("/v1/pokemon-essentials/species/{species}"))
-                    }
-                }
-                "pokemon_essentials_status" => call_game("/v1/pokemon-essentials/status"),
-                "pokemon_essentials_party" => call_game("/v1/pokemon-essentials/party"),
-                "pokemon_essentials_info" => {
-                    let slot = args_obj.get("slot").and_then(Json::integer).unwrap_or(-1);
-                    if !(0..=5).contains(&slot) {
-                        Err("slot must be 0..5".into())
-                    } else {
-                        call_game(&format!("/v1/pokemon-essentials/party/{slot}"))
-                    }
-                }
-                "pokemon_essentials_encounters" => {
-                    call_game("/v1/pokemon-essentials/encounters/current-map")
-                }
-                "pokemon_essentials_npcs" => call_game("/v1/pokemon-essentials/npcs/current-map"),
-                "pokemon_essentials_battle" => call_game("/v1/pokemon-essentials/battle"),
-                "pokemon_essentials_wild_encounter" => {
-                    wild_encounter_path(args_obj).and_then(|path| call_game(&path))
-                }
-                "pokemon_essentials_debug" => match args_obj.get("enabled") {
-                    Some(Json::Bool(enabled)) => {
-                        call_game(&format!("/v1/pokemon-essentials/debug?enabled={enabled}"))
-                    }
-                    Some(_) => Err("enabled must be a boolean".into()),
-                    None => call_game("/v1/pokemon-essentials/debug"),
-                },
                 "release_all_keys" => call_game("/v1/input/held"),
                 "get_surroundings" => {
                     let radius = args_obj.get("radius").and_then(Json::integer).unwrap_or(5);
@@ -637,7 +697,7 @@ fn handle(message: Json) -> Option<String> {
                         call_game(&format!("/v1/input/press?key={key}&frames={frames}"))
                     }
                 }
-                _ => Err(format!("unknown tool: {name}")),
+                _ => call_extension_tool(name, args_obj),
             };
             let (content, failed) = match result {
                 Ok(raw) => match Parser::parse(&raw) {
@@ -726,8 +786,8 @@ mod tests {
     }
 
     #[test]
-    fn essentials_tools_are_advertised_and_slot_is_bounded() {
-        let listing = Parser::parse(tools()).unwrap();
+    fn built_in_tools_are_advertised_without_game_specific_handlers() {
+        let listing = Parser::parse(&tools()).unwrap();
         let names = listing
             .get("tools")
             .and_then(|value| match value {
@@ -735,56 +795,32 @@ mod tests {
                 _ => None,
             })
             .unwrap();
-        for name in [
-            "pokemon_essentials_status",
-            "pokemon_essentials_party",
-            "pokemon_essentials_info",
-            "pokemon_essentials_encounters",
-            "pokemon_essentials_npcs",
-            "pokemon_essentials_battle",
-            "pokemon_essentials_wild_encounter",
-            "pokemon_essentials_debug",
-        ] {
-            assert!(
-                names
-                    .iter()
-                    .any(|tool| tool.get("name").and_then(Json::string) == Some(name)),
-                "missing {name}"
-            );
-        }
         assert!(names
             .iter()
             .any(|tool| tool.get("name").and_then(Json::string) == Some("world_map")));
         assert!(names
             .iter()
             .any(|tool| tool.get("name").and_then(Json::string) == Some("teleport")));
-        let request = Parser::parse(
-            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"pokemon_essentials_info","arguments":{"slot":6}}}"#,
-        ).unwrap();
-        let reply = handle(request).unwrap();
-        assert!(reply.contains("slot must be 0..5"));
-        assert!(reply.contains("\"isError\":true"));
+        assert!(!names.iter().any(|tool| {
+            tool.get("name")
+                .and_then(Json::string)
+                .is_some_and(|name| name.starts_with("pokemon_essentials_"))
+        }));
     }
 
     #[test]
-    fn wild_encounter_tool_builds_and_validates_paths() {
+    fn extension_route_targets_only_encode_and_forward_arguments() {
+        let route = ExtensionRoute {
+            method: "POST".into(),
+            path: "/v1/example/{species}".into(),
+            operation: "example".into(),
+            arguments: vec!["species".into(), "level".into(), "shiny".into()],
+        };
+        let args = Parser::parse(r#"{"species":"PIKA CHU","level":30,"shiny":true}"#).unwrap();
         assert_eq!(
-            wild_encounter_path(
-                &Parser::parse(r#"{"species":"PIKACHU","level":30,"shiny":true,"nature":"JOLLY"}"#)
-                    .unwrap()
-            )
-            .unwrap(),
-            "/v1/pokemon-essentials/wild-encounter?species=PIKACHU&level=30&nature=JOLLY&shiny=true"
+            extension_route_target(&route, &args).unwrap(),
+            "/v1/example/PIKA%20CHU?level=30&shiny=true"
         );
-        assert!(
-            wild_encounter_path(&Parser::parse(r#"{"species":"PIKACHU","level":0}"#).unwrap())
-                .is_err()
-        );
-        assert!(wild_encounter_path(&Parser::parse(r#"{"species":"PI/KACHU"}"#).unwrap()).is_err());
-        assert!(wild_encounter_path(
-            &Parser::parse(r#"{"species":"PIKACHU","friendship":300}"#).unwrap()
-        )
-        .is_err());
     }
 
     #[cfg(feature = "api-docs")]

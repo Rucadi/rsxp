@@ -11,8 +11,9 @@
 //! Environment and lifecycle details:
 //! - [`set_startup_env`]/[`remove_startup_env`] must run on the single-threaded main
 //!   thread before `winit`, CPAL or Ruby create threads.
-//! - Scripted input comes from `RSXP_INPUT`; runtime patches come from
-//!   `runtime_patch::load_user_patches` plus `RSXP_PATCH`; `RSXP_JIT` selects
+//! - Scripted input comes from `RSXP_INPUT`; generic runtime patches come from
+//!   `runtime_patch::load_user_patches` plus `RSXP_PATCH`; Essentials-specific
+//!   behavior is injected by the Rhai plugin host; `RSXP_JIT` selects
 //!   `yjit` (default), `zjit`, or `off`. Legacy `RSXP_YJIT=0` disables the default.
 //! - [`validate`] only parses arguments. A reset requested during the run restarts the
 //!   process from the launch directory via [`restart`], rebuilding the engine, Ruby and

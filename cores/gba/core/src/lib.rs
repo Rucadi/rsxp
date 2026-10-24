@@ -264,6 +264,7 @@ impl GbaAdapter {
         control.take_requests(commands);
         for request in commands.drain(..) {
             let id = request.id;
+            let generation = request.generation;
             let outcome = match request.command {
                 CoreCommand::Reset => match self.reset() {
                     Ok(()) => {
@@ -289,15 +290,18 @@ impl GbaAdapter {
                     CommandOutcome::Unsupported
                 }
             };
-            self.report(id, outcome);
+            self.report(generation, id, outcome);
         }
     }
 
-    fn report(&mut self, id: u64, outcome: CommandOutcome) {
+    fn report(&mut self, generation: u64, id: u64, outcome: CommandOutcome) {
         if let Some(context) = self.context.as_mut() {
-            context
-                .events
-                .emit(CoreEvent::CommandResult { id, outcome });
+            context.events.emit(CoreEvent::CommandResult {
+                id,
+                generation,
+                outcome,
+                response: None,
+            });
         }
     }
 

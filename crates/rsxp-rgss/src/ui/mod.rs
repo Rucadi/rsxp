@@ -10,9 +10,9 @@
 //! and which global actions (fullscreen, save import/export) were requested.
 //!
 //! ## Main types
-//! * [`Workspace`] — persistent UI state: panel visibility, [`ViewMode`], the
-//!   session panel, and (behind `game-api`) the Pokedex/Movedex/Itemdex and
-//!   world-map data and texture caches. [`Workspace::draw`] is the per-frame
+//! * [`Workspace`] — persistent UI state: panel visibility, [`ViewMode`], and
+//!   the session panel. Game-specific explorers are supplied by Rhai plugins
+//!   and open in their HTML webviews. [`Workspace::draw`] is the per-frame
 //!   entry point; it applies the theme, handles keyboard shortcuts (F1 toggles
 //!   all chrome, F2/F3/F10 toggle the left/output/performance panels, F4 requests
 //!   frontend fullscreen), and lays out the panels around the game view.
@@ -23,8 +23,8 @@
 //!   `fullscreen_request`, and `export_saves` / `import_saves` intents.
 //! * [`ViewMode`] — how the game view is placed (docked, workspace-fullscreen,
 //!   or floating).
-//! * `Tool` (private) — the active tool tab (runtime, pokeAPI, Essentials,
-//!   online play).
+//! * `Tool` (private) — the active native tool tab (runtime, Essentials,
+//!   online play); game explorers are supplied by plugins.
 //!
 //! ## Backend use
 //! All runtime interaction goes through `Workspace::backend`; the workspace
@@ -34,108 +34,34 @@
 //! named operations through the backend.
 //!
 //! ## Game data
-//! Behind `game-api`, [`build_world_map_layout`] turns the world-map JSON
-//! (`maps` with `id`/`width`/`height`/`world_x`/`world_y`, plus `connections`
-//! and `transfers` edges encoded as 6-element `[map, x, y, map, x, y]` arrays)
-//! into a deterministic, non-overlapping `WorldMapLayout`; [`overlay_map_region`]
-//! alpha-blends RGBA tiles when composing map previews; and
-//! [`first_pokemon_sprite_frame`] extracts the first square frame from an
-//! animated species sprite strip.
+//! Plugin webviews receive game data and assets through the generic API and
+//! asset bridges. The Rust workspace only retains the small sprite-frame
+//! helper used by other plugins.
 //!
 //! The panel implementations live in the sibling modules declared below
 //! (toolbar, logs, patches, performance, game_view, session, and the `game-api`
 //! explorers).
 pub mod backend;
 mod connections;
-#[cfg(feature = "game-api")]
-mod dex_search;
-mod encounters;
 mod game_view;
 mod inspector;
 mod library;
 mod logs;
-mod party;
 mod patches;
 mod performance;
-#[cfg(feature = "game-api")]
-mod pokedex;
-#[cfg(feature = "game-api")]
-mod registry_dex;
 mod saves;
 pub mod session;
 mod theme;
 mod toolbar;
-mod world_map;
-#[cfg(feature = "game-api")]
-use image::Pixel;
-
-/// Contents may wrap/scroll inside a pane but cannot enlarge its parent window.
-#[cfg(feature = "game-api")]
-fn bounded_tool_pane(ui: &mut egui::Ui, id: &str, rect: egui::Rect) -> egui::Ui {
-    let mut pane = ui.new_child(
-        egui::UiBuilder::new()
-            .id_salt(id)
-            .max_rect(rect)
-            .layout(egui::Layout::top_down(egui::Align::Min)),
-    );
-    pane.set_clip_rect(rect.intersect(ui.clip_rect()));
-    pane.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
-    pane
-}
 
 #[cfg(feature = "game-api")]
-fn overlay_map_region(
-    canvas: &mut image::RgbaImage,
-    source: &image::RgbaImage,
-    source_x: u32,
-    source_y: u32,
-    width: u32,
-    height: u32,
-    dest_x: u32,
-    dest_y: u32,
-) {
-    if source_x + width > source.width()
-        || source_y + height > source.height()
-        || dest_x + width > canvas.width()
-        || dest_y + height > canvas.height()
-    {
-        return;
-    }
-    let source_pixels = source.as_raw();
-    let canvas_width = canvas.width();
-    let canvas_pixels = canvas.as_mut();
-    for y in 0..height {
-        let source_row = ((source_y + y) * source.width() + source_x) as usize * 4;
-        let dest_row = ((dest_y + y) * canvas_width + dest_x) as usize * 4;
-        for x in 0..width {
-            let source_offset = source_row + x as usize * 4;
-            let dest_offset = dest_row + x as usize * 4;
-            let source_pixel = &source_pixels[source_offset..source_offset + 4];
-            match source_pixel[3] {
-                0 => {}
-                255 => canvas_pixels[dest_offset..dest_offset + 4].copy_from_slice(source_pixel),
-                _ => {
-                    let top = image::Rgba([
-                        source_pixel[0],
-                        source_pixel[1],
-                        source_pixel[2],
-                        source_pixel[3],
-                    ]);
-                    let bottom = &mut canvas_pixels[dest_offset..dest_offset + 4];
-                    let mut pixel = image::Rgba([bottom[0], bottom[1], bottom[2], bottom[3]]);
-                    pixel.blend(&top);
-                    bottom.copy_from_slice(&pixel.0);
-                }
-            }
-        }
-    }
-}
-
-#[cfg(feature = "game-api")]
-fn first_pokemon_sprite_frame(image: &image::RgbaImage) -> image::RgbaImage {
+pub fn first_pokemon_sprite_frame(image: &image::RgbaImage) -> image::RgbaImage {
     let width = image.width();
     let height = image.height();
-    if width > height.saturating_mul(2) {
+    // Some games store icons as exactly two horizontal frames. Treat the
+    // boundary as an animated sheet too; otherwise the webview displays both
+    // copies in the small list thumbnail.
+    if height > 0 && width >= height.saturating_mul(2) {
         image::imageops::crop_imm(image, 0, 0, height, height).to_image()
     } else {
         image.clone()
@@ -143,162 +69,18 @@ fn first_pokemon_sprite_frame(image: &image::RgbaImage) -> image::RgbaImage {
 }
 
 #[cfg(feature = "game-api")]
-#[derive(Clone, Default)]
-struct WorldMapLayout {
-    origins: std::collections::HashMap<i64, egui::Vec2>,
-    edges: Vec<(i64, i64, egui::Vec2, egui::Vec2)>,
+pub fn png_bytes(image: &image::RgbaImage) -> Option<Vec<u8>> {
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    image.write_to(&mut bytes, image::ImageFormat::Png).ok()?;
+    Some(bytes.into_inner())
 }
 
+/// Encodes the first square frame of a Pokémon sprite sheet for a plugin
+/// webview without retaining the encoded bytes.
 #[cfg(feature = "game-api")]
-fn build_world_map_layout(
-    maps: &[serde_json::Value],
-    connections: &[serde_json::Value],
-    transfers: &[serde_json::Value],
-) -> WorldMapLayout {
-    let mut layout = WorldMapLayout::default();
-    let map_ids: std::collections::HashSet<i64> =
-        maps.iter().filter_map(|map| map["id"].as_i64()).collect();
-    layout.edges = connections
-        .iter()
-        .chain(transfers.iter())
-        .filter_map(|edge| {
-            let values = edge.as_array()?;
-            if values.len() < 6 {
-                return None;
-            }
-            let a = values[0].as_i64()?;
-            let b = values[3].as_i64()?;
-            if !map_ids.contains(&a) || !map_ids.contains(&b) {
-                return None;
-            }
-            Some((
-                a,
-                b,
-                egui::vec2(values[1].as_f64()? as f32, values[2].as_f64()? as f32),
-                egui::vec2(values[4].as_f64()? as f32, values[5].as_f64()? as f32),
-            ))
-        })
-        .collect();
-    let mut adjacency = std::collections::HashMap::<i64, Vec<(i64, egui::Vec2)>>::new();
-    for &(a, b, a_point, b_point) in &layout.edges {
-        adjacency.entry(a).or_default().push((b, a_point - b_point));
-        adjacency.entry(b).or_default().push((a, b_point - a_point));
-    }
-    let map_sizes: std::collections::HashMap<i64, egui::Vec2> = maps
-        .iter()
-        .filter_map(|map| {
-            Some((
-                map["id"].as_i64()?,
-                egui::vec2(
-                    map["width"].as_i64().unwrap_or(1).max(1) as f32,
-                    map["height"].as_i64().unwrap_or(1).max(1) as f32,
-                ),
-            ))
-        })
-        .collect();
-    let mut map_widths: Vec<f32> = maps
-        .iter()
-        .filter_map(|map| map["width"].as_i64())
-        .map(|width| width as f32)
-        .collect();
-    map_widths.sort_by(f32::total_cmp);
-    let map_grid = map_widths
-        .get(map_widths.len() / 2)
-        .copied()
-        .unwrap_or(32.0)
-        .clamp(16.0, 64.0);
-    let mut map_order: Vec<i64> = map_ids.iter().copied().collect();
-    map_order.sort_unstable();
-    let mut visited = std::collections::HashSet::new();
-    for root in &map_order {
-        if visited.contains(root) {
-            continue;
-        }
-        let Some(map) = maps.iter().find(|map| map["id"].as_i64() == Some(*root)) else {
-            continue;
-        };
-        let (world_x, world_y) = match (map["world_x"].as_i64(), map["world_y"].as_i64()) {
-            (Some(x), Some(y)) => (x, y),
-            // Only metadata-positioned maps start a component. Maps without
-            // coordinates appear when connected to one, rather than all being
-            // piled at an arbitrary origin.
-            _ => continue,
-        };
-        layout.origins.insert(
-            *root,
-            egui::vec2(world_x as f32 * map_grid, world_y as f32 * map_grid),
-        );
-        let mut queue = std::collections::VecDeque::from([*root]);
-        while let Some(id) = queue.pop_front() {
-            if !visited.insert(id) {
-                continue;
-            }
-            let origin = layout.origins[&id];
-            if let Some(neighbors) = adjacency.get(&id) {
-                for &(next, offset) in neighbors {
-                    if !layout.origins.contains_key(&next) {
-                        layout.origins.insert(next, origin + offset);
-                        queue.push_back(next);
-                    }
-                }
-            }
-        }
-    }
-
-    // Preserve every authored/connected origin unless its map rectangle
-    // overlaps an earlier one. In that case, choose the nearest free position.
-    let mut placed = Vec::<egui::Rect>::new();
-    for id in map_order.iter().copied() {
-        let (Some(origin), Some(size)) = (
-            layout.origins.get(&id).copied(),
-            map_sizes.get(&id).copied(),
-        ) else {
-            continue;
-        };
-        let mut chosen = origin;
-        let mut rect = egui::Rect::from_min_size(chosen.to_pos2(), size);
-        if placed.iter().any(|other| other.intersects(rect)) {
-            let mut x_candidates = vec![origin.x];
-            let mut y_candidates = vec![origin.y];
-            for other in &placed {
-                x_candidates.push(other.max.x + 2.0);
-                x_candidates.push(other.min.x - size.x - 2.0);
-                y_candidates.push(other.max.y + 2.0);
-                y_candidates.push(other.min.y - size.y - 2.0);
-            }
-            let mut candidates: Vec<egui::Vec2> = x_candidates
-                .into_iter()
-                .flat_map(|x| y_candidates.iter().copied().map(move |y| egui::vec2(x, y)))
-                .collect();
-            candidates.sort_by(|a, b| {
-                let a_distance = (*a - origin).length_sq();
-                let b_distance = (*b - origin).length_sq();
-                a_distance
-                    .total_cmp(&b_distance)
-                    .then_with(|| a.y.total_cmp(&b.y))
-                    .then_with(|| a.x.total_cmp(&b.x))
-            });
-            if let Some(candidate) = candidates.into_iter().find(|candidate| {
-                let candidate_rect = egui::Rect::from_min_size(candidate.to_pos2(), size);
-                placed.iter().all(|other| !other.intersects(candidate_rect))
-            }) {
-                chosen = candidate;
-                rect = egui::Rect::from_min_size(chosen.to_pos2(), size);
-            } else {
-                // The boundary candidates should always find space. Keep a
-                // deterministic escape in case malformed dimensions defeat it.
-                let rightmost = placed
-                    .iter()
-                    .map(|other| other.max.x)
-                    .fold(origin.x, f32::max);
-                chosen = egui::pos2(rightmost + 4.0, origin.y).to_vec2();
-                rect = egui::Rect::from_min_size(chosen.to_pos2(), size);
-            }
-        }
-        layout.origins.insert(id, chosen);
-        placed.push(rect);
-    }
-    layout
+pub fn first_pokemon_sprite_png(image: &image::RgbaImage) -> Option<Vec<u8>> {
+    let frame = first_pokemon_sprite_frame(image);
+    png_bytes(&frame)
 }
 
 /// How the game view is placed within the workspace.
@@ -356,8 +138,6 @@ impl Default for WorkspaceOutput {
 enum Tool {
     #[default]
     Runtime,
-    #[cfg(feature = "game-api")]
-    PokeApi,
     Essentials,
     #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
     OnlinePlay,
@@ -367,12 +147,6 @@ pub struct Workspace {
     pub(crate) frame_texture: Option<egui::TextureId>,
     pub(crate) game_paint_callback: Option<egui::PaintCallback>,
     pub logs: Vec<String>,
-    #[cfg(feature = "game-api")]
-    pokedex: pokedex::Pokedex,
-    #[cfg(feature = "game-api")]
-    movedex: registry_dex::RegistryDex,
-    #[cfg(feature = "game-api")]
-    itemdex: registry_dex::RegistryDex,
     tool: Tool,
     pub backend: Box<dyn backend::Backend>,
     pub session: Option<session::SessionPanel>,
@@ -386,8 +160,6 @@ pub struct Workspace {
     controller_settings_open: bool,
     was_global_fullscreen: bool,
     reset_confirm: bool,
-    #[cfg(feature = "game-api")]
-    api_port: String,
     #[cfg(feature = "game-api")]
     api_error: Option<String>,
     #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
@@ -411,74 +183,6 @@ pub struct Workspace {
     #[cfg(feature = "game-api")]
     api_response_json: Option<serde_json::Value>,
     #[cfg(feature = "game-api")]
-    pokemon_encounters_data: Option<serde_json::Value>,
-    #[cfg(feature = "game-api")]
-    pokemon_encounters_map_id: Option<i64>,
-    #[cfg(feature = "game-api")]
-    pokemon_encounters_poll_at: web_time::Instant,
-    #[cfg(feature = "game-api")]
-    pokemon_encounters_status_pending: Option<u64>,
-    #[cfg(feature = "game-api")]
-    world_map_data: Option<serde_json::Value>,
-    #[cfg(feature = "game-api")]
-    world_map_layout: Option<WorldMapLayout>,
-    #[cfg(feature = "game-api")]
-    map_preview_data: Option<std::sync::Arc<serde_json::Value>>,
-    #[cfg(feature = "game-api")]
-    world_map_previews: std::collections::HashMap<i64, std::sync::Arc<serde_json::Value>>,
-    #[cfg(feature = "game-api")]
-    world_map_tile_queue: std::collections::VecDeque<i64>,
-    #[cfg(feature = "game-api")]
-    world_map_tile_total: usize,
-    #[cfg(feature = "game-api")]
-    api_tools_open: bool,
-    #[cfg(feature = "game-api")]
-    api_parameters: std::collections::HashMap<String, String>,
-    #[cfg(feature = "game-api")]
-    pokemon_encounters_window_open: bool,
-    #[cfg(feature = "game-api")]
-    world_map_open: bool,
-    #[cfg(feature = "game-api")]
-    world_map_indoors_selected: Option<i64>,
-    #[cfg(feature = "game-api")]
-    world_map_indoors_parent: Option<i64>,
-    #[cfg(feature = "game-api")]
-    world_map_right_pane_indoors: bool,
-    #[cfg(feature = "game-api")]
-    world_map_selected_map: Option<i64>,
-    #[cfg(feature = "game-api")]
-    world_map_x: i32,
-    #[cfg(feature = "game-api")]
-    world_map_y: i32,
-    #[cfg(feature = "game-api")]
-    world_map_zoom: f32,
-    #[cfg(feature = "game-api")]
-    world_map_pan: egui::Vec2,
-    #[cfg(feature = "game-api")]
-    world_map_asset_images: std::collections::HashMap<String, std::sync::Arc<image::RgbaImage>>,
-    #[cfg(feature = "game-api")]
-    world_map_scaled_images: std::collections::HashMap<String, std::sync::Arc<image::RgbaImage>>,
-    #[cfg(feature = "game-api")]
-    world_map_map_textures: std::collections::HashMap<i64, (u32, egui::TextureHandle)>,
-    #[cfg(feature = "game-api")]
-    world_map_detail_textures: std::collections::HashMap<i64, (u32, egui::TextureHandle)>,
-    #[cfg(feature = "game-api")]
-    pokemon_sprite_textures: std::collections::HashMap<String, egui::TextureHandle>,
-    #[cfg(feature = "game-api")]
-    api_radius: u8,
-    #[cfg(feature = "game-api")]
-    api_party_slot: u8,
-    #[cfg(feature = "game-api")]
-    api_map_id: i64,
-    #[cfg(feature = "game-api")]
-    api_map_x: i32,
-    #[cfg(feature = "game-api")]
-    api_map_y: i32,
-    #[cfg(feature = "game-api")]
-    api_key: usize,
-    #[cfg(feature = "game-api")]
-    api_key_frames: u8,
-    #[cfg(feature = "game-api")]
     essentials_debug: Option<bool>,
     #[cfg(feature = "game-api")]
     essentials_debug_pending: Option<u64>,
@@ -497,12 +201,6 @@ impl Default for Workspace {
             frame_texture: None,
             game_paint_callback: None,
             logs: Vec::new(),
-            #[cfg(feature = "game-api")]
-            pokedex: Default::default(),
-            #[cfg(feature = "game-api")]
-            movedex: Default::default(),
-            #[cfg(feature = "game-api")]
-            itemdex: Default::default(),
             tool: Tool::default(),
             backend: Box::new(crate::workspace_services::LocalServices::default()),
             session: None,
@@ -516,8 +214,6 @@ impl Default for Workspace {
             controller_settings_open: false,
             was_global_fullscreen: false,
             reset_confirm: false,
-            #[cfg(feature = "game-api")]
-            api_port: "47821".into(),
             #[cfg(feature = "game-api")]
             api_error: None,
             #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
@@ -540,74 +236,6 @@ impl Default for Workspace {
             api_response: String::new(),
             #[cfg(feature = "game-api")]
             api_response_json: None,
-            #[cfg(feature = "game-api")]
-            pokemon_encounters_data: None,
-            #[cfg(feature = "game-api")]
-            pokemon_encounters_map_id: None,
-            #[cfg(feature = "game-api")]
-            pokemon_encounters_poll_at: web_time::Instant::now(),
-            #[cfg(feature = "game-api")]
-            pokemon_encounters_status_pending: None,
-            #[cfg(feature = "game-api")]
-            world_map_data: None,
-            #[cfg(feature = "game-api")]
-            world_map_layout: None,
-            #[cfg(feature = "game-api")]
-            map_preview_data: None,
-            #[cfg(feature = "game-api")]
-            world_map_previews: std::collections::HashMap::new(),
-            #[cfg(feature = "game-api")]
-            world_map_tile_queue: std::collections::VecDeque::new(),
-            #[cfg(feature = "game-api")]
-            world_map_tile_total: 0,
-            #[cfg(feature = "game-api")]
-            api_tools_open: false,
-            #[cfg(feature = "game-api")]
-            api_parameters: Default::default(),
-            #[cfg(feature = "game-api")]
-            pokemon_encounters_window_open: false,
-            #[cfg(feature = "game-api")]
-            world_map_open: false,
-            #[cfg(feature = "game-api")]
-            world_map_indoors_selected: None,
-            #[cfg(feature = "game-api")]
-            world_map_indoors_parent: None,
-            #[cfg(feature = "game-api")]
-            world_map_right_pane_indoors: false,
-            #[cfg(feature = "game-api")]
-            world_map_selected_map: None,
-            #[cfg(feature = "game-api")]
-            world_map_x: 0,
-            #[cfg(feature = "game-api")]
-            world_map_y: 0,
-            #[cfg(feature = "game-api")]
-            world_map_zoom: 1.0,
-            #[cfg(feature = "game-api")]
-            world_map_pan: egui::Vec2::ZERO,
-            #[cfg(feature = "game-api")]
-            world_map_asset_images: std::collections::HashMap::new(),
-            #[cfg(feature = "game-api")]
-            world_map_scaled_images: std::collections::HashMap::new(),
-            #[cfg(feature = "game-api")]
-            world_map_map_textures: std::collections::HashMap::new(),
-            #[cfg(feature = "game-api")]
-            world_map_detail_textures: std::collections::HashMap::new(),
-            #[cfg(feature = "game-api")]
-            pokemon_sprite_textures: std::collections::HashMap::new(),
-            #[cfg(feature = "game-api")]
-            api_radius: 5,
-            #[cfg(feature = "game-api")]
-            api_party_slot: 0,
-            #[cfg(feature = "game-api")]
-            api_map_id: 1,
-            #[cfg(feature = "game-api")]
-            api_map_x: 0,
-            #[cfg(feature = "game-api")]
-            api_map_y: 0,
-            #[cfg(feature = "game-api")]
-            api_key: 0,
-            #[cfg(feature = "game-api")]
-            api_key_frames: 1,
             #[cfg(feature = "game-api")]
             essentials_debug: None,
             #[cfg(feature = "game-api")]
@@ -663,6 +291,18 @@ impl Workspace {
     }
 
     pub fn draw(&mut self, ui: &mut egui::Ui, info: &WorkspaceInfo) -> WorkspaceOutput {
+        self.draw_with_plugin_ui(ui, info, &mut |_| {})
+    }
+
+    /// Draws the workspace and lets the frontend add its plugin controls to
+    /// the Runtime tools panel. Keeping the callback here makes plugins live
+    /// beside runtime patches instead of creating a second top-level panel.
+    pub fn draw_with_plugin_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        info: &WorkspaceInfo,
+        draw_plugin_ui: &mut dyn FnMut(&mut egui::Ui),
+    ) -> WorkspaceOutput {
         let context = ui.ctx().clone();
         theme::apply(&context);
         let mut output = WorkspaceOutput::default();
@@ -724,7 +364,6 @@ impl Workspace {
         #[cfg(feature = "game-api")]
         self.poll_api_response();
         #[cfg(feature = "game-api")]
-        self.poll_pokemon_encounter_map();
 
         if !self.controls_visible {
             self.draw_game_view(ui, &mut output, info.logical_size);
@@ -768,22 +407,11 @@ impl Workspace {
             self.draw_logs(ui);
         }
         if !fullscreen && self.panels_left {
-            self.draw_patches_panel(ui, info);
+            self.draw_patches_panel(ui, info, draw_plugin_ui);
         }
         if !fullscreen && self.panels_performance {
             self.draw_performance_panel(ui, info);
         }
-        #[cfg(feature = "game-api")]
-        self.draw_api_windows(&context);
-        #[cfg(feature = "game-api")]
-        self.draw_pokeapi_window(&context);
-        #[cfg(feature = "game-api")]
-        self.draw_pokedex_window(&context);
-        #[cfg(feature = "game-api")]
-        self.draw_registry_dex_windows(&context);
-        #[cfg(feature = "game-api")]
-        self.draw_world_map_window(&context);
-
         self.draw_game_view(ui, &mut output, info.logical_size);
         self.draw_controller_settings(&context);
 
@@ -810,14 +438,6 @@ impl Workspace {
     }
 }
 
-#[cfg(feature = "game-api")]
-fn display_json_value(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::String(value) => value.clone(),
-        _ => value.to_string(),
-    }
-}
-
 fn draw_loading(ui: &mut egui::Ui, done: u32, total: u32) {
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE)
@@ -841,8 +461,8 @@ fn draw_loading(ui: &mut egui::Ui, done: u32, total: u32) {
 }
 
 #[cfg(all(test, feature = "game-api"))]
-mod world_map_layout_tests {
-    use super::{build_world_map_layout, first_pokemon_sprite_frame};
+mod sprite_tests {
+    use super::first_pokemon_sprite_frame;
 
     #[test]
     fn animated_pokemon_sprite_sheet_uses_one_square_frame() {
@@ -860,33 +480,22 @@ mod world_map_layout_tests {
     }
 
     #[test]
-    fn layout_is_stable_and_separates_maps_with_duplicate_origins() {
-        let maps = vec![
-            serde_json::json!({"id": 3, "width": 20, "height": 12, "world_x": 0, "world_y": 0}),
-            serde_json::json!({"id": 1, "width": 20, "height": 12, "world_x": 0, "world_y": 0}),
-            serde_json::json!({"id": 2, "width": 20, "height": 12, "world_x": 0, "world_y": 0}),
-            serde_json::json!({"id": 4, "width": 20, "height": 12, "world_x": 100, "world_y": 100}),
-        ];
-        let first = build_world_map_layout(&maps, &[], &[]);
-        let second = build_world_map_layout(&maps, &[], &[]);
-        assert_eq!(first.origins, second.origins);
-        assert_eq!(first.origins[&4], egui::vec2(2000.0, 2000.0));
-        assert_eq!(first.origins[&2].length(), 14.0);
-
-        let ids = [1, 2, 3, 4];
-        for (index, a) in ids.iter().enumerate() {
-            for b in ids.iter().skip(index + 1) {
-                let a_rect =
-                    egui::Rect::from_min_size(first.origins[a].to_pos2(), egui::vec2(20.0, 12.0));
-                let b_rect =
-                    egui::Rect::from_min_size(first.origins[b].to_pos2(), egui::vec2(20.0, 12.0));
-                assert!(!a_rect.intersects(b_rect), "maps {a} and {b} overlap");
-            }
+    fn two_frame_icon_sheet_uses_one_square_frame_at_boundary() {
+        let mut strip = image::RgbaImage::new(64, 32);
+        for (x, _, pixel) in strip.enumerate_pixels_mut() {
+            *pixel = if x < 32 {
+                image::Rgba([255, 0, 0, 255])
+            } else {
+                image::Rgba([0, 0, 255, 255])
+            };
         }
+        let frame = first_pokemon_sprite_frame(&strip);
+        assert_eq!((frame.width(), frame.height()), (32, 32));
+        assert_eq!(frame.get_pixel(16, 16), &image::Rgba([255, 0, 0, 255]));
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "game-api"))]
 mod workspace_tests {
     use super::*;
     fn draw_frame(

@@ -54,6 +54,8 @@ mod session;
 #[cfg(feature = "rgss")]
 mod window;
 #[cfg(feature = "rgss")]
+mod webview;
+#[cfg(feature = "rgss")]
 use rsxp::{
     archive::Archive,
     graphics::{Bitmap, Color, Rect, Scene, Sprite},
@@ -98,8 +100,9 @@ explicitly requested. RSXP_RENDERER also sets the default. Build with
 --release for game performance.
 RSXP_INPUT=FRAME:SCANCODE[:HOLD][,...] injects scripted input for
 headless runs and tests.
-Runtime patches are toggled from the left panel of the workspace and applied
-live to the running game (Map panoramic mode shows more of the current map).
+Generic runtime patches are toggled from the left panel of the workspace and
+applied live to the running game. Game-specific behavior is supplied by Rhai
+plugins, including the Essentials panoramic and Cable Club tools.
 RSXP_PATCH=ID[,ID...] pre-enables patches at startup.
 
 The run command embeds MRI Ruby through Magnus. Core RGSS graphics, input,

@@ -44,7 +44,9 @@ module Input
     value.is_a?(Symbol) ? const_get(value) : Integer(value)
   end
   def self.update
-    RSXP::GameAPI.poll if defined?(RSXP::GameAPI)
+    # The extension bridge is always present, even before the optional game API
+    # module has been injected by the Rhai extension.
+    RSXP::ExtensionBridge.poll
     bytes=RSXP.call('input_poll')
     @state=bytes.unpack('l<C'*(bytes.bytesize/5)).each_slice(2).to_h
     RSXP::GameAPI.inject_input(@state) if defined?(RSXP::GameAPI)

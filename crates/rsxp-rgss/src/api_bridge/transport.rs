@@ -4,7 +4,9 @@
 //! Local tools (the egui inspector, the workspace) call the shared queue
 //! directly and never need this module. When enabled, it exposes the same
 //! operations over a loopback-only HTTP/1.1 service so external processes (for
-//! example `rsxp-mcp`) can drive the game.
+//! example `rsxp-mcp`) can drive the game. Extensions register additional
+//! route aliases with the bridge; this transport does not know their domains
+//! or response schemas.
 //!
 //! Environment: [`start_from_env`] starts the server only when `RSXP_API=1`,
 //! reading the port from `RSXP_API_PORT` (default `47821`). [`start`] can be
@@ -134,15 +136,25 @@ fn write_http_response(stream: &mut TcpStream, status: u16, body: &str) {
         500 => "Internal Server Error",
         _ => "Error",
     };
-    let _ = write!(stream, "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+    let _ = write!(
+        stream,
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json; charset=utf-8\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
 }
 
 fn handle_http_request(line: &str) -> Result<String, (u16, String)> {
     let mut parts = line.split_whitespace();
     let method = parts.next().ok_or((400, "missing HTTP method".into()))?;
     let target = parts.next().ok_or((400, "missing HTTP path".into()))?;
+    if method == "OPTIONS" {
+        return Ok("{}".into());
+    }
+    if method == "GET" && target == "/v1/extensions/routes" {
+        return Ok(extension_routes_json());
+    }
     let (operation, args) = route_http(method, target)?;
-    request(operation, args).map_err(|message| (400, message))
+    request(&operation, args).map_err(|message| (400, message))
 }
 
 fn request(method: &str, args: Vec<String>) -> Result<String, String> {

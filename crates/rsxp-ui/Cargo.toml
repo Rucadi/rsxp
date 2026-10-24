@@ -12,8 +12,12 @@ crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 rsxp = { path = "../rsxp-rgss", default-features = false, features = ["ui", "game-api", "portable-media"] }
+rsxp-extension-api = { path = "../rsxp-extension-api" }
+rsxp-extensions = { path = "../rsxp-extensions" }
+rsxp-extension-ui = { path = "../rsxp-extension-ui" }
 eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "default_fonts"] }
 egui = { version = "0.37.0", features = ["default_fonts"] }
+base64 = "0.22"
 
 [target.'cfg(target_os = "android")'.dependencies]
 eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "default_fonts", "android-native-activity"] }

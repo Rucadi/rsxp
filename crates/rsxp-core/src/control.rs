@@ -74,6 +74,8 @@ impl CoreCommand {
 #[derive(Clone, Debug, PartialEq)]
 pub struct CommandRequest {
     pub id: u64,
+    /// Session generation at the time the frontend queued the request.
+    pub generation: u64,
     pub command: CoreCommand,
 }
 
@@ -120,6 +122,7 @@ pub struct CoreControl {
     frame_limit: AtomicU64,
     input: InputState,
     next_request: AtomicU64,
+    generation: AtomicU64,
     /// Fast-path gate so a core with no pending commands never takes the lock.
     command_count: AtomicUsize,
     commands: Mutex<VecDeque<CommandRequest>>,
@@ -140,6 +143,7 @@ impl CoreControl {
             frame_limit: AtomicU64::new(0),
             input: InputState::new(),
             next_request: AtomicU64::new(0),
+            generation: AtomicU64::new(1),
             command_count: AtomicUsize::new(0),
             commands: Mutex::new(VecDeque::new()),
         }
@@ -215,9 +219,37 @@ impl CoreControl {
             return Err(CommandError::QueueFull);
         }
         let id = self.next_request.fetch_add(1, Ordering::Relaxed) + 1;
-        queue.push_back(CommandRequest { id, command });
+        let generation = self.generation.load(Ordering::Acquire);
+        queue.push_back(CommandRequest {
+            id,
+            generation,
+            command,
+        });
         self.command_count.store(queue.len(), Ordering::Release);
         Ok(id)
+    }
+
+    /// Returns the generation attached to newly queued requests.
+    pub fn session_generation(&self) -> u64 {
+        self.generation.load(Ordering::Acquire)
+    }
+
+    /// Starts a new logical game session and drops commands queued for the old
+    /// session. Replies from the old generation remain distinguishable at the
+    /// event boundary and can be safely ignored by adapters.
+    pub fn begin_session(&self) -> u64 {
+        let generation = self
+            .generation
+            .fetch_add(1, Ordering::AcqRel)
+            .wrapping_add(1)
+            .max(1);
+        let mut queue = self
+            .commands
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        queue.clear();
+        self.command_count.store(0, Ordering::Release);
+        generation
     }
 
     /// Queues a command, returning `false` when it is rejected. Prefer
@@ -235,7 +267,35 @@ impl CoreControl {
         id: u64,
         outcome: CommandOutcome,
     ) {
-        events.emit(CoreEvent::CommandResult { id, outcome });
+        self.report_with_response(events, id, outcome, None);
+    }
+
+    /// Emits a command outcome and an optional bounded response payload.
+    pub fn report_with_response(
+        &self,
+        events: &mut dyn crate::events::EventSink,
+        id: u64,
+        outcome: CommandOutcome,
+        response: Option<Vec<u8>>,
+    ) {
+        if response
+            .as_ref()
+            .is_some_and(|payload| payload.len() > MAX_COMMAND_PAYLOAD)
+        {
+            events.emit(CoreEvent::CommandResult {
+                id,
+                generation: self.session_generation(),
+                outcome: CommandOutcome::Failed("command response payload is too large".into()),
+                response: None,
+            });
+            return;
+        }
+        events.emit(CoreEvent::CommandResult {
+            id,
+            generation: self.session_generation(),
+            outcome,
+            response,
+        });
     }
 
     /// Drains commands with their request ids while preserving `out`'s
@@ -270,6 +330,7 @@ impl CoreControl {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::events::EventSink;
 
     #[test]
     fn control_flags_are_lock_free_in_the_hot_path() {
@@ -293,6 +354,7 @@ mod tests {
         control.take_requests(&mut requests);
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].id, 1);
+        assert_eq!(requests[0].generation, control.session_generation());
         assert_eq!(requests[0].command, CoreCommand::Reset);
         requests.clear();
         control.take_requests(&mut requests);
@@ -312,5 +374,31 @@ mod tests {
         let mut commands = Vec::new();
         control.take_commands(&mut commands);
         assert!(commands.is_empty());
+    }
+
+    #[test]
+    fn command_responses_are_bounded_and_optional() {
+        let control = CoreControl::new();
+        let mut events = Vec::new();
+        struct Sink<'a>(&'a mut Vec<CoreEvent>);
+        impl EventSink for Sink<'_> {
+            fn emit(&mut self, event: CoreEvent) {
+                self.0.push(event);
+            }
+        }
+        control.report_with_response(
+            &mut Sink(&mut events),
+            7,
+            CommandOutcome::Succeeded,
+            Some(b"{\"ok\":true}".to_vec()),
+        );
+        assert!(matches!(
+            events.pop(),
+            Some(CoreEvent::CommandResult {
+                id: 7,
+                response: Some(_),
+                ..
+            })
+        ));
     }
 }

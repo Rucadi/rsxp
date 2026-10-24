@@ -37,6 +37,7 @@
 use crate::gpu_callback::{GameCallback, GameGpu};
 use crate::session::{read_message, write_message};
 use rsxp::{graphics::Bitmap, input::Input};
+use rsxp_extension_api::{OperationError, OperationRequest, OperationResponse};
 use serde_json::{json, Value};
 #[cfg(not(windows))]
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -568,6 +569,7 @@ impl Session {
 }
 
 pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error>> {
+    crate::webview::prepare_runtime();
     rsxp::api_bridge::start_from_env()?;
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -600,6 +602,24 @@ struct DesktopApp {
     gpu_view: bool,
     gpu_state: Arc<Mutex<GameGpu>>,
     gpu_callback: Option<Arc<GameCallback>>,
+    extension_bridge: std::collections::HashMap<u64, (u64, u64)>,
+    plugin_webview_api_bridge: std::collections::HashMap<u64, u64>,
+    pending_webview_assets: Vec<(u64, String, String, u8)>,
+    plugin_webview: Option<(String, String, crate::webview::PluginWebView)>,
+    pending_webview_commands: Vec<PluginWebViewCommand>,
+}
+
+enum PluginWebViewCommand {
+    Open {
+        plugin_id: String,
+        view_id: String,
+        title: String,
+        html: String,
+    },
+    Close {
+        plugin_id: String,
+        view_id: String,
+    },
 }
 
 impl DesktopApp {
@@ -638,6 +658,11 @@ impl DesktopApp {
                 logical_size: (640, 480),
             })),
             gpu_callback: None,
+            extension_bridge: std::collections::HashMap::new(),
+            plugin_webview_api_bridge: std::collections::HashMap::new(),
+            pending_webview_assets: Vec::new(),
+            plugin_webview: None,
+            pending_webview_commands: Vec::new(),
         }
     }
 
@@ -647,6 +672,12 @@ impl DesktopApp {
         rsxp::runtime_settings::reset();
         rsxp::runtime_patch::reset();
         rsxp::api_bridge::end_session();
+        self.shared.reset_plugins();
+        self.extension_bridge.clear();
+        self.plugin_webview_api_bridge.clear();
+        self.pending_webview_assets.clear();
+        self.plugin_webview = None;
+        self.pending_webview_commands.clear();
         let panel = self.shared.workspace.session.take();
         self.shared.workspace = rsxp::ui::Workspace::new();
         self.shared.workspace.session = panel;
@@ -688,11 +719,19 @@ impl DesktopApp {
             Ok(session) => {
                 self.session = Some(session);
                 self.last_args = args;
+                {
+                    let panel = self.shared.workspace.session.as_mut().unwrap();
+                    panel.active = true;
+                    panel.paused = false;
+                    panel.status = "Starting…".into();
+                    panel.error = None;
+                }
+                if game_uses_rgss_compositor {
+                    if let Err(error) = self.shared.activate_plugins() {
+                        self.shared.workspace.session.as_mut().unwrap().error = Some(error);
+                    }
+                }
                 let panel = self.shared.workspace.session.as_mut().unwrap();
-                panel.active = true;
-                panel.paused = false;
-                panel.status = "Starting…".into();
-                panel.error = None;
                 if let Some(rom) = cartridge {
                     let title = rom
                         .file_stem()
@@ -783,6 +822,210 @@ impl DesktopApp {
         }
     }
 
+    fn poll_plugins(&mut self) {
+        for request in self.shared.take_plugin_requests() {
+            if let Some(plugin_id) = request.operation.strip_suffix(".__webview.open") {
+                if let (Some(view_id), Some(title), Some(html)) = (
+                    request.arguments.get("view_id").and_then(Value::as_str),
+                    request.arguments.get("title").and_then(Value::as_str),
+                    request.arguments.get("html").and_then(Value::as_str),
+                ) {
+                    self.pending_webview_commands
+                        .push(PluginWebViewCommand::Open {
+                            plugin_id: plugin_id.to_owned(),
+                            view_id: view_id.to_owned(),
+                            title: title.to_owned(),
+                            html: html.to_owned(),
+                        });
+                }
+                let _ = self.shared.dispatch_plugin_response(OperationResponse {
+                    id: request.id,
+                    generation: request.generation,
+                    result: Ok(json!({"opened": true})),
+                });
+                continue;
+            }
+            if let Some(plugin_id) = request.operation.strip_suffix(".__webview.close") {
+                if let Some(view_id) = request.arguments.get("view_id").and_then(Value::as_str) {
+                    self.pending_webview_commands
+                        .push(PluginWebViewCommand::Close {
+                            plugin_id: plugin_id.to_owned(),
+                            view_id: view_id.to_owned(),
+                        });
+                }
+                let _ = self.shared.dispatch_plugin_response(OperationResponse {
+                    id: request.id,
+                    generation: request.generation,
+                    result: Ok(json!({"closed": true})),
+                });
+                continue;
+            }
+            let Some((operation, args)) = legacy_plugin_call(&request) else {
+                let _ = self.shared.dispatch_plugin_response(OperationResponse {
+                    id: request.id,
+                    generation: request.generation,
+                    result: Err(OperationError::new(
+                        "unsupported_operation",
+                        request.operation,
+                    )),
+                });
+                continue;
+            };
+            match rsxp::api_bridge::send_from_ui(operation, args) {
+                Ok(bridge_id) => {
+                    self.extension_bridge
+                        .insert(bridge_id, (request.id, request.generation));
+                }
+                Err(error) => {
+                    let _ = self.shared.dispatch_plugin_response(OperationResponse {
+                        id: request.id,
+                        generation: request.generation,
+                        result: Err(OperationError::new("queue", error)),
+                    });
+                }
+            }
+        }
+
+        let pending: Vec<_> = self.extension_bridge.keys().copied().collect();
+        for bridge_id in pending {
+            let Some(reply) = rsxp::api_bridge::take_ui_response(bridge_id) else {
+                continue;
+            };
+            let (extension_id, generation) = self.extension_bridge.remove(&bridge_id).unwrap();
+            let result = match reply {
+                Ok(body) => serde_json::from_str(&body)
+                    .map_err(|error| OperationError::new("invalid_response", error.to_string())),
+                Err(error) => Err(OperationError::new("transport", error)),
+            };
+            let _ = self.shared.dispatch_plugin_response(OperationResponse {
+                id: extension_id,
+                generation,
+                result,
+            });
+        }
+    }
+
+    fn process_plugin_webviews(&mut self, frame: &eframe::Frame) {
+        let commands = std::mem::take(&mut self.pending_webview_commands);
+        for command in commands {
+            match command {
+                PluginWebViewCommand::Open {
+                    plugin_id,
+                    view_id,
+                    title,
+                    html,
+                } => {
+                    self.plugin_webview = None;
+                    self.plugin_webview_api_bridge.clear();
+                    self.pending_webview_assets.clear();
+                    match crate::webview::PluginWebView::open(frame, &title, &html) {
+                        Ok(view) => self.plugin_webview = Some((plugin_id, view_id, view)),
+                        Err(error) => {
+                            if let Some(panel) = self.shared.workspace.session.as_mut() {
+                                panel.error = Some(error);
+                            }
+                        }
+                    }
+                }
+                PluginWebViewCommand::Close { plugin_id, view_id } => {
+                    if self
+                        .plugin_webview
+                        .as_ref()
+                        .is_some_and(|(owner, id, _)| owner == &plugin_id && id == &view_id)
+                    {
+                        self.plugin_webview = None;
+                        self.plugin_webview_api_bridge.clear();
+                        self.pending_webview_assets.clear();
+                    }
+                }
+            }
+        }
+        let requests = self
+            .plugin_webview
+            .as_ref()
+            .map(|(_, _, view)| view.take_requests())
+            .unwrap_or_default();
+        for request in requests {
+            match request {
+                crate::webview::PluginWebViewRequest::Api {
+                    id,
+                    method,
+                    target,
+                } => {
+                    if method.eq_ignore_ascii_case("OPTIONS") {
+                        if let Some((_, _, view)) = &self.plugin_webview {
+                            let _ = view.respond(id, 200, "{}");
+                        }
+                        continue;
+                    }
+                    if method.eq_ignore_ascii_case("GET") && target == "/v1/extensions/routes" {
+                        if let Some((_, _, view)) = &self.plugin_webview {
+                            let body = rsxp::api_bridge::extension_routes_json();
+                            let _ = view.respond(id, 200, &body);
+                        }
+                        continue;
+                    }
+                    match rsxp::api_bridge::route_http(&method.to_ascii_uppercase(), &target)
+                        .and_then(|(operation, args)| {
+                            rsxp::api_bridge::send_from_ui(&operation, args)
+                                .map_err(|error| (500, error))
+                        }) {
+                        Ok(bridge_id) => {
+                            self.plugin_webview_api_bridge.insert(bridge_id, id);
+                        }
+                        Err((status, error)) => {
+                            if let Some((_, _, view)) = &self.plugin_webview {
+                                let body = json!({"error": error}).to_string();
+                                let _ = view.respond(id, status, &body);
+                            }
+                        }
+                    }
+                }
+                crate::webview::PluginWebViewRequest::Asset {
+                    id,
+                    category,
+                    name,
+                } => self.pending_webview_assets.push((id, category, name, 0)),
+            }
+        }
+        let pending_assets = std::mem::take(&mut self.pending_webview_assets);
+        for (id, category, name, attempts) in pending_assets {
+            let data_url = self.shared.plugin_asset_data_url(&category, &name);
+            if let Some((_, _, view)) = &self.plugin_webview {
+                if data_url.is_some() || attempts >= 30 {
+                    let _ = view.respond_asset(id, data_url.as_deref());
+                } else {
+                    self.pending_webview_assets
+                        .push((id, category, name, attempts.saturating_add(1)));
+                }
+            }
+        }
+        let bridge_ids: Vec<_> = self.plugin_webview_api_bridge.keys().copied().collect();
+        for bridge_id in bridge_ids {
+            let Some(reply) = rsxp::api_bridge::take_ui_response(bridge_id) else {
+                continue;
+            };
+            let Some(request_id) = self.plugin_webview_api_bridge.remove(&bridge_id) else {
+                continue;
+            };
+            if let Some((_, _, view)) = &self.plugin_webview {
+                match reply {
+                    Ok(body) => {
+                        let _ = view.respond(request_id, 200, &body);
+                    }
+                    Err(error) => {
+                        let body = json!({"error": error}).to_string();
+                        let _ = view.respond(request_id, 500, &body);
+                    }
+                }
+            }
+        }
+        if let Some((_, _, view)) = &self.plugin_webview {
+            view.resize(frame);
+            view.pump();
+        }
+    }
+
     fn poll_session(&mut self, ctx: &egui::Context) {
         if let Some(task) = &self.save_task
             && let Ok(result) = task.try_recv()
@@ -795,6 +1038,7 @@ impl DesktopApp {
             }
             self.save_task = None;
         }
+        self.poll_plugins();
         let Some(session) = &mut self.session else {
             return;
         };
@@ -877,7 +1121,7 @@ impl DesktopApp {
             "downs":downs,"ups":ups,"keys":(-8..512).filter(|key| ![58,59,60,61,67,68].contains(key) && self.input.pressed(*key)).collect::<Vec<_>>(),
             "x":mouse.x as i32,"y":mouse.y as i32,"inside":self.input.mouse_inside,
             "scroll":self.input.scroll_v,"text":std::mem::take(&mut self.input.text),"fast":rsxp::runtime_settings::fast_forward(),
-            "rate":rsxp::runtime_settings::rate_override(),"api":old_api+&api,
+            "rate":rsxp::runtime_settings::rate_override(),"api":old_api+api.as_str(),
             "patches":rsxp::runtime_patch::patches().iter().map(|patch|json!([patch.id,rsxp::runtime_patch::is_enabled(&patch.id),rsxp::runtime_patch::value(&patch.id)])).collect::<Vec<_>>()});
         if let Some(error) = state.error.take() {
             self.shared.workspace.session.as_mut().unwrap().error = Some(error);
@@ -907,6 +1151,10 @@ impl DesktopApp {
                     .then(|| format!("Game exited: {status}. See Runtime output below."));
                 self.session.take();
                 rsxp::api_bridge::end_session();
+                self.shared.reset_plugins();
+                self.extension_bridge.clear();
+                self.plugin_webview = None;
+                self.pending_webview_commands.clear();
             }
         }
     }
@@ -965,6 +1213,21 @@ impl eframe::App for DesktopApp {
             self.shared.set_bitmap(&ctx, &self.frame);
         }
         self.shared.draw(ui);
+        if self.shared.take_plugin_import_request() {
+            if let Some(path) = rfd::FileDialog::new()
+                .set_title("Import Rhai plugin")
+                .add_filter("Rhai plugin", &["rhai"])
+                .pick_file()
+            {
+                if let Err(error) = self.shared.import_plugin(&path) {
+                    if let Some(panel) = self.shared.workspace.session.as_mut() {
+                        panel.error = Some(error);
+                    }
+                }
+            }
+            ctx.request_repaint();
+        }
+        self.process_plugin_webviews(frame);
         self.game_rect = self.shared.take_output().game_rect;
         self.gpu_state.lock().unwrap().rect = self.game_rect;
         if self.session.is_some() {
@@ -1018,6 +1281,10 @@ impl eframe::App for DesktopApp {
         if actions.stop {
             self.session.take();
             rsxp::api_bridge::end_session();
+            self.shared.reset_plugins();
+            self.extension_bridge.clear();
+            self.plugin_webview = None;
+            self.pending_webview_commands.clear();
             self.input.release_all();
             let panel = self.shared.workspace.session.as_mut().unwrap();
             panel.active = false;
@@ -1043,6 +1310,35 @@ impl eframe::App for DesktopApp {
         }
         ctx.request_repaint_after(Duration::from_millis(16));
     }
+}
+
+/// Adapts the generic plugin request envelope to the RGSS bridge's positional
+/// argument protocol. The host deliberately does not enumerate game domains;
+/// operation declarations and their argument order belong to each plugin.
+fn legacy_plugin_call(request: &OperationRequest) -> Option<(&str, Vec<String>)> {
+    if request.operation.ends_with(".__ruby.inject") {
+        let source = request.arguments.get("source")?.as_str()?;
+        let patch_name = format!("rhai-{}", request.id);
+        return Some((
+            "ruby_inject",
+            vec![patch_name, rsxp::api_bridge::hex_encode(source)],
+        ));
+    }
+    if request.operation.ends_with(".__ruby.unload") {
+        let handle = request.arguments.get("handle")?.as_i64()?;
+        if handle <= 0 {
+            return None;
+        }
+        return Some(("ruby_unload", vec![format!("rhai-{handle}")]));
+    }
+    let operation = request.operation.rsplit_once('.')?.1;
+    let arguments = request.arguments.as_object()?.values().map(|value| {
+        value
+            .as_str()
+            .map(str::to_owned)
+            .unwrap_or_else(|| value.to_string())
+    });
+    Some((operation, arguments.collect()))
 }
 
 fn egui_scancode(key: egui::Key) -> Option<i32> {

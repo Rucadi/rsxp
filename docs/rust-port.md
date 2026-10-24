@@ -112,12 +112,11 @@ execution. These are runtime controls, not `--fps`/`--uncapped` CLI arguments.
 | `RSXP_NATIVE_TILEMAP=0` | Disable native tile sprite optimization |
 | `RSXP_SCENE_CACHE=0` | Disable retained scene ordering |
 
-Runtime patches are cataloged in `crates/rsxp-rgss/src/patches/mod.rs`, with Ruby bodies beside
-it. The engine tracks toggles/values; the Ruby shim fetches a newly enabled
-patch, evaluates it and calls its apply/revert/value callbacks. The built-in
-`map_panoramic` patch targets Essentials map rendering and stays inert when its
-required classes are absent. Patches are game-specific modifications, not
-universal RGSS compatibility fixes.
+Generic user runtime patches are cataloged in `crates/rsxp-rgss/src/patches/mod.rs`.
+Essentials-specific behavior is supplied by `extensions/essentials-runtime-patches.rhai`:
+the plugin injects its Ruby implementation, owns the toggles and owns the
+panoramic zoom slider. Patches are game-specific modifications, not universal
+RGSS compatibility fixes.
 
 ## Browser differences and validation
 

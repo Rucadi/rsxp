@@ -71,5 +71,88 @@ module RuntimePatches
     patch
   end
   def self.active?(id) = @active[id]==true
+
+  # Called by the extension bridge before a dynamically registered patch is
+  # removed from the native catalog. This gives the patch the same reversible
+  # lifecycle as a checkbox toggle instead of leaving method aliases behind.
+  def self.disable(id)
+    patch=@patches[id]
+    return false unless patch && patch!=false
+    unless @active[id]
+      @patches.delete(id)
+      @values.delete(id)
+      return true
+    end
+    patch[:revert].call
+    @active.delete(id)
+    @values.delete(id)
+    @patches.delete(id)
+    true
+  rescue StandardError => error
+    RSXP::ERROR_OUTPUT.call("[RuntimePatches] #{id}: #{error.class}: #{error.message}\n")
+    false
+  end
+end
+
+# Transport is deliberately kept in the core Ruby shim so a Rhai extension can
+# inject the game-specific dispatcher itself. This first processes the
+# bootstrap mutations (ruby_inject/ruby_unload); subsequent requests are
+# delegated to RSXP::GameAPI once the extension has installed it.
+module RSXP
+  module ExtensionBridge
+    # A webview or external API client may disappear while a game-thread
+    # operation is still running. Dropping that reply must not turn into a
+    # Ruby exception from Input.update and terminate the game session.
+    def self.respond(id, payload)
+      RSXP.call('api_respond', id, payload: payload)
+    rescue StandardError
+      nil
+    end
+
+    def self.poll
+      if defined?(RSXP::GameAPI) && RSXP::GameAPI.respond_to?(:start_pending_wild_encounter)
+        RSXP::GameAPI.start_pending_wild_encounter
+      end
+      RSXP.call('api_poll').force_encoding(Encoding::UTF_8).each_line do |line|
+        id, method, *args = line.chomp.split("\t")
+        begin
+          result = dispatch(method, args)
+          respond(id.to_i, JSON.generate(result))
+        rescue StandardError => error
+          payload = JSON.generate({ 'error' => "#{error.class}: #{error.message}" })
+          respond(id.to_i, payload)
+        end
+      end
+      nil
+    end
+
+    def self.dispatch(method, args)
+      case method
+      when 'ruby_inject'
+        name = args.fetch(0)
+        source = decode_hex(args.fetch(1))
+        patch_id = RSXP.call('runtime_patch_register', name, payload: source)
+        # Requests already queued behind the injection in this frame can use
+        # the newly installed dispatcher immediately.
+        RuntimePatches.sync
+        { 'patch_id' => patch_id, 'registered' => true }
+      when 'ruby_unload'
+        patch_id = args.fetch(0)
+        raise ArgumentError, 'unknown Ruby patch handle' unless RuntimePatches.disable(patch_id)
+        RSXP.call('runtime_patch_unregister', patch_id)
+        { 'patch_id' => patch_id, 'unloaded' => true }
+      else
+        unless defined?(RSXP::GameAPI) && RSXP::GameAPI.respond_to?(:dispatch)
+          raise RuntimeError, 'the game API extension is not active yet'
+        end
+        RSXP::GameAPI.dispatch(method, args)
+      end
+    end
+
+    def self.decode_hex(value)
+      raise ArgumentError, 'Ruby source encoding is invalid' unless value.length.even? && value.match?(/\A[0-9a-fA-F]*\z/)
+      [value].pack('H*').force_encoding(Encoding::UTF_8)
+    end
+  end
 end
 

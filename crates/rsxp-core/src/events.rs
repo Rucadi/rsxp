@@ -85,7 +85,11 @@ pub enum CoreEvent {
     /// [`CommandOutcome::Unsupported`].
     CommandResult {
         id: u64,
+        generation: u64,
         outcome: CommandOutcome,
+        /// Optional operation response payload encoded by the core-defined
+        /// extension command.
+        response: Option<Vec<u8>>,
     },
     /// Final session status. The frontend emits this once when a worker ends,
     /// including for load failures and unwinds; cores should not emit it.

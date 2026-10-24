@@ -11,6 +11,7 @@ rsxp-core-nds = { path = "../../cores/nds/core", optional = true }
 rsxp-core-gba = { path = "../../cores/gba/core", optional = true }
 rsxp = { path = "../../crates/rsxp-rgss", features = ["gpu", "ui", "game-api", "portable-media"], optional = true }
 rsxp-core = { path = "../../crates/rsxp-core" }
+rsxp-extension-api = { path = "../../crates/rsxp-extension-api" }
 rsxp-cores = { path = "../../crates/rsxp-cores", default-features = false }
 rsxp-frontend = { path = "../../crates/rsxp-frontend" }
 rsxp-ui = { path = "../../crates/rsxp-ui", optional = true }
@@ -23,6 +24,7 @@ bytemuck = { version = "1", features = ["derive"] }
 egui = { version = "0.37.0", features = ["default_fonts"] }
 egui-wgpu = { version = "0.37.0", default-features = false }
 egui-winit = { version = "0.37.0", default-features = false, features = ["wayland", "x11", "clipboard"] }
+wry = "0.57"
 fontdue = "0.9"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp"] }
 kira = { version = "0.12.5", default-features = false, features = ["cpal", "flac", "mp3", "ogg", "pcm", "vorbis", "wav"] }
@@ -37,6 +39,9 @@ gilrs = "0.11.2"
 # XInput avoids the Windows Gaming Input API, which returns E_NOTIMPL in Wine.
 [target.'cfg(target_os = "windows")'.dependencies]
 gilrs = { version = "0.11.2", default-features = false, features = ["xinput"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
 
 [dev-dependencies]
 gif = "0.14"

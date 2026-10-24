@@ -382,7 +382,7 @@ impl EventSink for NativeEvents {
                 }
             }
             CoreEvent::Screenshot { .. } => {}
-            CoreEvent::CommandResult { id, outcome } => {
+            CoreEvent::CommandResult { id, outcome, .. } => {
                 eprintln!("command {id}: {outcome:?}");
             }
             CoreEvent::Status(message) => eprintln!("status: {message}"),

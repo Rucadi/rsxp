@@ -1,10 +1,10 @@
 # Live game MCP API
 
-This API exposes game inspection, Pokémon Essentials party data, and bounded
-input controls for a running desktop `rsxp` game. Its OpenAPI contract is
-generated from the Rust declarations in `openapi.rs`. Rust owns HTTP and MCP
-stdio; Ruby only reads RGSS/Essentials state and injects controls on the game
-thread.
+This API exposes generic game inspection and bounded input controls for a
+running desktop `rsxp` game. The loopback HTTP transport is Rust-owned, but
+extension route aliases are discovered from the running session and their
+responses are produced by the extension dispatcher on the game thread. The
+bundled Essentials package supplies its Ruby implementation through Rhai.
 
 Start the game normally. In the egui workspace's left panel, enter a port under
 **Game API** and choose **Start HTTP API**. The server listens on `127.0.0.1` and
@@ -28,9 +28,10 @@ cargo build --release --no-default-features --features api-docs --bin rsxp-mcp
 cargo api-openapi > api/openapi.json
 ```
 
-`cargo api-openapi` regenerates the checked-in OpenAPI JSON from Rust endpoint
-and schema declarations. The MCP tool definitions are kept in the same Rust
-binary and correspond to these REST operations.
+`cargo api-openapi` regenerates the checked-in compatibility document from Rust
+endpoint and schema declarations. At runtime, `tools/list` additionally
+discovers route aliases from `/v1/extensions/routes`; extension MCP calls use
+the same HTTP routes as the GUI and external clients.
 
 ```json
 {
@@ -45,13 +46,13 @@ binary and correspond to these REST operations.
 
 The REST API provides game status, nearby map contents, RPG Maker map
 connections and transfer-event links, actual tile layers, a party summary, and
-full details for an individual party slot. The egui world map automatically
-loads every Essentials map marked `Outdoor`, renders their actual tiles as one
-pan/zoom canvas, and aligns maps using explicit connection offsets or direct
-transfer-event source and destination cells. Essentials `MapPosition` metadata
-anchors disconnected areas. Clicking a rendered cell selects its exact map
-coordinates; the transfer button queues it through the game's normal transfer
-helper.
+full details for an individual party slot. The bundled
+`essentials-world-map.rhai` plugin loads every Essentials map marked `Outdoor`,
+renders their actual tiles as one browser/native HTML Canvas pan/zoom view, and
+aligns maps using explicit connection offsets or direct transfer-event source
+and destination cells. Essentials `MapPosition` metadata anchors disconnected
+areas. Clicking a rendered cell selects its exact map coordinates; the transfer
+button queues it through the game's normal transfer helper.
 Pokémon-specific operations are isolated below `/v1/pokemon-essentials/` and
 are only advertised as Pokémon Essentials MCP tools, so generic game clients
 can ignore them. These endpoints expose Essentials availability, party and
@@ -113,11 +114,11 @@ breeding sources. Scripted acquisitions may not be indexed; unknown sources do
 not mean a species is unobtainable. Detail responses preserve full learnsets and
 custom game stats, moves, abilities, evolution rules, and wild encounter locations.
 
-`GET /v1/pokemon-essentials/movedex` and `GET /v1/pokemon-essentials/itemdex`
-return complete game-backed move/item catalogs (use `?refresh=refresh` to rebuild
-session caches). Their MCP tools are `pokemon_essentials_movedex` and
-`pokemon_essentials_itemdex`. Movedex records include the game-defined TMs that
-teach each move; machines are resolved from the item registry, never invented.
+Game-specific explorer routes are supplied by the active Rhai plugins and are
+reported by `GET /v1/extensions/routes`; the core API contract does not embed
+game-domain catalogs. The bundled Essentials Movedex plugin exposes
+`GET /v1/pokemon-essentials/movedex` and owns its HTML presentation and move
+registry adapter.
 
 Older Essentials releases that predate the `GameData::*` registries (for example
 Pokémon Z, which keeps compiled `PBSpecies`/`PBMoves`/`PBItems` modules and flat

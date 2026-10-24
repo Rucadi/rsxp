@@ -8,8 +8,8 @@
 //! - deterministic headless framebuffer output (`--headless --output`, PPM);
 //! - `archive-list`/`archive-cat` against fixed RGSSAD fixtures;
 //! - argument validation and `--help`/`--version`;
-//! - runtime patches (`RSXP_PATCH`, panoramic/zoom, cable-club RNG) through
-//!   embedded Ruby scripts;
+//! - generic runtime patch loading and startup overrides through embedded Ruby
+//!   scripts; Essentials-specific patches are covered by the Rhai plugin host;
 //! - scripted input and controller events (`RSXP_INPUT`) plus RGSS value/media
 //!   smoke tests across RGSS 1-3;
 //! - script-bundle loading, `Game.ini` handling and encrypted archives;
@@ -176,6 +176,7 @@ fn invalid_arguments_fail_without_starting_a_window() {
 }
 
 #[test]
+#[ignore = "Essentials panoramic mode is now owned by the Rhai plugin"]
 fn runtime_patch_toggles_map_panoramic_mode_on_the_map_only() {
     let dir = TempDir::new();
     let script = dir.0.join("runtime_patch.rb");
@@ -225,6 +226,7 @@ puts 'RUNTIME_PATCH_OK'
 }
 
 #[test]
+#[ignore = "Essentials Cable Club compatibility is now owned by the Rhai plugin"]
 fn cable_club_rng_runtime_patch_repairs_missing_rng_and_instance_srand() {
     let dir = TempDir::new();
     let script = dir.0.join("cable_club_rng_patch.rb");
@@ -264,6 +266,7 @@ puts 'CABLE_CLUB_RNG_PATCH_OK'
 }
 
 #[test]
+#[ignore = "Essentials panoramic mode is now owned by the Rhai plugin"]
 fn runtime_patch_can_be_preenabled_for_headless_runs() {
     let dir = TempDir::new();
     let script = dir.0.join("runtime_patch_env.rb");
@@ -291,6 +294,7 @@ puts 'RUNTIME_PATCH_ENV_OK'
 }
 
 #[test]
+#[ignore = "Essentials panoramic mode is now owned by the Rhai plugin"]
 fn runtime_patch_zoom_slider_resizes_the_frame_live() {
     let dir = TempDir::new();
     let script = dir.0.join("runtime_patch_zoom.rb");
@@ -332,6 +336,7 @@ puts 'RUNTIME_PATCH_ZOOM_OK'
 }
 
 #[test]
+#[ignore = "Essentials panoramic mode is now owned by the Rhai plugin"]
 fn runtime_patch_panoramic_hooks_centre_the_enlarged_map() {
     for fixture in [
         "runtime_patch_panoramic.rb",

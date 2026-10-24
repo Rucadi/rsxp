@@ -1,6 +1,10 @@
 [workspace]
 members = [
     "crates/rsxp-core",
+    "crates/rsxp-extension-api",
+    "crates/rsxp-api",
+    "crates/rsxp-extensions",
+    "crates/rsxp-extension-ui",
     "crates/rsxp-cores",
     "crates/rsxp-frontend",
     "crates/rsxp-ui",

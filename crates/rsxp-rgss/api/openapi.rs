@@ -3,8 +3,9 @@
 //! Code-first OpenAPI contract for the live game HTTP API.
 //!
 //! This module is compiled into the `rsxp-mcp` binary from `api/main.rs` (via
-//! `#[path = "openapi.rs"]`) and describes the REST handlers implemented in
-//! `src/api_bridge.rs`. `ApiDoc` aggregates the operation metadata and schemas:
+//! `#[path = "openapi.rs"]`) and describes the built-in REST compatibility
+//! contract. Extension route aliases are discovered at runtime and are not
+//! hard-coded into this document. `ApiDoc` aggregates the operation metadata and schemas:
 //! the `#[utoipa::path]` stub functions below give each route its method, tag,
 //! query/path parameters and response bodies, while the `ToSchema` structs
 //! define the shared JSON shapes (game state, maps/tiles, Pokémon Essentials
@@ -30,8 +31,6 @@ use utoipa::OpenApi;
         get_map_tiles,
         teleport,
         add_inventory_item,
-        get_movedex,
-        get_itemdex,
         get_pokedex,
         get_species_entry,
         get_pokemon_essentials_status,
@@ -52,8 +51,7 @@ use utoipa::OpenApi;
         TileInfo, EventInfo,
         PokemonEssentialsStatus, PokemonParty, PokemonSummary, PokemonDetails, PokemonMove,
         PokemonOwner, PokemonAbility, PokemonNature, PokemonItem, SpeciesInfo,
-        GamePokedex, GameSpeciesSummary, GameSpeciesEntry,
-        GameMovedex, GameDexMove, GameItemdex, GameDexItem, GameMachine, GameInventoryChange,
+        GamePokedex, GameSpeciesSummary, GameSpeciesEntry, GameInventoryChange,
         PokemonEncounters, EncounterTable, EncounterEntry, PokemonNpcs, PokemonNpc, PokemonNpcPage,
         PokemonBattle, PokemonBattler, BattleCommands, BattleSwitchOption,
         GameEncounterResult,
@@ -720,83 +718,6 @@ struct GameSpeciesEntry {
     raw: String,
 }
 
-#[utoipa::path(
-    get, path = "/v1/pokemon-essentials/movedex", tag = "Pokémon Essentials",
-    operation_id = "getEssentialsMovedex",
-    params(("refresh" = Option<String>, Query, description = "Use refresh to rebuild the session catalog")),
-    responses((status = 200, description = "All loaded moves with game power, type, category, accuracy, PP, flags and descriptions", body = GameMovedex),
-              (status = 400, description = "Move registry unavailable", body = ApiError))
-)]
-fn get_movedex() {}
-#[utoipa::path(
-    get, path = "/v1/pokemon-essentials/itemdex", tag = "Pokémon Essentials",
-    operation_id = "getEssentialsItemdex",
-    params(("refresh" = Option<String>, Query, description = "Use refresh to rebuild the session catalog")),
-    responses((status = 200, description = "All loaded items with game descriptions, pockets, prices, use modes, flags and taught moves", body = GameItemdex),
-              (status = 400, description = "Item registry unavailable", body = ApiError))
-)]
-fn get_itemdex() {}
-#[derive(utoipa::ToSchema)]
-struct GameMovedex {
-    entries: Vec<GameDexMove>,
-}
-#[derive(utoipa::ToSchema)]
-struct GameDexMove {
-    id: String,
-    name: String,
-    number: Option<i32>,
-    description: Option<String>,
-    r#type: String,
-    type_name: Option<String>,
-    category: Option<i32>,
-    category_name: Option<String>,
-    power: Option<i32>,
-    accuracy: Option<i32>,
-    pp: Option<i32>,
-    priority: Option<i32>,
-    target: Option<String>,
-    effect_chance: Option<i32>,
-    function_code: Option<String>,
-    machines: Option<Vec<GameMachine>>,
-    flags: Option<Vec<String>>,
-    method: Option<String>,
-    level: Option<i32>,
-    #[schema(value_type = Option<Object>)]
-    raw: Option<String>,
-}
-#[derive(utoipa::ToSchema)]
-struct GameItemdex {
-    entries: Vec<GameDexItem>,
-}
-#[derive(utoipa::ToSchema)]
-struct GameDexItem {
-    id: String,
-    name: String,
-    number: Option<i32>,
-    description: Option<String>,
-    pocket: Option<i32>,
-    pocket_name: String,
-    price: Option<i64>,
-    sell_price: Option<i64>,
-    bp_price: Option<i64>,
-    consumable: Option<bool>,
-    field_use: Option<i32>,
-    field_use_label: String,
-    battle_use: Option<i32>,
-    battle_use_label: String,
-    tags: Vec<String>,
-    flags: Vec<String>,
-    r#move: Option<GameDexMove>,
-    icon: Option<String>,
-    #[schema(value_type = Object)]
-    raw: String,
-}
-
-#[derive(utoipa::ToSchema)]
-struct GameMachine {
-    id: String,
-    name: String,
-}
 #[utoipa::path(
     post, path = "/v1/pokemon-essentials/inventory/add", tag = "Pokémon Essentials",
     operation_id = "addEssentialsInventoryItem",

@@ -271,11 +271,14 @@ impl NdsAdapter {
         }
         Ok(())
     }
-    fn report(&mut self, id: u64, outcome: CommandOutcome) {
+    fn report(&mut self, generation: u64, id: u64, outcome: CommandOutcome) {
         if let Some(context) = self.context.as_mut() {
-            context
-                .events
-                .emit(CoreEvent::CommandResult { id, outcome });
+            context.events.emit(CoreEvent::CommandResult {
+                id,
+                generation,
+                outcome,
+                response: None,
+            });
         }
     }
     fn flush_audio(&mut self) {
@@ -449,6 +452,7 @@ impl Core for NdsAdapter {
             control.take_requests(&mut commands);
             for request in commands.drain(..) {
                 let id = request.id;
+                let generation = request.generation;
                 let outcome = match self.command(request.command) {
                     Ok(outcome) => outcome,
                     Err(error) => {
@@ -460,7 +464,7 @@ impl Core for NdsAdapter {
                         CommandOutcome::Failed(error.to_string())
                     }
                 };
-                self.report(id, outcome);
+                self.report(generation, id, outcome);
             }
             if control.paused() {
                 if !audio_paused {

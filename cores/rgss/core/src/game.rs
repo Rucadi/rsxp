@@ -152,6 +152,7 @@ fn infer_directory_version(root: &Path) -> u8 {
 
 fn read_file(root: &Path, platform: &dyn Platform, name: &str) -> Option<Vec<u8>> {
     platform
-        .read_file(name)
+        .read_content(name)
+        .ok()
         .or_else(|| std::fs::read(root.join(name)).ok())
 }

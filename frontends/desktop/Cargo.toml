@@ -8,11 +8,12 @@ publish = false
 
 [dependencies]
 rsxp-core-nds = { path = "../../cores/nds/core", optional = true }
-rsxp = { path = "../../crates/rsxp-rgss", features = ["gpu", "ui", "game-api", "portable-media"] }
+rsxp-core-gba = { path = "../../cores/gba/core", optional = true }
+rsxp = { path = "../../crates/rsxp-rgss", features = ["gpu", "ui", "game-api", "portable-media"], optional = true }
 rsxp-core = { path = "../../crates/rsxp-core" }
+rsxp-cores = { path = "../../crates/rsxp-cores", default-features = false }
 rsxp-frontend = { path = "../../crates/rsxp-frontend" }
-rsxp-core-gba = { path = "../../cores/gba/core" }
-ruby_rgss_core = { package = "rsxp-rgss-ruby", path = "../../cores/rgss/ruby" }
+ruby_rgss_core = { package = "rsxp-rgss-ruby", path = "../../cores/rgss/ruby", optional = true }
 getrandom = "0.4.3"
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "vulkan", "gles", "metal", "wgsl"] }
 pollster = "1.0.1"
@@ -39,8 +40,10 @@ gilrs = { version = "0.11.2", default-features = false, features = ["xinput"] }
 gif = "0.14"
 
 [features]
-default = ["gpu", "nds"]
-nds = ["dep:rsxp-core-nds"]
+default = ["gpu", "gba", "nds", "rgss"]
+gba = ["dep:rsxp-core-gba", "rsxp-cores/gba"]
+nds = ["dep:rsxp-core-nds", "rsxp-cores/nds"]
+rgss = ["dep:rsxp", "dep:ruby_rgss_core", "rsxp-cores/rgss"]
 gpu = []
 game-tests = []
 
@@ -51,6 +54,7 @@ path = "src/main.rs"
 [[test]]
 name = "cli"
 path = "tests/cli.rs"
+required-features = ["rgss"]
 
 # Manual tests requiring local game trees (`ericlostie/`, `pokemonz/`).
 [[test]]
@@ -61,3 +65,4 @@ required-features = ["game-tests"]
 [[example]]
 name = "session-bench"
 path = "examples/session_bench.rs"
+required-features = ["rgss", "gpu"]

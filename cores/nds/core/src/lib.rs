@@ -14,17 +14,56 @@ use dust_core::{
     Model, SaveContents,
 };
 use rsxp_core::{
-    Button, Content, ContentKind, ContentProbe, Core, CoreCapabilities, CoreCommand, CoreContext,
-    CoreError, CoreEvent, CoreInfo, CoreLoadInfo, CoreRegistration, CoreResult, ExitStatus,
-    PcmBuffer, PixelFormat, PresentationSupport, VideoFrame,
+    AudioInfo, Button, CommandOutcome, Content, ContentKind, ContentProbe, Core, CoreCapabilities,
+    CoreCommand, CoreContext, CoreError, CoreEvent, CoreInfo, CoreLoadInfo, CoreRegistration,
+    CoreResult, ExitStatus, InputInfo, PcmBuffer, PixelFormat, PlatformError, PresentationSupport,
+    ScreenInfo, ScreenRotation, VideoFrame,
 };
 use std::{cell::RefCell, num::NonZeroU32, path::Path, rc::Rc, time::Duration};
 
 pub const CORE_ID: &str = "nds";
+const STATE_REVISION: u32 = 1;
+const SCREENS: &[ScreenInfo] = &[
+    ScreenInfo {
+        id: "top",
+        width: 256,
+        height: 192,
+        x: 0,
+        y: 0,
+        rotation: ScreenRotation::None,
+        touch: false,
+    },
+    ScreenInfo {
+        id: "touch",
+        width: 256,
+        height: 192,
+        x: 0,
+        y: 192,
+        rotation: ScreenRotation::None,
+        touch: true,
+    },
+];
+const BUTTONS: &[Button] = &[
+    Button::Up,
+    Button::Down,
+    Button::Left,
+    Button::Right,
+    Button::South,
+    Button::East,
+    Button::North,
+    Button::West,
+    Button::Start,
+    Button::Select,
+    Button::LeftShoulder,
+    Button::RightShoulder,
+    Button::Extra0,
+];
+
 pub const INFO: CoreInfo = CoreInfo {
     id: CORE_ID,
     name: "Nintendo DS (Dust)",
     version: env!("CARGO_PKG_VERSION"),
+    state_revision: STATE_REVISION,
     extensions: &["nds"],
     capabilities: CoreCapabilities::SAVE_STATES
         .union(CoreCapabilities::SAVE_RAM)
@@ -32,6 +71,15 @@ pub const INFO: CoreInfo = CoreInfo {
         .union(CoreCapabilities::MULTI_SCREEN)
         .union(CoreCapabilities::SCREENSHOTS),
     presentation: PresentationSupport::Cpu,
+    pixel_formats: &[PixelFormat::Rgba8],
+    audio: AudioInfo::new(48_000, 2, true),
+    input: InputInfo {
+        buttons: BUTTONS,
+        pointer: true,
+        pointer_button: true,
+    },
+    screens: SCREENS,
+    options: &[],
 };
 pub fn registration() -> CoreRegistration {
     CoreRegistration {
@@ -80,16 +128,25 @@ fn read(content: &Content, context: &CoreContext) -> CoreResult<Vec<u8>> {
         return Err(CoreError::content("DS content must be an .nds ROM file"));
     }
     std::fs::read(&content.path)
-        .ok()
-        .or_else(|| context.platform.read_file(&content.path.to_string_lossy()))
-        .or_else(|| {
+        .or_else(|_| {
+            context
+                .platform
+                .read_content(&content.path.to_string_lossy())
+        })
+        .or_else(|_| {
             content
                 .path
                 .file_name()
                 .and_then(|n| n.to_str())
-                .and_then(|n| context.platform.read_file(n))
+                .ok_or_else(|| PlatformError::not_found(content.path.display().to_string()))
+                .and_then(|n| context.platform.read_content(n))
         })
-        .ok_or_else(|| CoreError::content(format!("could not read {}", content.path.display())))
+        .map_err(|error| {
+            CoreError::content(format!(
+                "could not read {}: {error}",
+                content.path.display()
+            ))
+        })
 }
 fn system_file(
     content: &Content,
@@ -102,11 +159,15 @@ fn system_file(
             .map(Some)
             .map_err(|error| CoreError::content(format!("{env}: {error}")));
     }
-    Ok(
-        std::fs::read(content.path.parent().unwrap_or(Path::new(".")).join(name))
-            .ok()
-            .or_else(|| context.platform.read_file(name)),
-    )
+    if let Some(bytes) =
+        std::fs::read(content.path.parent().unwrap_or(Path::new(".")).join(name)).ok()
+    {
+        return Ok(Some(bytes));
+    }
+    context
+        .platform
+        .read_system_file(name)
+        .map_err(|error| CoreError::content(format!("could not read {name}: {error}")))
 }
 fn bios<const N: usize>(bytes: Option<Vec<u8>>, name: &str) -> CoreResult<Option<Box<Bytes<N>>>> {
     bytes
@@ -192,8 +253,8 @@ impl NdsAdapter {
         if emu.ds_slot.spi.contents_dirty() || emit {
             context
                 .platform
-                .write_file(&self.save_name, emu.ds_slot.spi.contents())
-                .map_err(CoreError::runtime)?;
+                .write_save(&self.save_name, emu.ds_slot.spi.contents())
+                .map_err(|error| CoreError::runtime(error.to_string()))?;
             emu.ds_slot.spi.mark_contents_flushed();
         }
         if emit {
@@ -203,15 +264,32 @@ impl NdsAdapter {
         }
         Ok(())
     }
-    fn command(&mut self, command: CoreCommand) -> CoreResult<()> {
-        match command {
+    fn report(&mut self, id: u64, outcome: CommandOutcome) {
+        if let Some(context) = self.context.as_mut() {
+            context
+                .events
+                .emit(CoreEvent::CommandResult { id, outcome });
+        }
+    }
+    fn flush_audio(&mut self) {
+        self.samples.borrow_mut().clear();
+        if let Some(context) = self.context.as_mut() {
+            context.audio.reset_pcm();
+        }
+    }
+    fn command(&mut self, command: CoreCommand) -> CoreResult<CommandOutcome> {
+        Ok(match command {
             CoreCommand::Reset => {
                 self.flush_save(false)?;
                 let saved = self.emu.as_ref().unwrap().ds_slot.spi.contents().to_vec();
                 self.emu = Some(self.build(Some(saved))?);
-                self.samples.borrow_mut().clear();
+                self.flush_audio();
+                CommandOutcome::Succeeded
             }
-            CoreCommand::SaveRam => self.flush_save(true)?,
+            CoreCommand::SaveRam => {
+                self.flush_save(true)?;
+                CommandOutcome::Succeeded
+            }
             CoreCommand::Screenshot => {
                 self.context
                     .as_mut()
@@ -222,7 +300,8 @@ impl NdsAdapter {
                         height: 384,
                         format: PixelFormat::Rgba8,
                         pixels: self.video.clone(),
-                    })
+                    });
+                CommandOutcome::Succeeded
             }
             CoreCommand::SaveState { slot } => {
                 let data = self.save_state()?;
@@ -231,11 +310,17 @@ impl NdsAdapter {
                     .unwrap()
                     .events
                     .emit(CoreEvent::SaveState { slot, data });
+                CommandOutcome::Succeeded
             }
-            CoreCommand::LoadState { data, .. } => self.load_state(&data)?,
-            _ => {}
-        }
-        Ok(())
+            CoreCommand::LoadState { data, .. } => {
+                self.load_state(&data)?;
+                self.flush_audio();
+                CommandOutcome::Succeeded
+            }
+            CoreCommand::SetOption { .. } | CoreCommand::Extension { .. } => {
+                CommandOutcome::Unsupported
+            }
+        })
     }
 }
 impl Core for NdsAdapter {
@@ -267,11 +352,18 @@ impl Core for NdsAdapter {
                 "DS firmware has invalid user-settings offsets",
             ));
         }
-        self.sample_rate = std::env::var("RSXP_NDS_AUDIO_RATE")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .filter(|v| (8000..=192000).contains(v))
-            .unwrap_or(48000);
+        self.sample_rate = if context.session.audio.is_active() {
+            context.session.audio.sample_rate
+        } else if let Some(output) = context.audio.output_config() {
+            output.sample_rate
+        } else {
+            std::env::var("RSXP_NDS_AUDIO_RATE")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .filter(|v| (8000..=192000).contains(v))
+                .unwrap_or(48000)
+        }
+        .clamp(8000, 192000);
         self.samples = Rc::new(RefCell::new(Vec::with_capacity(
             self.sample_rate as usize / 20 + 2048,
         )));
@@ -292,13 +384,22 @@ impl Core for NdsAdapter {
                 .collect::<String>()
         );
         let save_path = context.platform.save_dir().join(&self.save_name);
-        let saved = match std::fs::read(&save_path) {
-            Ok(bytes) => Some(bytes),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        let saved = match context.platform.read_save(&self.save_name) {
+            Ok(Some(bytes)) => Some(bytes),
+            Ok(None) => match std::fs::read(&save_path) {
+                Ok(bytes) => Some(bytes),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+                Err(e) => {
+                    return Err(CoreError::content(format!(
+                        "could not read {}: {e}",
+                        save_path.display()
+                    )))
+                }
+            },
             Err(e) => {
                 return Err(CoreError::content(format!(
-                    "could not read {}: {e}",
-                    save_path.display()
+                    "could not read save {}: {e}",
+                    self.save_name
                 )))
             }
         };
@@ -327,18 +428,31 @@ impl Core for NdsAdapter {
         let mut frames = 0u64;
         let mut deadline = 0.0;
         let period = 560190.0 / 33513982.0;
+        let mut audio_paused = false;
         while !control.should_stop() && control.frame_limit().is_none_or(|limit| frames < limit) {
-            control.take_commands(&mut commands);
-            for command in commands.drain(..) {
-                if let Err(error) = self.command(command) {
-                    self.context
-                        .as_mut()
-                        .unwrap()
-                        .events
-                        .emit(CoreEvent::Error(error.to_string()));
-                }
+            control.take_requests(&mut commands);
+            for request in commands.drain(..) {
+                let id = request.id;
+                let outcome = match self.command(request.command) {
+                    Ok(outcome) => outcome,
+                    Err(error) => {
+                        self.context
+                            .as_mut()
+                            .unwrap()
+                            .events
+                            .emit(CoreEvent::Error(error.to_string()));
+                        CommandOutcome::Failed(error.to_string())
+                    }
+                };
+                self.report(id, outcome);
             }
             if control.paused() {
+                if !audio_paused {
+                    if let Some(context) = self.context.as_mut() {
+                        context.audio.pause(true);
+                    }
+                    audio_paused = true;
+                }
                 self.context
                     .as_ref()
                     .unwrap()
@@ -346,6 +460,12 @@ impl Core for NdsAdapter {
                     .sleep(Duration::from_millis(2));
                 deadline = 0.0;
                 continue;
+            }
+            if audio_paused {
+                if let Some(context) = self.context.as_mut() {
+                    context.audio.pause(false);
+                }
+                audio_paused = false;
             }
             let emu = self.emu.as_mut().unwrap();
             let input = control.input().snapshot();

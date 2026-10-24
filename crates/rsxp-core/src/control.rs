@@ -5,13 +5,23 @@
 //! every frame without locking. Anything that mutates emulated state (reset,
 //! save state, options) goes through a bounded command queue drained by the
 //! core on its own thread.
+//!
+//! Every queued command carries a request id so the core can report a
+//! [`CoreEvent::CommandResult`](crate::CoreEvent::CommandResult) even when it
+//! does not implement the command. The outcome is a cold-path event; it never
+//! enters the frame loop.
 
+use crate::events::CoreEvent;
 use crate::input::InputState;
 use std::collections::VecDeque;
+use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 const MAX_COMMANDS: usize = 256;
+/// Upper bound for a command payload crossing the control plane. State loads
+/// and extension commands larger than this are rejected before queueing.
+pub const MAX_COMMAND_PAYLOAD: usize = 64 * 1024 * 1024;
 
 /// Typed value for a core option.
 #[derive(Clone, Debug, PartialEq)]
@@ -42,6 +52,65 @@ pub enum CoreCommand {
     Extension { id: String, payload: Vec<u8> },
 }
 
+impl CoreCommand {
+    /// Number of payload bytes carried by the command.
+    pub fn payload_len(&self) -> usize {
+        match self {
+            Self::LoadState { data, .. } => data.len(),
+            Self::Extension { payload, .. } => payload.len(),
+            Self::SetOption { key, value } => {
+                key.len()
+                    + match value {
+                        OptionValue::String(value) => value.len(),
+                        _ => 0,
+                    }
+            }
+            _ => 0,
+        }
+    }
+}
+
+/// A queued command and its frontend-assigned request id.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CommandRequest {
+    pub id: u64,
+    pub command: CoreCommand,
+}
+
+/// Why a command could not be queued.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CommandError {
+    QueueFull,
+    PayloadTooLarge { bytes: usize, max: usize },
+}
+
+impl fmt::Display for CommandError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::QueueFull => f.write_str("core command queue is full"),
+            Self::PayloadTooLarge { bytes, max } => {
+                write!(f, "core command payload is {bytes} bytes (max {max})")
+            }
+        }
+    }
+}
+
+impl std::error::Error for CommandError {}
+
+/// Result a core reports for one command request.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CommandOutcome {
+    Succeeded,
+    Unsupported,
+    Failed(String),
+}
+
+impl CommandOutcome {
+    pub fn succeeded(&self) -> bool {
+        matches!(self, Self::Succeeded)
+    }
+}
+
 /// Shared control plane. The frontend holds one `Arc` and the core holds
 /// another for the duration of the session.
 pub struct CoreControl {
@@ -50,9 +119,10 @@ pub struct CoreControl {
     fast_forward: AtomicBool,
     frame_limit: AtomicU64,
     input: InputState,
+    next_request: AtomicU64,
     /// Fast-path gate so a core with no pending commands never takes the lock.
     command_count: AtomicUsize,
-    commands: Mutex<VecDeque<CoreCommand>>,
+    commands: Mutex<VecDeque<CommandRequest>>,
 }
 
 impl Default for CoreControl {
@@ -69,6 +139,7 @@ impl CoreControl {
             fast_forward: AtomicBool::new(false),
             frame_limit: AtomicU64::new(0),
             input: InputState::new(),
+            next_request: AtomicU64::new(0),
             command_count: AtomicUsize::new(0),
             commands: Mutex::new(VecDeque::new()),
         }
@@ -126,25 +197,50 @@ impl CoreControl {
         }
     }
 
-    /// Queues a cold-path command. Returns `false` when the bounded queue is
-    /// full, which indicates a frontend that is not draining replies.
-    pub fn send(&self, command: CoreCommand) -> bool {
+    /// Queues a command, returning a request id that the core echoes in
+    /// [`CoreEvent::CommandResult`].
+    pub fn send_request(&self, command: CoreCommand) -> Result<u64, CommandError> {
+        let bytes = command.payload_len();
+        if bytes > MAX_COMMAND_PAYLOAD {
+            return Err(CommandError::PayloadTooLarge {
+                bytes,
+                max: MAX_COMMAND_PAYLOAD,
+            });
+        }
         let mut queue = self
             .commands
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         if queue.len() >= MAX_COMMANDS {
-            return false;
+            return Err(CommandError::QueueFull);
         }
-        queue.push_back(command);
+        let id = self.next_request.fetch_add(1, Ordering::Relaxed) + 1;
+        queue.push_back(CommandRequest { id, command });
         self.command_count.store(queue.len(), Ordering::Release);
-        true
+        Ok(id)
     }
 
-    /// Drains commands into `out` while preserving its allocation. The core
-    /// should call this at a frame boundary. An empty queue costs one atomic
-    /// load and no lock acquisition.
-    pub fn take_commands(&self, out: &mut Vec<CoreCommand>) {
+    /// Queues a command, returning `false` when it is rejected. Prefer
+    /// [`send_request`](Self::send_request) when the caller needs the id or the
+    /// reason for rejection.
+    pub fn send(&self, command: CoreCommand) -> bool {
+        self.send_request(command).is_ok()
+    }
+
+    /// Emits a command outcome through `events` without requiring the core to
+    /// know the frontend's event sink type.
+    pub fn report(
+        &self,
+        events: &mut dyn crate::events::EventSink,
+        id: u64,
+        outcome: CommandOutcome,
+    ) {
+        events.emit(CoreEvent::CommandResult { id, outcome });
+    }
+
+    /// Drains commands with their request ids while preserving `out`'s
+    /// allocation. An empty queue costs one atomic load and no lock.
+    pub fn take_requests(&self, out: &mut Vec<CommandRequest>) {
         if self.command_count.load(Ordering::Acquire) == 0 {
             return;
         }
@@ -153,6 +249,20 @@ impl CoreControl {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         out.extend(queue.drain(..));
+        self.command_count.store(queue.len(), Ordering::Release);
+    }
+
+    /// Drains commands without request ids. Cores that can report outcomes
+    /// should use [`take_requests`](Self::take_requests) instead.
+    pub fn take_commands(&self, out: &mut Vec<CoreCommand>) {
+        if self.command_count.load(Ordering::Acquire) == 0 {
+            return;
+        }
+        let mut queue = self
+            .commands
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        out.extend(queue.drain(..).map(|request| request.command));
         self.command_count.store(queue.len(), Ordering::Release);
     }
 }
@@ -177,12 +287,29 @@ mod tests {
     #[test]
     fn commands_are_bounded_and_drained_without_reallocating_the_output() {
         let control = CoreControl::new();
-        assert!(control.send(CoreCommand::Reset));
-        let mut commands = Vec::with_capacity(4);
-        control.take_commands(&mut commands);
-        assert_eq!(commands.len(), 1);
-        assert_eq!(commands[0], CoreCommand::Reset);
-        commands.clear();
+        let id = control.send_request(CoreCommand::Reset).unwrap();
+        assert_eq!(id, 1);
+        let mut requests = Vec::with_capacity(4);
+        control.take_requests(&mut requests);
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].id, 1);
+        assert_eq!(requests[0].command, CoreCommand::Reset);
+        requests.clear();
+        control.take_requests(&mut requests);
+        assert!(requests.is_empty());
+    }
+
+    #[test]
+    fn oversized_payloads_are_rejected_before_queueing() {
+        let control = CoreControl::new();
+        let error = control
+            .send_request(CoreCommand::LoadState {
+                slot: "1".into(),
+                data: vec![0; MAX_COMMAND_PAYLOAD + 1],
+            })
+            .unwrap_err();
+        assert!(matches!(error, CommandError::PayloadTooLarge { .. }));
+        let mut commands = Vec::new();
         control.take_commands(&mut commands);
         assert!(commands.is_empty());
     }

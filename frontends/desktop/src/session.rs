@@ -21,7 +21,6 @@
 //! [`Runner::apply_control`] maps JSON fields onto `Input` (keys, mouse, scroll, text),
 //! runtime settings (fast-forward, rate override) and runtime patches, returning
 //! `false` on a `stop` request or when the stream/peer is lost.
-use rsxp::{graphics::Bitmap, input::Input};
 use serde_json::{json, Value};
 use std::io::{Read, Write};
 #[cfg(any(not(windows), test))]
@@ -29,6 +28,60 @@ use std::net::TcpStream;
 
 pub trait WriteStream: Write + Send {}
 impl<T: Write + Send> WriteStream for T {}
+
+/// Input surface understood by the transport. The RGSS host implements this
+/// for its engine input buffer; cartridge hosts use the same mapping without
+/// linking the RGSS crate.
+pub trait TransportInput {
+    fn key_down(&mut self, code: i32);
+    fn key_up(&mut self, code: i32);
+    fn set_pointer(&mut self, x: i32, y: i32, inside: bool);
+    fn add_scroll(&mut self, delta: i32);
+    fn push_text(&mut self, text: &str);
+
+    fn fast_forward(&mut self, _enabled: bool) {}
+    fn rate_override(&mut self, _rate: Option<u32>) {}
+    fn patch(&mut self, _id: &str, _enabled: bool, _value: Option<f64>) {}
+    fn relay_api(&mut self, _request: &str) {}
+}
+
+#[cfg(feature = "rgss")]
+impl TransportInput for rsxp::input::Input {
+    fn key_down(&mut self, code: i32) {
+        self.key_down(code);
+    }
+    fn key_up(&mut self, code: i32) {
+        self.key_up(code);
+    }
+    fn set_pointer(&mut self, x: i32, y: i32, inside: bool) {
+        self.mouse_x = x;
+        self.mouse_y = y;
+        self.mouse_inside = inside;
+    }
+    fn add_scroll(&mut self, delta: i32) {
+        self.scroll_v += delta;
+    }
+    fn push_text(&mut self, text: &str) {
+        self.push_text(text);
+    }
+    fn fast_forward(&mut self, enabled: bool) {
+        rsxp::runtime_settings::set_fast_forward(enabled);
+    }
+    fn rate_override(&mut self, rate: Option<u32>) {
+        if let Some(rate) = rate {
+            rsxp::runtime_settings::set_rate_override(rate);
+        }
+    }
+    fn patch(&mut self, id: &str, enabled: bool, value: Option<f64>) {
+        rsxp::runtime_patch::set_enabled(id, enabled);
+        if let Some(value) = value {
+            rsxp::runtime_patch::set_value(id, value);
+        }
+    }
+    fn relay_api(&mut self, request: &str) {
+        rsxp::api_bridge::relay_requests(request.as_bytes());
+    }
+}
 
 pub fn write_message<W: Write + ?Sized>(stream: &mut W, value: &Value) -> Result<(), String> {
     let bytes = serde_json::to_vec(value).map_err(|e| e.to_string())?;
@@ -58,6 +111,7 @@ pub struct Runner {
     pub performance: bool,
     pub text_input: bool,
     pub cursor: bool,
+    reported_rate: u32,
     frames: u64,
     fps: f64,
     fps_frames: u32,
@@ -110,6 +164,7 @@ impl Runner {
                 }
             })
             .map_err(|e| e.to_string())?;
+        #[cfg(feature = "rgss")]
         rsxp::api_bridge::relay_enable();
         Ok(Some(Self {
             stream,
@@ -119,6 +174,7 @@ impl Runner {
             performance: false,
             text_input: false,
             cursor: true,
+            reported_rate: 0,
             frames: 0,
             fps: 0.0,
             fps_frames: 0,
@@ -133,27 +189,46 @@ impl Runner {
             self.fps_frames = 0;
             self.fps_start = std::time::Instant::now();
         }
-        json!({"fps":self.fps,"frames":self.frames,"text_input":self.text_input,"cursor":self.cursor,"width":width,"height":height,"rate":rsxp::runtime_settings::current_rate(),"replies":rsxp::api_bridge::relay_replies()})
+        #[cfg(feature = "rgss")]
+        let replies = rsxp::api_bridge::relay_replies();
+        #[cfg(not(feature = "rgss"))]
+        let replies = Value::Null;
+        #[cfg(feature = "rgss")]
+        let reported_rate = if self.reported_rate == 0 {
+            rsxp::runtime_settings::current_rate()
+        } else {
+            self.reported_rate
+        };
+        #[cfg(not(feature = "rgss"))]
+        let reported_rate = self.reported_rate;
+        json!({"fps":self.fps,"frames":self.frames,"text_input":self.text_input,"cursor":self.cursor,"width":width,"height":height,"rate":reported_rate,"replies":replies})
     }
-    pub fn frame(&mut self, frame: &Bitmap) -> Result<(), String> {
-        let header = self.frame_header(frame.width(), frame.height());
+
+    /// Writes a frame already converted to packed ARGB (native-endian `u32`).
+    pub fn frame_argb(&mut self, width: u32, height: u32, pixels: &[u32]) -> Result<(), String> {
+        let header = self.frame_header(width, height);
         write_message(&mut self.stream, &header)?;
-        #[cfg(all(feature = "gpu", target_endian = "little"))]
+        #[cfg(target_endian = "little")]
         self.stream
-            .write_all(bytemuck::cast_slice(frame.pixels()))
+            .write_all(bytemuck::cast_slice(pixels))
             .map_err(|e| e.to_string())?;
-        #[cfg(not(all(feature = "gpu", target_endian = "little")))]
+        #[cfg(not(target_endian = "little"))]
         {
-            let bytes: Vec<_> = frame
-                .pixels()
-                .iter()
-                .flat_map(|p| p.to_le_bytes())
-                .collect();
+            let mut bytes = Vec::with_capacity(pixels.len() * 4);
+            for pixel in pixels {
+                bytes.extend_from_slice(&pixel.to_le_bytes());
+            }
             self.stream.write_all(&bytes).map_err(|e| e.to_string())?;
         }
         self.stream.flush().map_err(|e| e.to_string())
     }
-    #[cfg(feature = "gpu")]
+
+    #[cfg(feature = "rgss")]
+    pub fn frame(&mut self, frame: &rsxp::graphics::Bitmap) -> Result<(), String> {
+        self.frame_argb(frame.width(), frame.height(), frame.pixels())
+    }
+
+    #[cfg(all(feature = "gpu", feature = "rgss"))]
     pub fn gpu_frame(&mut self, frame: rsxp::gpu::GpuFrame) -> Result<(), String> {
         let (width, height) = frame.size();
         let bytes = frame.encode();
@@ -165,7 +240,7 @@ impl Runner {
             .and_then(|_| self.stream.flush())
             .map_err(|e| e.to_string())
     }
-    pub fn poll(&mut self, input: &mut Input) -> bool {
+    pub fn poll(&mut self, input: &mut impl TransportInput) -> bool {
         // The first poll also announces readiness before a frame exists.
         if write_message(&mut self.stream, &json!({"poll":true})).is_err() {
             return false;
@@ -198,7 +273,7 @@ impl Runner {
             }
         }
     }
-    fn apply_control(&mut self, input: &mut Input, value: Value) -> bool {
+    fn apply_control(&mut self, input: &mut impl TransportInput, value: Value) -> bool {
         self.paused = value["paused"].as_bool().unwrap_or(false);
         self.performance = value["performance"].as_bool().unwrap_or(false);
         if value["stop"].as_bool() == Some(true) {
@@ -228,35 +303,38 @@ impl Runner {
                 input.key_up(key);
             }
         }
-        input.mouse_x = value["x"].as_i64().unwrap_or(0) as i32;
-        input.mouse_y = value["y"].as_i64().unwrap_or(0) as i32;
-        input.mouse_inside = value["inside"].as_bool().unwrap_or(false);
-        input.scroll_v += value["scroll"].as_i64().unwrap_or(0) as i32;
+        input.set_pointer(
+            value["x"].as_i64().unwrap_or(0) as i32,
+            value["y"].as_i64().unwrap_or(0) as i32,
+            value["inside"].as_bool().unwrap_or(false),
+        );
+        input.add_scroll(value["scroll"].as_i64().unwrap_or(0) as i32);
         input.push_text(value["text"].as_str().unwrap_or(""));
-        rsxp::runtime_settings::set_fast_forward(value["fast"].as_bool().unwrap_or(false));
-        if let Some(rate) = value["rate"].as_u64().filter(|r| *r > 0) {
-            rsxp::runtime_settings::set_rate_override(rate as u32);
-        }
+        input.fast_forward(value["fast"].as_bool().unwrap_or(false));
+        let rate = value["rate"]
+            .as_u64()
+            .filter(|rate| *rate > 0)
+            .map(|r| r as u32);
+        self.reported_rate = rate.unwrap_or(0);
+        input.rate_override(rate);
         if let Some(patches) = value["patches"].as_array() {
             for patch in patches {
                 if let Some(id) = patch[0].as_str() {
-                    rsxp::runtime_patch::set_enabled(id, patch[1].as_bool().unwrap_or(false));
-                    if let Some(v) = patch[2].as_f64() {
-                        rsxp::runtime_patch::set_value(id, v);
-                    }
+                    input.patch(id, patch[1].as_bool().unwrap_or(false), patch[2].as_f64());
                 }
             }
         }
         if let Some(api) = value["api"].as_str() {
-            rsxp::api_bridge::relay_requests(api.as_bytes());
+            input.relay_api(api);
         }
         true
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "rgss"))]
 mod tests {
     use super::*;
+    use rsxp::input::Input;
     #[test]
     fn game_poll_does_not_wait_for_the_next_control_reply() {
         use std::net::TcpStream;
@@ -276,6 +354,7 @@ mod tests {
             performance: false,
             text_input: false,
             cursor: true,
+            reported_rate: 0,
             frames: 0,
             fps: 0.0,
             fps_frames: 0,

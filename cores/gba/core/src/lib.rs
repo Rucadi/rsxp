@@ -16,9 +16,11 @@
 //! little-endian hosts, and audio is drained from a preallocated ring buffer.
 
 use rsxp_core::{
-    Button, Content, ContentKind, ContentProbe, Core, CoreCapabilities, CoreCommand, CoreContext,
-    CoreError, CoreEvent, CoreInfo, CoreLoadInfo, CoreRegistration, CoreRegistry, CoreResult,
-    ExitStatus, PcmBuffer, PixelFormat, PresentationSupport, VideoFrame,
+    content_hash, AudioInfo, Button, CommandOutcome, CommandRequest, Content, ContentKind,
+    ContentProbe, Core, CoreCapabilities, CoreCommand, CoreContext, CoreError, CoreEvent, CoreInfo,
+    CoreLoadInfo, CoreRegistration, CoreRegistry, CoreResult, ExitStatus, InputInfo, PcmBuffer,
+    PixelFormat, PlatformError, PresentationSupport, ScreenInfo, ScreenRotation, StateEnvelope,
+    VideoFrame,
 };
 use rustboyadvance_core::keypad::KEYINPUT_ALL_RELEASED;
 use rustboyadvance_core::prelude::{
@@ -37,17 +39,49 @@ const BIOS_BYTES: usize = 0x4000;
 const EMBEDDED_BIOS: &[u8; BIOS_BYTES] = include_bytes!("../assets/gba_bios.bin");
 const FRAME_RATE: f64 = 59.7275;
 const AUDIO_SCRATCH: usize = 16_384;
+const STATE_REVISION: u32 = 1;
+const SCREENS: &[ScreenInfo] = &[ScreenInfo {
+    id: "main",
+    width: DISPLAY_WIDTH as u32,
+    height: DISPLAY_HEIGHT as u32,
+    x: 0,
+    y: 0,
+    rotation: ScreenRotation::None,
+    touch: false,
+}];
+const BUTTONS: &[Button] = &[
+    Button::Up,
+    Button::Down,
+    Button::Left,
+    Button::Right,
+    Button::South,
+    Button::East,
+    Button::Start,
+    Button::Select,
+    Button::LeftShoulder,
+    Button::RightShoulder,
+];
 
 pub const INFO: CoreInfo = CoreInfo {
     id: CORE_ID,
     name: "Game Boy Advance",
     version: env!("CARGO_PKG_VERSION"),
+    state_revision: STATE_REVISION,
     extensions: &["gba"],
     capabilities: CoreCapabilities::SAVE_STATES
         .union(CoreCapabilities::SAVE_RAM)
         .union(CoreCapabilities::SCREENSHOTS)
         .union(CoreCapabilities::RESET),
     presentation: PresentationSupport::Cpu,
+    pixel_formats: &[PixelFormat::Bgrx8, PixelFormat::Rgba8],
+    audio: AudioInfo::new(DEFAULT_SAMPLE_RATE, 2, true),
+    input: InputInfo {
+        buttons: BUTTONS,
+        pointer: false,
+        pointer_button: false,
+    },
+    screens: SCREENS,
+    options: &[],
 };
 
 pub fn register(registry: &mut CoreRegistry) {
@@ -105,11 +139,14 @@ impl GbaAdapter {
                 let by_name = content.path.file_name().and_then(|name| name.to_str());
                 context
                     .platform
-                    .read_file(&path)
-                    .or_else(|| by_name.and_then(|name| context.platform.read_file(name)))
-                    .ok_or_else(|| {
+                    .read_content(&path)
+                    .or_else(|_| match by_name {
+                        Some(name) => context.platform.read_content(name),
+                        None => Err(PlatformError::not_found(path.as_ref())),
+                    })
+                    .map_err(|error| {
                         CoreError::content(format!(
-                            "could not read {}: {native_error}",
+                            "could not read {}: {native_error} ({error})",
                             content.path.display()
                         ))
                     })
@@ -117,32 +154,41 @@ impl GbaAdapter {
         }
     }
 
-    fn read_bios(content: &Content, context: &CoreContext) -> Vec<u8> {
-        if let Some(path) = std::env::var_os("RSXP_GBA_BIOS").map(PathBuf::from)
-            && let Some(bytes) = read_bios_file(&path)
-        {
-            return bytes;
+    fn read_bios(content: &Content, context: &CoreContext) -> CoreResult<Vec<u8>> {
+        if let Some(path) = std::env::var_os("RSXP_GBA_BIOS").map(PathBuf::from) {
+            return read_bios_file(&path).ok_or_else(|| {
+                CoreError::content(format!(
+                    "{}: BIOS must be at least {BIOS_BYTES} bytes",
+                    path.display()
+                ))
+            });
         }
         let root = content.path.parent().unwrap_or_else(|| Path::new("."));
         for name in ["gba_bios.bin", "bios.bin"] {
             if let Some(bytes) = read_bios_file(&root.join(name)) {
-                return bytes;
+                return Ok(bytes);
             }
-            if let Some(bytes) = context.platform.read_file(name)
-                && bytes.len() >= BIOS_BYTES
-            {
-                return bytes[..BIOS_BYTES].to_vec();
+            match context.platform.read_system_file(name) {
+                Ok(Some(bytes)) if bytes.len() >= BIOS_BYTES => {
+                    return Ok(bytes[..BIOS_BYTES].to_vec());
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    return Err(CoreError::content(format!(
+                        "could not read {name}: {error}"
+                    )));
+                }
             }
         }
         let save_dir = context.platform.save_dir();
         if !save_dir.as_os_str().is_empty() {
             for name in ["gba_bios.bin", "bios.bin"] {
                 if let Some(bytes) = read_bios_file(&save_dir.join(name)) {
-                    return bytes;
+                    return Ok(bytes);
                 }
             }
         }
-        EMBEDDED_BIOS.to_vec()
+        Ok(EMBEDDED_BIOS.to_vec())
     }
 
     fn save_path(content: &Content, context: &CoreContext) -> Option<PathBuf> {
@@ -211,43 +257,113 @@ impl GbaAdapter {
         self.new_backend()
     }
 
-    fn apply_commands(&mut self, commands: &mut Vec<CoreCommand>) {
+    fn apply_commands(&mut self, commands: &mut Vec<CommandRequest>) {
         let Some(control) = self.control.clone() else {
             return;
         };
-        control.take_commands(commands);
-        for command in commands.drain(..) {
-            match command {
-                CoreCommand::Reset => {
-                    if let Err(error) = self.reset() {
+        control.take_requests(commands);
+        for request in commands.drain(..) {
+            let id = request.id;
+            let outcome = match request.command {
+                CoreCommand::Reset => match self.reset() {
+                    Ok(()) => {
+                        self.flush_audio();
+                        CommandOutcome::Succeeded
+                    }
+                    Err(error) => {
                         self.emit_error(error.to_string());
+                        CommandOutcome::Failed(error.to_string())
                     }
+                },
+                CoreCommand::SaveState { slot } => self.save_state(&slot),
+                CoreCommand::LoadState { slot, data } => self.load_state(&slot, &data),
+                CoreCommand::SaveRam => {
+                    self.emit_save_ram();
+                    CommandOutcome::Succeeded
                 }
-                CoreCommand::SaveState { slot } => {
-                    let Some(core) = self.core.as_ref() else {
-                        continue;
-                    };
-                    match core.save_state() {
-                        Ok(data) if !data.is_empty() => {
-                            if let Some(context) = self.context.as_mut() {
-                                context.events.emit(CoreEvent::SaveState { slot, data });
-                            }
-                        }
-                        Ok(_) => self.emit_error("GBA save state is empty".into()),
-                        Err(error) => self.emit_error(format!("could not save state: {error}")),
-                    }
+                CoreCommand::Screenshot => {
+                    self.emit_screenshot();
+                    CommandOutcome::Succeeded
                 }
-                CoreCommand::LoadState { slot, data } => {
-                    let Some(core) = self.core.as_mut() else {
-                        continue;
-                    };
-                    if let Err(error) = core.restore_state(&data) {
-                        self.emit_error(format!("could not load state {slot}: {error}"));
-                    }
+                CoreCommand::SetOption { .. } | CoreCommand::Extension { .. } => {
+                    CommandOutcome::Unsupported
                 }
-                CoreCommand::SaveRam => self.emit_save_ram(),
-                CoreCommand::Screenshot => self.emit_screenshot(),
-                CoreCommand::SetOption { .. } | CoreCommand::Extension { .. } => {}
+            };
+            self.report(id, outcome);
+        }
+    }
+
+    fn report(&mut self, id: u64, outcome: CommandOutcome) {
+        if let Some(context) = self.context.as_mut() {
+            context
+                .events
+                .emit(CoreEvent::CommandResult { id, outcome });
+        }
+    }
+
+    fn flush_audio(&mut self) {
+        if let Some(context) = self.context.as_mut() {
+            context.audio.reset_pcm();
+        }
+    }
+
+    fn state_identity(&self) -> u64 {
+        content_hash(&self.rom)
+    }
+
+    fn save_state(&mut self, slot: &str) -> CommandOutcome {
+        let Some(core) = self.core.as_ref() else {
+            return CommandOutcome::Failed("GBA core is not initialized".into());
+        };
+        let payload = match core.save_state() {
+            Ok(data) if !data.is_empty() => data,
+            Ok(_) => {
+                self.emit_error("GBA save state is empty".into());
+                return CommandOutcome::Failed("GBA save state is empty".into());
+            }
+            Err(error) => {
+                self.emit_error(format!("could not save state: {error}"));
+                return CommandOutcome::Failed(error.to_string());
+            }
+        };
+        let envelope = StateEnvelope::new(CORE_ID, STATE_REVISION, self.state_identity(), payload);
+        match envelope.encode() {
+            Ok(data) => {
+                if let Some(context) = self.context.as_mut() {
+                    context.events.emit(CoreEvent::SaveState {
+                        slot: slot.to_owned(),
+                        data,
+                    });
+                }
+                CommandOutcome::Succeeded
+            }
+            Err(error) => {
+                self.emit_error(format!("could not encode state: {error}"));
+                CommandOutcome::Failed(error.to_string())
+            }
+        }
+    }
+
+    fn load_state(&mut self, slot: &str, data: &[u8]) -> CommandOutcome {
+        let envelope =
+            match StateEnvelope::decode_for(data, CORE_ID, STATE_REVISION, self.state_identity()) {
+                Ok(envelope) => envelope,
+                Err(error) => {
+                    self.emit_error(format!("could not load state {slot}: {error}"));
+                    return CommandOutcome::Failed(error.to_string());
+                }
+            };
+        let Some(core) = self.core.as_mut() else {
+            return CommandOutcome::Failed("GBA core is not initialized".into());
+        };
+        match core.restore_state(&envelope.payload) {
+            Ok(()) => {
+                self.flush_audio();
+                CommandOutcome::Succeeded
+            }
+            Err(error) => {
+                self.emit_error(format!("could not load state {slot}: {error}"));
+                CommandOutcome::Failed(error.to_string())
             }
         }
     }
@@ -262,10 +378,33 @@ impl GbaAdapter {
         let Some(path) = &self.save_path else {
             return;
         };
-        let Ok(data) = std::fs::read(path) else {
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             return;
         };
-        if let Some(context) = self.context.as_mut() {
+        let Some(context) = self.context.as_mut() else {
+            return;
+        };
+        let data = match context.platform.read_save(name) {
+            Ok(Some(data)) => Some(data),
+            Ok(None) => match std::fs::read(path) {
+                Ok(data) => Some(data),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(error) => {
+                    context.events.emit(CoreEvent::Error(format!(
+                        "could not read battery save {}: {error}",
+                        path.display()
+                    )));
+                    return;
+                }
+            },
+            Err(error) => {
+                context.events.emit(CoreEvent::Error(format!(
+                    "could not read battery save {name}: {error}"
+                )));
+                return;
+            }
+        };
+        if let Some(data) = data {
             context.events.emit(CoreEvent::SaveRam { data });
         }
     }
@@ -397,19 +536,28 @@ impl Core for GbaAdapter {
 
     fn load(&mut self, content: Content, context: CoreContext) -> CoreResult<()> {
         let rom = Self::read_rom(&content, &context)?;
-        let bios = Self::read_bios(&content, &context);
+        let bios = Self::read_bios(&content, &context)?;
         self.rom = rom;
         self.bios = bios;
         self.save_path = Self::save_path(&content, &context);
-        self.sample_rate = std::env::var("RSXP_GBA_AUDIO_RATE")
-            .ok()
-            .and_then(|value| value.parse().ok())
-            .filter(|rate: &u32| (8_000..=192_000).contains(rate))
-            .unwrap_or(DEFAULT_SAMPLE_RATE);
+        let requested = context.session.audio;
+        self.sample_rate = if requested.is_active() {
+            requested.sample_rate
+        } else if let Some(output) = context.audio.output_config() {
+            output.sample_rate
+        } else {
+            std::env::var("RSXP_GBA_AUDIO_RATE")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .filter(|rate: &u32| (8_000..=192_000).contains(rate))
+                .unwrap_or(DEFAULT_SAMPLE_RATE)
+        };
+        self.sample_rate = self.sample_rate.clamp(8_000, 192_000);
         self.control = Some(Arc::clone(&context.control));
         self.context = Some(context);
         self.audio_scratch = vec![0i16; AUDIO_SCRATCH];
         self.new_backend()?;
+        self.flush_audio();
         if let Some(context) = self.context.as_mut() {
             context.events.emit(CoreEvent::Loaded(CoreLoadInfo {
                 width: DISPLAY_WIDTH as u32,
@@ -432,16 +580,29 @@ impl Core for GbaAdapter {
         let mut commands = Vec::with_capacity(16);
         let period = 1.0 / FRAME_RATE;
         let mut next_deadline = 0.0f64;
+        let mut audio_paused = false;
         while !control.should_stop() {
             self.apply_commands(&mut commands);
             if control.should_stop() {
                 break;
             }
             if control.paused() {
+                if !audio_paused {
+                    if let Some(context) = self.context.as_mut() {
+                        context.audio.pause(true);
+                    }
+                    audio_paused = true;
+                }
                 if let Some(context) = self.context.as_ref() {
                     context.platform.sleep(Duration::from_millis(2));
                 }
                 continue;
+            }
+            if audio_paused {
+                if let Some(context) = self.context.as_mut() {
+                    context.audio.pause(false);
+                }
+                audio_paused = false;
             }
             self.present_frame();
             self.drain_audio();
@@ -493,6 +654,113 @@ fn uses_rtc(rom: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rsxp_core::audio::NullAudioSink;
+    use rsxp_core::events::NullEventSink;
+    use rsxp_core::{CoreControl, VideoSink};
+    use std::sync::{Arc, Mutex};
+
+    struct HashSink(Arc<Mutex<u64>>);
+    impl VideoSink for HashSink {
+        fn present(&mut self, frame: VideoFrame<'_>) {
+            assert!(frame.validate().is_ok());
+            let hash = frame.pixels.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+                (h ^ u64::from(*b)).wrapping_mul(0x100_0000_01b3)
+            });
+            *self.0.lock().unwrap() = hash;
+        }
+    }
+
+    fn replay_rom() -> Vec<u8> {
+        let program: [u32; 10] = [
+            0xE3A0_0003, // MOV r0, #3 (mode 3)
+            0xE380_0B01, // ORR r0, r0, #0x400 (BG2 enable)
+            0xE3A0_1301, // MOV r1, #0x04000000
+            0xE581_0000, // STR r0, [r1] (DISPCNT)
+            0xE3A0_2406, // MOV r2, #0x06000000
+            0xE3A0_3402, // MOV r3, #0x02000000
+            0xE593_4000, // loop: LDR r4, [r3]
+            0xE284_4001, // ADD r4, r4, #1
+            0xE583_4000, // STR r4, [r3]
+            0xE1C2_40B0, // STRH r4, [r2] (pixel 0,0)
+        ];
+        let mut rom = vec![0u8; 0x200];
+        for (index, instruction) in program.iter().enumerate() {
+            rom[index * 4..index * 4 + 4].copy_from_slice(&instruction.to_le_bytes());
+        }
+        // Branch back to `loop`; the counter keeps advancing so frames differ.
+        rom[10 * 4..10 * 4 + 4].copy_from_slice(&0xEAFF_FFFAu32.to_le_bytes());
+        rom
+    }
+
+    fn replay_adapter() -> (GbaAdapter, Arc<Mutex<u64>>) {
+        let hash = Arc::new(Mutex::new(0));
+        let control = Arc::new(CoreControl::new());
+        let context = CoreContext::new(
+            Arc::new(GbaTestPlatform),
+            Box::new(HashSink(Arc::clone(&hash))),
+            Box::new(NullAudioSink),
+            Box::new(NullEventSink),
+            control.clone(),
+        );
+        let mut adapter = GbaAdapter {
+            bios: EMBEDDED_BIOS.to_vec(),
+            rom: replay_rom(),
+            sample_rate: DEFAULT_SAMPLE_RATE,
+            context: Some(context),
+            control: Some(control),
+            ..Default::default()
+        };
+        adapter.new_backend().unwrap();
+        (adapter, hash)
+    }
+
+    struct GbaTestPlatform;
+    impl rsxp_core::Platform for GbaTestPlatform {
+        fn read_content(&self, path: &str) -> rsxp_core::PlatformResult<Vec<u8>> {
+            Err(rsxp_core::PlatformError::not_found(path))
+        }
+        fn save_dir(&self) -> PathBuf {
+            std::env::temp_dir()
+        }
+        fn now(&self) -> f64 {
+            0.0
+        }
+    }
+
+    fn advance(adapter: &mut GbaAdapter, hash: &Arc<Mutex<u64>>, frames: usize) -> Vec<u64> {
+        let mut hashes = Vec::with_capacity(frames);
+        for _ in 0..frames {
+            adapter.present_frame();
+            hashes.push(*hash.lock().unwrap());
+        }
+        hashes
+    }
+
+    #[test]
+    fn state_restore_replays_the_same_frames_and_rejects_corruption() {
+        let (mut adapter, hash) = replay_adapter();
+        advance(&mut adapter, &hash, 3);
+        let payload = adapter.core.as_ref().unwrap().save_state().unwrap();
+        let envelope =
+            StateEnvelope::new(CORE_ID, STATE_REVISION, adapter.state_identity(), payload)
+                .encode()
+                .unwrap();
+        let expected = advance(&mut adapter, &hash, 3);
+
+        let mut corrupt = envelope.clone();
+        corrupt[40] ^= 1;
+        assert!(matches!(
+            adapter.load_state("1", &corrupt),
+            CommandOutcome::Failed(_)
+        ));
+        // A rejected state must leave the running machine untouched.
+        let after_failure = advance(&mut adapter, &hash, 1);
+        let restored = adapter.load_state("1", &envelope);
+        assert_eq!(restored, CommandOutcome::Succeeded);
+        let replayed = advance(&mut adapter, &hash, 3);
+        assert_eq!(replayed, expected);
+        assert_ne!(after_failure[0], expected[0]);
+    }
 
     #[test]
     fn pokemon_rtc_is_enabled_for_every_region_on_load_and_reset() {
@@ -548,7 +816,11 @@ mod tests {
             assert_eq!(adapter.core.as_ref().unwrap().cpu.pc, 0x0800_0008);
             let mut samples = [0; 32];
             assert_eq!(
-                adapter.audio_consumer.as_mut().unwrap().pop_slice(&mut samples),
+                adapter
+                    .audio_consumer
+                    .as_mut()
+                    .unwrap()
+                    .pop_slice(&mut samples),
                 0
             );
         }

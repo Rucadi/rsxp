@@ -2,22 +2,30 @@
 //! Core-agnostic frontend building blocks.
 //!
 //! This crate owns the parts of a frontend that must not know whether it is
-//! running RGSS, GBA, GB or DS: content routing, the core catalog and the
-//! dedicated core thread. Window/audio/egui implementations live in a concrete
-//! frontend binary and enter through [`rsxp_core::CoreContext`].
+//! running RGSS, GBA, GB or DS: content routing, the core catalog, the
+//! dedicated core thread, content identity and save storage. Window/audio/egui
+//! implementations live in a concrete frontend binary and enter through
+//! [`rsxp_core::CoreContext`].
 
 use rsxp_core::{
-    Content, ContentProbe, Core, CoreContext, CoreInfo, CoreRegistration, CoreRegistry, CoreResult,
-    ExitStatus,
+    Content, ContentProbe, Core, CoreContext, CoreEvent, CoreInfo, CoreRegistration, CoreRegistry,
+    CoreResult, EventSink, ExitStatus,
 };
 use std::error::Error;
 use std::fmt;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
+
+pub mod storage;
+
+pub use storage::{
+    ContentId, FsStorage, MemoryStorage, SaveStore, Storage, StorageError, StorageSubmitter,
+    StorageWorker, WorkerStatus,
+};
 
 const HEADER_BYTES: usize = 64;
 
@@ -120,6 +128,9 @@ impl CoreHandle {
         &self.control
     }
 
+    /// True once the core thread has ended, including after a panic or a load
+    /// failure. The flag is set by an unwind-safe guard, so it cannot remain
+    /// false forever after the worker has terminated.
     pub fn is_finished(&self) -> bool {
         self.finished.load(Ordering::Acquire)
     }
@@ -130,7 +141,17 @@ impl CoreHandle {
         self.control.stop();
     }
 
+    /// Requests a stop and waits for the worker to unwind. This is the explicit
+    /// shutdown path for a host that owns the handle and can afford to wait.
+    pub fn shutdown(mut self) -> std::thread::Result<CoreResult<ExitStatus>> {
+        self.control.stop();
+        self.join.take().expect("core handle joined twice").join()
+    }
+
     /// Waits for the core thread and returns its result.
+    ///
+    /// `Ok(Err(_))` is a normal core failure; `Err(_)` is a panic in the core
+    /// factory, load or run path.
     pub fn join(mut self) -> std::thread::Result<CoreResult<ExitStatus>> {
         self.join.take().expect("core handle joined twice").join()
     }
@@ -138,7 +159,68 @@ impl CoreHandle {
 
 impl Drop for CoreHandle {
     fn drop(&mut self) {
+        // Non-blocking ownership transfer: request a stop but never join from a
+        // UI thread. Use `shutdown` when the caller must observe completion.
         self.control.stop();
+    }
+}
+
+/// Sets `finished` on every exit path, including unwinding.
+struct CompletionGuard(Arc<AtomicBool>);
+
+impl Drop for CompletionGuard {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Release);
+    }
+}
+
+/// Wraps the frontend sink so the session driver can guarantee exactly one
+/// terminal `Exited` event even when the core panics.
+#[derive(Clone)]
+struct SharedEvents {
+    inner: Arc<Mutex<Box<dyn EventSink>>>,
+    exit_emitted: Arc<AtomicBool>,
+}
+
+impl SharedEvents {
+    fn new(inner: Box<dyn EventSink>) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(inner)),
+            exit_emitted: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
+
+impl EventSink for SharedEvents {
+    fn emit(&mut self, event: CoreEvent) {
+        if matches!(event, CoreEvent::Exited(_)) {
+            self.exit_emitted.store(true, Ordering::Release);
+        }
+        self.inner
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .emit(event);
+    }
+}
+
+/// Emits one `Exited` event if the core did not. The status is written before
+/// normal return and remains `1` when the closure unwinds.
+struct TerminalGuard {
+    events: Arc<Mutex<Box<dyn EventSink>>>,
+    exit_emitted: Arc<AtomicBool>,
+    status: Arc<AtomicI32>,
+}
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        if self.exit_emitted.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let code = self.status.load(Ordering::Acquire);
+        self.events
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .emit(CoreEvent::Exited(ExitStatus::new(code)));
     }
 }
 
@@ -149,6 +231,9 @@ impl Drop for CoreHandle {
 /// The thread name includes the core id to make profiler traces readable. The
 /// join handle is owned by [`CoreHandle`]; dropping the handle requests a stop
 /// but does not block the UI thread waiting for the game to unwind.
+///
+/// Every terminated worker becomes observable through [`CoreHandle::is_finished`]
+/// and exactly one terminal `CoreEvent::Exited` reaches the event sink.
 pub fn spawn_core(
     registration: CoreRegistration,
     content: Content,
@@ -158,15 +243,36 @@ pub fn spawn_core(
     let control = Arc::clone(&context.control);
     let finished = Arc::new(AtomicBool::new(false));
     let thread_finished = Arc::clone(&finished);
+    let events = SharedEvents::new(context.events);
+    let terminal_events = Arc::clone(&events.inner);
+    let terminal_flag = Arc::clone(&events.exit_emitted);
+    let status = Arc::new(AtomicI32::new(1));
+    let terminal_status = Arc::clone(&status);
+    let context = CoreContext {
+        platform: context.platform,
+        video: context.video,
+        audio: context.audio,
+        events: Box::new(events),
+        control: context.control,
+        session: context.session,
+    };
     let join = std::thread::Builder::new()
         .name(format!("rsxp-{}-core", info.id))
         .spawn(move || {
+            let _finished = CompletionGuard(thread_finished);
+            let _terminal = TerminalGuard {
+                events: terminal_events,
+                exit_emitted: terminal_flag,
+                status: terminal_status,
+            };
             let result = (|| {
                 let mut core = (registration.create)();
                 core.load(content, context)?;
                 core.run()
             })();
-            thread_finished.store(true, Ordering::Release);
+            if let Ok(exit) = &result {
+                status.store(exit.code, Ordering::Release);
+            }
             result
         })?;
     Ok(CoreHandle {
@@ -182,16 +288,18 @@ mod tests {
     use super::*;
     use rsxp_core::audio::NullAudioSink;
     use rsxp_core::events::NullEventSink;
+    use rsxp_core::registry::{AudioInfo, InputInfo};
     use rsxp_core::video::NullVideoSink;
     use rsxp_core::{
-        CoreCapabilities, CoreControl, CoreError, OptionValue, Platform, PresentationSupport,
-        WindowCommand,
+        CoreCapabilities, CoreControl, CoreError, OptionValue, PixelFormat, Platform,
+        PresentationSupport, WindowCommand,
     };
+    use std::time::{Duration, Instant};
 
     struct TestPlatform;
     impl Platform for TestPlatform {
-        fn read_file(&self, _path: &str) -> Option<Vec<u8>> {
-            None
+        fn read_content(&self, path: &str) -> rsxp_core::PlatformResult<Vec<u8>> {
+            Err(rsxp_core::PlatformError::not_found(path))
         }
         fn save_dir(&self) -> std::path::PathBuf {
             std::env::temp_dir()
@@ -215,9 +323,15 @@ mod tests {
         id: "test",
         name: "Test",
         version: "1",
+        state_revision: 1,
         extensions: &["test"],
         capabilities: CoreCapabilities::empty(),
         presentation: PresentationSupport::Cpu,
+        pixel_formats: &[PixelFormat::Rgba8],
+        audio: AudioInfo::SILENT,
+        input: InputInfo::NONE,
+        screens: &[],
+        options: &[],
     };
 
     fn create() -> Box<dyn Core> {
@@ -247,6 +361,25 @@ mod tests {
             Box::new(NullEventSink),
             Arc::new(CoreControl::new()),
         )
+    }
+
+    fn wait_finished(handle: &CoreHandle) {
+        let start = Instant::now();
+        while !handle.is_finished() {
+            assert!(
+                start.elapsed() < Duration::from_secs(5),
+                "worker did not finish"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordedEvents(Arc<Mutex<Vec<String>>>);
+    impl EventSink for RecordedEvents {
+        fn emit(&mut self, event: CoreEvent) {
+            self.0.lock().unwrap().push(format!("{event:?}"));
+        }
     }
 
     #[test]
@@ -302,5 +435,190 @@ mod tests {
         assert_eq!(commands.len(), 1);
         let _ = CoreError::unsupported("test");
         let _ = WindowCommand::SetTitle("x".into());
+    }
+
+    #[test]
+    fn panics_are_observable_and_not_reported_as_success() {
+        for phase in ["factory", "load", "run"] {
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let sink = RecordedEvents(Arc::clone(&events));
+            let mut context = CoreContext::new(
+                Arc::new(TestPlatform),
+                Box::new(NullVideoSink::default()),
+                Box::new(NullAudioSink),
+                Box::new(sink),
+                Arc::new(CoreControl::new()),
+            );
+            context.session = rsxp_core::SessionConfig::default();
+            let registration = match phase {
+                "factory" => CoreRegistration {
+                    info: INFO,
+                    create: panic_factory,
+                    detect,
+                },
+                "load" => CoreRegistration {
+                    info: INFO,
+                    create: panic_load,
+                    detect,
+                },
+                _ => CoreRegistration {
+                    info: INFO,
+                    create: panic_run,
+                    detect,
+                },
+            };
+            let handle = spawn_core(registration, Content::file("x.test"), context).unwrap();
+            wait_finished(&handle);
+            assert!(handle.join().is_err(), "{phase} panic should propagate");
+            let events = events.lock().unwrap();
+            assert!(
+                events.iter().any(|event| event.contains("Exited")),
+                "{phase} should emit one terminal event: {events:?}"
+            );
+        }
+    }
+
+    struct PanicCore {
+        phase: &'static str,
+        info: CoreInfo,
+    }
+    fn panic_factory() -> Box<dyn Core> {
+        panic!("factory panic")
+    }
+    fn panic_load() -> Box<dyn Core> {
+        Box::new(PanicCore {
+            phase: "load",
+            info: INFO,
+        })
+    }
+    fn panic_run() -> Box<dyn Core> {
+        Box::new(PanicCore {
+            phase: "run",
+            info: INFO,
+        })
+    }
+    impl Core for PanicCore {
+        fn info(&self) -> &CoreInfo {
+            &self.info
+        }
+        fn load(&mut self, _content: Content, _context: CoreContext) -> CoreResult<()> {
+            if self.phase == "load" {
+                panic!("load panic");
+            }
+            Ok(())
+        }
+        fn run(&mut self) -> CoreResult<ExitStatus> {
+            panic!("run panic")
+        }
+    }
+
+    #[test]
+    fn load_failures_finish_and_emit_one_terminal_event() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let registration = CoreRegistration {
+            info: INFO,
+            create: || {
+                Box::new(LoadFailure {
+                    info: INFO,
+                    calls: 0,
+                })
+            },
+            detect,
+        };
+        let context = CoreContext::new(
+            Arc::new(TestPlatform),
+            Box::new(NullVideoSink::default()),
+            Box::new(NullAudioSink),
+            Box::new(RecordedEvents(Arc::clone(&events))),
+            Arc::new(CoreControl::new()),
+        );
+        let handle = spawn_core(registration, Content::file("x.test"), context).unwrap();
+        wait_finished(&handle);
+        let result = handle.join().unwrap();
+        assert!(matches!(result, Err(CoreError::Content(_))));
+        let events = events.lock().unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event.contains("Exited"))
+                .count(),
+            1
+        );
+    }
+
+    struct LoadFailure {
+        info: CoreInfo,
+        calls: u8,
+    }
+    impl Core for LoadFailure {
+        fn info(&self) -> &CoreInfo {
+            &self.info
+        }
+        fn load(&mut self, _content: Content, _context: CoreContext) -> CoreResult<()> {
+            self.calls += 1;
+            Err(CoreError::content("bad content"))
+        }
+        fn run(&mut self) -> CoreResult<ExitStatus> {
+            Ok(ExitStatus::success())
+        }
+    }
+
+    #[test]
+    fn stop_and_nonblocking_drop_are_explicit() {
+        struct Blocking(CoreInfo);
+        impl Core for Blocking {
+            fn info(&self) -> &CoreInfo {
+                &self.0
+            }
+            fn load(&mut self, _content: Content, _context: CoreContext) -> CoreResult<()> {
+                Ok(())
+            }
+            fn run(&mut self) -> CoreResult<ExitStatus> {
+                std::thread::sleep(Duration::from_secs(30));
+                Ok(ExitStatus::success())
+            }
+        }
+        fn blocking_create() -> Box<dyn Core> {
+            Box::new(Blocking(INFO))
+        }
+        let registration = CoreRegistration {
+            info: INFO,
+            create: blocking_create,
+            detect,
+        };
+        let handle = spawn_core(registration, Content::file("x.test"), context()).unwrap();
+        let started = Instant::now();
+        drop(handle);
+        assert!(
+            started.elapsed() < Duration::from_millis(100),
+            "dropping a handle must not wait for the core"
+        );
+    }
+
+    #[test]
+    fn stop_joins_a_cooperative_core() {
+        struct Cooperative(CoreInfo);
+        impl Core for Cooperative {
+            fn info(&self) -> &CoreInfo {
+                &self.0
+            }
+            fn load(&mut self, _content: Content, _context: CoreContext) -> CoreResult<()> {
+                Ok(())
+            }
+            fn run(&mut self) -> CoreResult<ExitStatus> {
+                Ok(ExitStatus::success())
+            }
+        }
+        fn cooperative_create() -> Box<dyn Core> {
+            Box::new(Cooperative(INFO))
+        }
+        let registration = CoreRegistration {
+            info: INFO,
+            create: cooperative_create,
+            detect,
+        };
+        let handle = spawn_core(registration, Content::file("x.test"), context()).unwrap();
+        handle.stop();
+        assert!(handle.shutdown().unwrap().unwrap().is_success());
     }
 }

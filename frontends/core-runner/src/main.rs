@@ -6,6 +6,11 @@
 //! sinks, save-state and battery-save events) before the full frontend grows
 //! core selection.
 //!
+//! User data is content-scoped under `<save-dir>/<core>/<content-hash>/`.
+//! Save states use the versioned `rsxp_core::StateEnvelope`; a raw state from an
+//! older build is rejected rather than restored without validation. Writes are
+//! queued on a bounded worker and flushed before the runner reports success.
+//!
 //! ```sh
 //! cargo run -p rsxp-core-runner -- --content game.gba --frames 120 --output frame.ppm
 //! cargo run -p rsxp-core-runner --features rgss -- \
@@ -14,9 +19,10 @@
 
 use rsxp_core::{
     AudioChannel, AudioSink, AudioStream, Content, CoreCommand, CoreControl, CoreEvent,
-    CoreLoadInfo, EventSink, LogLevel, PcmBuffer, PixelFormat, Platform, VideoFrame, VideoSink,
+    CoreLoadInfo, EventSink, LogLevel, PcmBuffer, PixelFormat, Platform, PlatformError,
+    PlatformResult, SessionConfig, VideoFrame, VideoSink,
 };
-use rsxp_frontend::spawn_core;
+use rsxp_frontend::{spawn_core, ContentId, SaveStore, StorageWorker};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -51,7 +57,7 @@ fn run() -> Result<(), String> {
         .parent()
         .unwrap_or_else(|| Path::new("."))
         .to_path_buf();
-    let save_dir = options.save_dir.clone().unwrap_or_else(|| {
+    let base = options.save_dir.clone().unwrap_or_else(|| {
         std::env::var_os("XDG_DATA_HOME")
             .map(PathBuf::from)
             .or_else(|| {
@@ -60,35 +66,69 @@ fn run() -> Result<(), String> {
             .map(|base| base.join("rsxp/saves"))
             .unwrap_or_else(|| root.join(".rsxp-saves"))
     });
+    let content_id = ContentId::of(&content)
+        .map_err(|error| format!("could not identify {}: {error}", content.path.display()))?;
+    let store = SaveStore::new(&base, registration.info.id, content_id)
+        .map_err(|error| format!("could not open save store {}: {error}", base.display()))?;
+    // Preserve title-based saves from older runner builds without deleting them.
+    let legacy_stem = safe_name(&content.label);
+    if let Ok(copied) = store.migrate_named_from(&base, &legacy_stem)
+        && copied > 0
+    {
+        eprintln!("rsxp-core-runner: migrated {copied} legacy save file(s)");
+    }
+    let worker = StorageWorker::spawn(Arc::clone(store.storage()), 16);
+    let save_dir = store.native_save_dir().unwrap_or_else(|| base.clone());
 
     let control = Arc::new(CoreControl::new());
     control.set_frame_limit(Some(options.frames));
     control.set_fast_forward(options.fast_forward);
     if let Some(slot) = &options.load_state {
-        let path = state_path(&save_dir, &content, slot);
-        let data = std::fs::read(&path)
-            .map_err(|error| format!("could not read {}: {error}", path.display()))?;
-        control.send(CoreCommand::LoadState {
-            slot: slot.clone(),
-            data,
-        });
+        let data = match store.read_state(slot, registration.info.state_revision) {
+            Ok(Some(state)) => state.encode().map_err(|error| error.to_string())?,
+            Ok(None) => {
+                let legacy = state_path(&base, &content, slot);
+                match std::fs::read(&legacy) {
+                    Ok(data) if data.starts_with(rsxp_core::state::STATE_MAGIC) => data,
+                    Ok(_) => {
+                        return Err(format!(
+                            "{} is a legacy raw state; re-create it with this build so it can be validated",
+                            legacy.display()
+                        ))
+                    }
+                    Err(error) => {
+                        return Err(format!("could not read {}: {error}", legacy.display()))
+                    }
+                }
+            }
+            Err(error) => return Err(error.to_string()),
+        };
+        control
+            .send_request(CoreCommand::LoadState {
+                slot: slot.clone(),
+                data,
+            })
+            .map_err(|error| error.to_string())?;
     }
 
     let frames = Arc::new(Mutex::new(None));
+    let session = SessionConfig::default();
     let context = rsxp_core::CoreContext::new(
         Arc::new(NativePlatform {
             root,
-            save_dir: save_dir.clone(),
+            save_dir,
+            submitter: worker.submitter(),
             start: Instant::now(),
         }),
         Box::new(RecordingVideo(Arc::clone(&frames))),
         Box::new(SilentAudio::default()),
         Box::new(NativeEvents {
-            save_dir: save_dir.clone(),
+            submitter: worker.submitter(),
             label: content.label.clone(),
         }),
         Arc::clone(&control),
-    );
+    )
+    .with_session(session);
     eprintln!(
         "rsxp-core-runner: core={} content={}",
         registration.info.id,
@@ -99,12 +139,24 @@ fn run() -> Result<(), String> {
     if let Some(slot) = &options.save_state {
         // Give the core a moment to finish loading, then request a save at the
         // next frame boundary.
-        control.send(CoreCommand::SaveState { slot: slot.clone() });
+        control
+            .send_request(CoreCommand::SaveState { slot: slot.clone() })
+            .map_err(|error| error.to_string())?;
     }
     let status = handle
         .join()
         .map_err(|_| "core thread panicked".to_string())?
         .map_err(|error| error.to_string())?;
+    worker.flush().map_err(|error| error.to_string())?;
+    let failures = worker.status().failures();
+    if failures > 0 {
+        let detail = worker
+            .status()
+            .last_error()
+            .unwrap_or_else(|| "unknown storage failure".into());
+        return Err(format!("{failures} save write(s) failed: {detail}"));
+    }
+    worker.shutdown();
     eprintln!("rsxp-core-runner: core exited with code {}", status.code);
     if let Some(output) = options.output
         && let Some(frame) = frames.lock().unwrap().take()
@@ -186,7 +238,8 @@ impl Options {
                     println!(
                         "rsxp-core-runner --content PATH [--core ID] [--frames N] \
                          [--fast-forward] [--save-state SLOT] [--load-state SLOT] \
-                         [--save-dir DIR] [--output frame.ppm]"
+                         [--save-dir DIR] [--output frame.ppm]\n\
+                         Saves are stored under DIR/<core>/<content-hash>/."
                     );
                     std::process::exit(0);
                 }
@@ -204,19 +257,36 @@ impl Options {
 struct NativePlatform {
     root: PathBuf,
     save_dir: PathBuf,
+    submitter: rsxp_frontend::StorageSubmitter,
     start: Instant,
 }
 
 impl Platform for NativePlatform {
-    fn read_file(&self, path: &str) -> Option<Vec<u8>> {
-        std::fs::read(self.root.join(path)).ok()
+    fn read_content(&self, path: &str) -> PlatformResult<Vec<u8>> {
+        std::fs::read(self.root.join(path)).map_err(|error| match error.kind() {
+            std::io::ErrorKind::NotFound => PlatformError::not_found(path),
+            std::io::ErrorKind::PermissionDenied => PlatformError::permission_denied(path),
+            _ => PlatformError::io(format!("{path}: {error}")),
+        })
     }
-    fn write_file(&self, path: &str, bytes: &[u8]) -> Result<(), String> {
-        let path = self.save_dir.join(path);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    fn read_system_file(&self, path: &str) -> PlatformResult<Option<Vec<u8>>> {
+        match std::fs::read(self.root.join(path)) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error.into()),
         }
-        std::fs::write(path, bytes).map_err(|error| error.to_string())
+    }
+    fn read_save(&self, name: &str) -> PlatformResult<Option<Vec<u8>>> {
+        match std::fs::read(self.save_dir.join(name)) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error.into()),
+        }
+    }
+    fn write_save(&self, name: &str, bytes: &[u8]) -> PlatformResult<()> {
+        self.submitter
+            .submit(SaveStore::save_key(name), bytes.to_vec())
+            .map_err(|error| PlatformError::io(error.to_string()))
     }
     fn save_dir(&self) -> PathBuf {
         self.save_dir.clone()
@@ -235,12 +305,16 @@ struct Frame {
     stride: usize,
     format: PixelFormat,
     pixels: Vec<u8>,
+    palette: Option<Vec<u8>>,
 }
 
 struct RecordingVideo(Arc<Mutex<Option<Frame>>>);
 
 impl VideoSink for RecordingVideo {
     fn present(&mut self, frame: VideoFrame<'_>) {
+        if frame.validate().is_err() {
+            return;
+        }
         let mut slot = self.0.lock().unwrap();
         let reuse = slot
             .as_ref()
@@ -259,6 +333,7 @@ impl VideoSink for RecordingVideo {
             stride: frame.stride,
             format: frame.format,
             pixels,
+            palette: frame.palette.map(<[u8]>::to_vec),
         });
     }
 }
@@ -277,7 +352,7 @@ impl AudioSink for SilentAudio {
 }
 
 struct NativeEvents {
-    save_dir: PathBuf,
+    submitter: rsxp_frontend::StorageSubmitter,
     label: String,
 }
 
@@ -295,29 +370,21 @@ impl EventSink for NativeEvents {
             CoreEvent::Window(command) => eprintln!("window: {command:?}"),
             CoreEvent::Log(level, message) => log(level, &message),
             CoreEvent::SaveState { slot, data } => {
-                let path = self
-                    .save_dir
-                    .join(format!("{}.ss{}", safe_name(&self.label), slot));
-                if let Some(parent) = path.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                match std::fs::write(&path, data) {
-                    Ok(()) => eprintln!("save state: {}", path.display()),
-                    Err(error) => eprintln!("could not write {}: {error}", path.display()),
+                match self.submitter.submit(SaveStore::state_key(&slot), data) {
+                    Ok(()) => eprintln!("save state queued: {slot}"),
+                    Err(error) => eprintln!("could not queue save state {slot}: {error}"),
                 }
             }
             CoreEvent::SaveRam { data } => {
-                let path = self
-                    .save_dir
-                    .join(format!("{}.sav", safe_name(&self.label)));
-                if let Some(parent) = path.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                if let Err(error) = std::fs::write(&path, data) {
-                    eprintln!("could not write {}: {error}", path.display());
+                let name = format!("{}.sav", safe_name(&self.label));
+                if let Err(error) = self.submitter.submit(SaveStore::save_key(&name), data) {
+                    eprintln!("could not queue battery save: {error}");
                 }
             }
             CoreEvent::Screenshot { .. } => {}
+            CoreEvent::CommandResult { id, outcome } => {
+                eprintln!("command {id}: {outcome:?}");
+            }
             CoreEvent::Status(message) => eprintln!("status: {message}"),
             CoreEvent::Error(message) => eprintln!("error: {message}"),
             CoreEvent::Exited(status) => eprintln!("exited: {}", status.code),
@@ -377,7 +444,15 @@ fn write_ppm(path: &Path, frame: &Frame) -> Result<(), String> {
                         ((value & 0x1f) as u8) << 3,
                     ]);
                 }
-                PixelFormat::Indexed8 => out.extend_from_slice(&[pixel[0], pixel[0], pixel[0]]),
+                PixelFormat::Indexed8 => {
+                    let palette = frame.palette.as_deref().unwrap_or(&[]);
+                    let offset = usize::from(pixel[0]) * 4;
+                    if offset + 3 < palette.len() {
+                        out.extend_from_slice(&palette[offset..offset + 3]);
+                    } else {
+                        out.extend_from_slice(&[pixel[0], pixel[0], pixel[0]]);
+                    }
+                }
             }
         }
     }

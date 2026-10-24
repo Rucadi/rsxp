@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Core metadata, capabilities and content routing.
 
+use crate::audio::AudioConfig;
+use crate::input::Button;
+use crate::video::PixelFormat;
 use crate::{ContentProbe, Core};
 use std::collections::BTreeMap;
 
@@ -64,6 +67,89 @@ pub enum PresentationSupport {
     },
 }
 
+/// Type of a per-core option.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum OptionKind {
+    Bool { default: bool },
+    Int { default: i64, min: i64, max: i64 },
+    Float { default: f64, min: f64, max: f64 },
+    String { default: &'static str },
+}
+
+/// One option advertised by a core for generic settings UI and validation.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CoreOption {
+    pub key: &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
+    pub kind: OptionKind,
+}
+
+/// Rotation of a logical screen relative to its native framebuffer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScreenRotation {
+    None,
+    Clockwise90,
+    Clockwise180,
+    Clockwise270,
+}
+
+/// One logical screen. Cores that publish a stacked frame still describe the
+/// individual screens so a frontend can lay them out, rotate them or route
+/// touch without knowing the core id.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScreenInfo {
+    pub id: &'static str,
+    pub width: u32,
+    pub height: u32,
+    /// Offset in the core's published framebuffer.
+    pub x: u32,
+    pub y: u32,
+    pub rotation: ScreenRotation,
+    /// Pointer input is mapped to this screen's coordinates.
+    pub touch: bool,
+}
+
+/// Input controls exposed by a core.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InputInfo {
+    pub buttons: &'static [Button],
+    pub pointer: bool,
+    /// Extra0 is the primary pointer click on cores with a touch screen.
+    pub pointer_button: bool,
+}
+
+impl InputInfo {
+    pub const NONE: Self = Self {
+        buttons: &[],
+        pointer: false,
+        pointer_button: false,
+    };
+}
+
+/// Audio formats a core can produce and how the frontend may negotiate them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AudioInfo {
+    /// Preferred rate/channel count when the frontend has no constraint.
+    pub preferred: AudioConfig,
+    /// True when the core accepts the frontend's requested rate/channels.
+    pub negotiable: bool,
+}
+
+impl AudioInfo {
+    pub const SILENT: Self = Self {
+        preferred: AudioConfig::silence(),
+        negotiable: false,
+    };
+
+    pub const fn new(sample_rate: u32, channels: u16, negotiable: bool) -> Self {
+        Self {
+            preferred: AudioConfig::new(sample_rate, channels),
+            negotiable,
+        }
+    }
+}
+
 /// Static description of one core.
 #[derive(Clone, Copy, Debug)]
 pub struct CoreInfo {
@@ -71,11 +157,30 @@ pub struct CoreInfo {
     pub id: &'static str,
     pub name: &'static str,
     pub version: &'static str,
+    /// Version of the core's serialized state format. A state produced by a
+    /// different revision is rejected before it reaches a running machine.
+    pub state_revision: u32,
     /// Lower-case file extensions without a leading dot. May be empty for
     /// cores that route directories through a probe.
     pub extensions: &'static [&'static str],
     pub capabilities: CoreCapabilities,
     pub presentation: PresentationSupport,
+    /// CPU pixel formats the core may submit.
+    pub pixel_formats: &'static [PixelFormat],
+    pub audio: AudioInfo,
+    pub input: InputInfo,
+    pub screens: &'static [ScreenInfo],
+    pub options: &'static [CoreOption],
+}
+
+impl CoreInfo {
+    pub fn supports_pixel_format(&self, format: PixelFormat) -> bool {
+        self.pixel_formats.contains(&format)
+    }
+
+    pub fn supports_button(&self, button: Button) -> bool {
+        self.input.buttons.contains(&button)
+    }
 }
 
 /// Builds a fresh core instance for one session.
@@ -168,15 +273,26 @@ mod tests {
             Err(CoreError::Stopped)
         }
     }
+    const INFO: CoreInfo = CoreInfo {
+        id: "dummy",
+        name: "Dummy",
+        version: "1",
+        state_revision: 1,
+        extensions: &["dummy"],
+        capabilities: CoreCapabilities::empty(),
+        presentation: PresentationSupport::Cpu,
+        pixel_formats: &[PixelFormat::Rgba8],
+        audio: AudioInfo::SILENT,
+        input: InputInfo {
+            buttons: &[Button::South],
+            pointer: false,
+            pointer_button: false,
+        },
+        screens: &[],
+        options: &[],
+    };
     fn create() -> Box<dyn Core> {
-        Box::new(Dummy(CoreInfo {
-            id: "dummy",
-            name: "Dummy",
-            version: "1",
-            extensions: &["dummy"],
-            capabilities: CoreCapabilities::SAVE_RAM,
-            presentation: PresentationSupport::Cpu,
-        }))
+        Box::new(Dummy(INFO))
     }
     fn detect(probe: &ContentProbe<'_>) -> u32 {
         u32::from(probe.extension() == Some("dummy")) * 10
@@ -186,14 +302,7 @@ mod tests {
     fn registry_selects_by_priority() {
         let mut registry = CoreRegistry::new();
         registry.register(CoreRegistration {
-            info: CoreInfo {
-                id: "dummy",
-                name: "Dummy",
-                version: "1",
-                extensions: &["dummy"],
-                capabilities: CoreCapabilities::empty(),
-                presentation: PresentationSupport::Cpu,
-            },
+            info: INFO,
             create,
             detect,
         });
@@ -201,5 +310,7 @@ mod tests {
         let probe = ContentProbe::new(path, false, &[]);
         assert_eq!(registry.select(&probe).unwrap().info.id, "dummy");
         assert!(registry.get("missing").is_none());
+        assert!(INFO.supports_button(Button::South));
+        assert!(INFO.supports_pixel_format(PixelFormat::Rgba8));
     }
 }

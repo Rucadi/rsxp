@@ -37,16 +37,20 @@ The cartridge real-time clock is enabled for all regional versions of Pokémon
 Ruby, Sapphire, and Emerald, and for ROMs containing the `SIIRTC_V` signature.
 The backend uses the host's local time for the clock.
 
-The backend writes battery saves directly to `<rom-stem>.sav` in
-`Platform::save_dir()`. Save states are serialized by the backend and emitted
-as opaque `CoreEvent::SaveState` blobs.
+The backend writes battery saves directly to `<rom-stem>.sav` in the
+content-scoped `Platform::save_dir()` (`<data>/rsxp/saves/gba/<content-hash>/save`
+on desktop). Save states are serialized by the backend and wrapped in the shared
+versioned `StateEnvelope` with the core id, state revision, ROM fingerprint and
+integrity check. A corrupt, foreign or different-ROM state is rejected before
+restore.
 
 ## Video and audio
 
 The native `u32` framebuffer is submitted zero-copy as `Bgrx8` on
 little-endian hosts (GBA color channels expanded from BGR555). Big-endian hosts
 receive `Rgba8`. Audio is drained from a preallocated ring buffer as interleaved
-stereo `i16` at 48 kHz.
+stereo `i16`; the frontend negotiates the output sample rate per session
+(48 kHz when no device constraint is supplied).
 
 ## Tests
 

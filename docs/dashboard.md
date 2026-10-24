@@ -130,6 +130,8 @@ The Saves view copies an explicitly selected save directory to an empty backup
 directory. For games using `System.data_directory`, an existing conventional
 save directory is suggested. Custom game save locations can be entered manually.
 The whole selected directory is copied; do not select the game installation.
+Cartridge saves are content-scoped (`<data>/rsxp/saves/<core>/<hash>`) and are
+not managed by this RGSS directory picker.
 
 Restore stages incoming files, preserves originals under `before-restore-*`,
 and atomically replaces individual matching files. Extra files remain. Symlinks,

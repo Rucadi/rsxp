@@ -98,16 +98,18 @@ session**, not once per frame. This is the most important performance decision:
 
 `CoreContext` contains the only frontend services a core can use:
 
-- `Platform`: file reads/writes, save directory, monotonic clock, sleep and
-  logging.
+- `Platform`: typed content reads, optional system-file reads, separate user
+  save storage, save directory, monotonic clock, sleep and logging.
 - `VideoSink`: borrow a completed frame and present it synchronously.
 - `AudioSink`: stream commands for pre-encoded music/effects (RGSS) or raw PCM
   (GBA/GB/DS).
 - `EventSink`: low-frequency lifecycle events, window requests, logs, save
   state blobs and errors.
 - `CoreControl`: atomics for stop/pause/fast-forward, lock-free button/axis
-  state, and a bounded command queue for cold operations (reset, save state,
-  option changes).
+  state, and a bounded command queue with request ids for cold operations
+  (reset, save state, option changes).
+- `SessionConfig`: requested audio format and deterministic-mode flag, set by
+  the frontend instead of process environment variables.
 
 ### Hot-path rules
 
@@ -212,7 +214,8 @@ adapter, not a second core API.
 The frontend, not the core, decides where user data lives. Cores expose:
 
 - battery/save RAM as a byte blob (GBA/GB/DS) or game files (RGSS),
-- save states as opaque versioned blobs with a core id and format version,
+- save states as opaque versioned blobs with a core id, format revision,
+  content identity and integrity check,
 - optional thumbnail pixels for the save-state browser.
 
 A core must reject a state blob from another core id or format version. State
@@ -251,20 +254,74 @@ loading must never silently reset a running game.
 
 | Core | Backend | Status |
 | --- | --- | --- |
-| `rgss` | Embedded MRI + Rust RGSS engine | Adapter available and headless-tested; desktop runner migration in progress |
-| `nds` | [Dust](https://github.com/kelpsyberry/dust) (GPL-3.0) | Optional `nds` feature; software 2D/3D, stacked screens and touch |
-| `gba` | [RustBoyAdvance-NG](https://github.com/michelhe/rustboyadvance-ng) (MIT) | Adapter available and headless-tested |
+| `rgss` | Embedded MRI + Rust RGSS engine | Adapter available; desktop isolated-runner path retained |
+| `nds` | [Dust](https://github.com/kelpsyberry/dust) (GPL-3.0) | Optional `nds` feature; software 2D/3D, stacked screens and touch. The Dust dependency uses unstable features, so this feature builds on nightly (or with `RUSTC_BOOTSTRAP=1` for local checks) |
+| `gba` | [RustBoyAdvance-NG](https://github.com/michelhe/rustboyadvance-ng) (MIT) | Adapter available; desktop and core-runner cartridge path |
 
-The GBA adapter embeds the open-source Normmatt/VBA-M BIOS replacement from
+The desktop binary has `gba`, `nds` and `rgss` features. They are all enabled by
+default; `--no-default-features --features gba` builds a cartridge-only binary
+without linking MRI, the RGSS engine or the DS toolchain. The generic cartridge
+host routes through `rsxp_cores::catalog()` and has no core-id branch.
+
+### Implemented versus target
+
+Implemented in this tree:
+
+- panic-safe session completion with exactly one terminal `Exited` event;
+- generic desktop cartridge routing and a cartridge-only build;
+- content-scoped save storage, versioned state envelopes and a bounded save
+  worker with migration from title directories;
+- typed platform I/O and separate content/system/save namespaces;
+- session audio negotiation, palette-capable frames and a bounded SPSC PCM ring;
+- screen/input/option descriptors in `CoreInfo` and command result events;
+- GBA state replay validation in addition to pixel/state-production tests.
+
+Still a target, not demonstrated here:
+
+- web and mobile have not been migrated to `rsxp-core`;
+- browser execution scheduling for the blocking `run` contract is a prototype;
+- GBA's backend still writes its battery file directly into the content-scoped
+  `save/` directory; routing those writes through the storage worker requires an
+  upstream backend accessor. DS save writes already use `Platform::write_save`;
+- measured audio/video latency and allocation baselines on the desktop
+  transport, and loadable plugin ABIs.
+
+### GBA adapter
+
+The adapter embeds the open-source Normmatt/VBA-M BIOS replacement from
 [ReGBA](https://github.com/Nebuleon/ReGBA/blob/master/bios/gba_bios.bin), so no
 external BIOS is required. `RSXP_GBA_BIOS` or a `gba_bios.bin`/`bios.bin`
-beside the ROM or in the save directory can override it. The adapter runs the
-BIOS boot without presenting frames, which skips the startup image while
-preserving BIOS initialization and SWI services.
+beside the ROM or in the content-scoped save directory can override it. The
+adapter starts directly from the backend's post-BIOS state (`skip_bios`); it
+does not execute the boot animation and does not present hidden startup frames.
+SWI services remain mapped.
 
-GBA battery saves are written through the backend to `<rom-stem>.sav` in the
-frontend save directory. Save states are emitted as opaque blobs through
-`CoreEvent::SaveState`.
+### Save identity and storage
+
+The desktop and core runner key user data by core id and content identity
+(FNV-1a of the ROM, or a deterministic directory tree hash for RGSS), not by a
+human title:
+
+```text
+<data>/rsxp/saves/<core-id>/<content-hash>/save/     # battery files
+<data>/rsxp/saves/<core-id>/<content-hash>/states/   # .rsxpstate envelopes
+```
+
+Existing title-based saves under `<data>/rsxp/<title>/` are copied forward on
+first open; the old files are never removed. Battery saves in the legacy
+directory are copied into the new `save/` namespace, while save states and
+unknown files are preserved under `legacy/` because raw legacy states cannot be
+validated.
+
+States use the versioned `StateEnvelope` from `rsxp-core`: core id, state-format
+revision, content identity, payload length and an integrity check. GBA and DS
+cores encode and validate the envelope themselves, so a corrupt or foreign state
+is rejected before restore. DS still builds a candidate machine and swaps it in
+only after a successful decode.
+
+Writes go through a bounded frontend worker with atomic replacement and an
+orderly flush at session end. The worker records failed writes and the frontend
+reports them instead of silently discarding pending saves.
 
 ### Phase 3 — first non-RGSS core
 
@@ -295,3 +352,5 @@ Each core must have:
 
 The RGSS desktop path must not regress relative to the existing
 `docs/session-performance.md` and `docs/rsxp-performance.md` baselines.
+See [core conformance](core-conformance.md) for the feature matrix, replay
+checks and measurement commands.

@@ -2,6 +2,14 @@
 
 Reviewed 2026-10-24 against the current working tree, including the pending DS integration. This is a plan, not an implementation change.
 
+> **Status (2026-10-24):** the desktop convergence items are implemented:
+> panic-safe completion and terminal events, content-keyed storage with a
+> versioned state envelope, bounded media/save workers, catalog routing, a
+> feature-gated cartridge host, and the core conformance matrix. Web/mobile
+> migration, measured transport latency baselines and loadable plugins remain
+> targets. See `docs/multi-core-architecture.md` and
+> `docs/core-conformance.md` for the implemented-versus-target split.
+
 ## Assessment
 
 Keep the overall architecture: a small core contract, factories constructed on the execution thread, core-owned execution loops, borrowed output buffers, atomic controls, and feature-selected static registration. These accommodate RGSS's Ruby-driven execution and hardware emulators without forcing either into the other's model. A plugin ABI is premature.

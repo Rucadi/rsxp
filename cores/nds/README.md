@@ -48,19 +48,21 @@ produce errors. Supply your own dumps when needed.
 
 ## Saves
 
-Cartridge saves use `<sanitized-rom-stem>.sav` in the frontend save directory.
+Cartridge saves use `<sanitized-rom-stem>.sav` in the content-scoped
+`Platform::save_dir()` (`<data>/rsxp/saves/nds/<content-hash>/save` on desktop).
 The bundled Dust game database chooses EEPROM/FRAM/FLASH; an existing save's
 length takes precedence. Unknown homebrew defaults to no save device unless
 an existing save identifies one. NAND save cartridges are rejected because
 Dust does not implement their saves. Modified saves flush every 300 frames,
 on reset, on an explicit save request and on normal exit.
 
-Save states include a core/format identifier, ROM fingerprint, cartridge save
-and integrity checksum. Loading validates the envelope and decodes into a new
-machine before replacing the running one. They are tied to this backend
-revision, are not Dust desktop state files, and are not a portable archival
-format. The frontend's save/load-state commands work with this core; the
-existing desktop runner does not yet expose these commands in its UI.
+Save states use the shared versioned `StateEnvelope`: core id, state revision,
+ROM fingerprint, cartridge save, backend payload and integrity checksum.
+Loading validates the envelope and decodes into a new machine before replacing
+the running one. They are tied to this backend revision, are not Dust desktop
+state files, and are not a portable archival format. The frontend's
+save/load-state commands work with this core; the desktop runner exposes save
+states through the cartridge command queue.
 
 ## Scope and compatibility
 

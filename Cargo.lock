@@ -2885,8 +2885,6 @@ checksum = "e8cf8e6a8aa66ce33f63993ffc4ea4271eb5b0530a9002db8455ea6050c77bfa"
 [[package]]
 name = "proc-bitfield"
 version = "0.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb5041a3f8b230c2078ab917516d352f40625245d4c953472eacbe075051c4b7"
 dependencies = [
  "proc-bitfield-macros",
  "static_assertions",
@@ -2895,8 +2893,6 @@ dependencies = [
 [[package]]
 name = "proc-bitfield-macros"
 version = "0.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b34b74711e53c2ff9c879e7a22c6c8dbac847ef2b11c2d69296a890e12a243a"
 dependencies = [
  "proc-macro2",
  "quote 1.0.47",
@@ -3235,6 +3231,7 @@ dependencies = [
  "rsxp-core",
  "rsxp-core-gba",
  "rsxp-core-nds",
+ "rsxp-cores",
  "rsxp-frontend",
  "rsxp-rgss-ruby",
  "serde_json",

@@ -86,7 +86,13 @@ The backend is
 [RustBoyAdvance-NG](https://github.com/michelhe/rustboyadvance-ng) (MIT).
 See [cores/gba/README.md](cores/gba/README.md) for BIOS resolution, save
 locations and current limitations. The runner links only the GBA core by
-default; add `--features rgss` to include the RGSS adapter.
+default; add `--features rgss` to include the RGSS adapter. A cartridge-only
+desktop binary builds without MRI or the RGSS engine:
+
+```sh
+cargo run -p rsxp-desktop --no-default-features --features gba -- \
+  run --game /path/to/game.gba --headless --frames 120 --output /tmp/gba.ppm
+```
 
 Games start directly at the cartridge without the BIOS startup image. The
 embedded open-source BIOS remains available for BIOS services during gameplay.
@@ -120,6 +126,8 @@ compatibility limits.
 - [Live game API](crates/rsxp-rgss/api/README.md): HTTP inspection/control and the MCP executable.
 - [Multi-core architecture](docs/multi-core-architecture.md): core contract,
   content routing, performance rules and the path for GBA/GB/DS cores.
+- [Core conformance](docs/core-conformance.md): feature matrix, replay checks
+  and measurement commands.
 
 The performance documents describe particular workloads and measurements,
 not expected FPS for every game: [renderer](docs/rsxp-performance.md),
@@ -135,6 +143,7 @@ cargo test -p rsxp --lib
 cargo test -p rsxp-desktop --test cli
 cargo test -p rsxp-core -p rsxp-frontend
 cargo test -p rsxp-core-gba -p rsxp-cores
+cargo check -p rsxp-desktop --no-default-features --features gba
 nix-shell --run 'cargo test -p rsxp-core-rgss --test headless'
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings

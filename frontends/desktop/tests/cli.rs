@@ -883,6 +883,7 @@ fn isolated_runner_streams_frames_input_and_inspector_replies() {
     isolated_runner_transport("software");
 }
 
+#[cfg(feature = "gba")]
 #[test]
 fn isolated_runner_streams_gba_frames_and_input() {
     use std::{

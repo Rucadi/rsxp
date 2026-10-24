@@ -17,7 +17,7 @@ use rsxp::engine::{self, RuntimeOptions};
 use rsxp::{api_bridge, runtime_patch, runtime_settings};
 use rsxp_core::{
     Content, ContentProbe, Core, CoreCapabilities, CoreContext, CoreError, CoreInfo,
-    CoreRegistration, CoreRegistry, CoreResult, ExitStatus, PresentationSupport,
+    CoreRegistration, CoreRegistry, CoreResult, ExitStatus, PixelFormat, PresentationSupport,
 };
 use ruby_rgss_core::RubyCore;
 use std::path::Path;
@@ -31,12 +31,22 @@ pub const INFO: CoreInfo = CoreInfo {
     id: CORE_ID,
     name: "RPG Maker RGSS",
     version: env!("CARGO_PKG_VERSION"),
+    state_revision: 1,
     extensions: &[],
     capabilities: CoreCapabilities::ACCELERATED_PRESENTATION,
     presentation: PresentationSupport::Accelerated {
         kind: host::GPU_PACKET_KIND,
         cpu_fallback: true,
     },
+    pixel_formats: &[PixelFormat::Bgra8, PixelFormat::Rgba8],
+    audio: rsxp_core::AudioInfo::new(48_000, 2, false),
+    input: rsxp_core::InputInfo {
+        buttons: &[],
+        pointer: true,
+        pointer_button: true,
+    },
+    screens: &[],
+    options: &[],
 };
 
 /// Registers the RGSS core with a frontend catalog.

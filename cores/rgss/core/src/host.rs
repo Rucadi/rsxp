@@ -100,7 +100,7 @@ impl Host for CoreHost {
     }
 
     fn read_file(&self, path: &str) -> Option<Vec<u8>> {
-        self.context.platform.read_file(path)
+        self.context.platform.read_content(path).ok()
     }
 
     fn image(&self, bytes: &[u8]) -> Result<Bitmap, String> {

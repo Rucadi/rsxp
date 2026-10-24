@@ -28,31 +28,38 @@
 //! dashboard session transport variables are the relevant environment; [`HELP`]
 //! documents the full CLI and frame pacing. `main` maps the
 //! returned status (or an error) to the process exit code.
+#[cfg(feature = "rgss")]
 mod audio;
+#[cfg(feature = "rgss")]
 mod bundled_runtime;
+mod cartridge;
+#[cfg(feature = "rgss")]
 mod controller;
-#[cfg(feature = "gpu")]
+#[cfg(all(feature = "gpu", feature = "rgss"))]
 mod dashboard;
-mod gba;
-#[cfg(feature = "gpu")]
+#[cfg(all(feature = "gpu", feature = "rgss"))]
 mod gpu_present;
+#[cfg(feature = "rgss")]
 mod host;
-#[cfg(feature = "gpu")]
+#[cfg(all(feature = "gpu", feature = "rgss"))]
 mod library;
+#[cfg(feature = "rgss")]
 mod media;
 mod runtime;
-#[cfg(feature = "gpu")]
+#[cfg(feature = "rgss")]
 mod saves;
 mod session;
+#[cfg(feature = "rgss")]
 mod window;
+#[cfg(feature = "rgss")]
 use rsxp::{
     archive::Archive,
     graphics::{Bitmap, Color, Rect, Scene, Sprite},
     input::Input,
 };
+use std::error::Error;
+#[cfg(feature = "rgss")]
 use std::{
-    error::Error,
-    fs,
     io::{self, Write},
     path::PathBuf,
     time::{Duration, Instant},
@@ -97,7 +104,9 @@ The run command embeds MRI Ruby through Magnus. Core RGSS graphics, input,
 and Table bindings are available; full game compatibility is still in progress.
 See docs/rust-port.md for supported APIs and remaining limitations.";
 
+#[cfg(feature = "rgss")]
 fn archive_command(args: &[String]) -> Result<(), Box<dyn Error>> {
+    use std::fs;
     let cat = args[0] == "archive-cat";
     if args.len() != if cat { 3 } else { 2 } {
         return Err("expected ARCHIVE and, for archive-cat, ENTRY".into());
@@ -130,7 +139,9 @@ fn archive_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[cfg(feature = "rgss")]
 fn demo(args: &[String]) -> Result<(), Box<dyn Error>> {
+    use std::fs;
     let mut headless = false;
     let mut frames = None;
     let mut output = None;
@@ -271,16 +282,27 @@ fn demo(args: &[String]) -> Result<(), Box<dyn Error>> {
 }
 
 fn run() -> Result<u8, Box<dyn Error>> {
+    #[cfg(feature = "rgss")]
     bundled_runtime::configure()?;
     let args: Vec<_> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("--help" | "-h") => println!("{HELP}"),
         Some("--version" | "-V") => println!("rsxp {}", env!("CARGO_PKG_VERSION")),
-        Some("archive-list" | "archive-cat") => archive_command(&args)?,
-        Some("demo") => demo(&args[1..])?,
+        Some("archive-list" | "archive-cat") => {
+            #[cfg(feature = "rgss")]
+            archive_command(&args)?;
+            #[cfg(not(feature = "rgss"))]
+            return Err("archive tools require a build with the `rgss` feature".into());
+        }
+        Some("demo") => {
+            #[cfg(feature = "rgss")]
+            demo(&args[1..])?;
+            #[cfg(not(feature = "rgss"))]
+            return Err("the demo requires a build with the `rgss` feature".into());
+        }
         Some("run") => {
             runtime::validate(&args[1..])?;
-            #[cfg(feature = "gpu")]
+            #[cfg(all(feature = "gpu", feature = "rgss"))]
             if !args.iter().any(|a| a == "--headless")
                 && std::env::var_os("RSXP_SESSION_ADDR").is_none()
                 && std::env::var_os("RSXP_SESSION_STDIO").is_none()
@@ -289,9 +311,20 @@ fn run() -> Result<u8, Box<dyn Error>> {
             }
             return runtime::run(&args[1..]);
         }
-        #[cfg(feature = "gpu")]
+        #[cfg(all(feature = "gpu", feature = "rgss"))]
         None => return dashboard::run(None),
-        _ => demo(&args)?,
+        #[cfg(not(all(feature = "gpu", feature = "rgss")))]
+        None => {
+            return Err(
+                "the desktop dashboard requires a build with `gpu` and `rgss` features".into(),
+            )
+        }
+        _ => {
+            #[cfg(feature = "rgss")]
+            demo(&args)?;
+            #[cfg(not(feature = "rgss"))]
+            return Err(format!("unknown command: {}", args[0]).into());
+        }
     }
     Ok(0)
 }

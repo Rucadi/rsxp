@@ -29,24 +29,33 @@ pub mod events;
 pub mod input;
 pub mod platform;
 pub mod registry;
+pub mod state;
 pub mod video;
 
-pub use audio::{AudioChannel, AudioSink, AudioStream, PcmBuffer};
+pub use audio::{
+    AudioChannel, AudioConfig, AudioSink, AudioStream, PcmBuffer, PcmRing, PcmRingConsumer,
+    PcmRingProducer, PcmStatus,
+};
 pub use content::{Content, ContentKind, ContentProbe};
-pub use control::{CoreCommand, CoreControl, OptionValue};
+pub use control::{
+    CommandError, CommandOutcome, CommandRequest, CoreCommand, CoreControl, OptionValue,
+    MAX_COMMAND_PAYLOAD,
+};
 pub use events::{CoreEvent, CoreLoadInfo, EventSink, ExitStatus, LogLevel, WindowCommand};
 pub use input::{
     Button, ButtonSet, InputEvent, InputSnapshot, InputState, AXIS_COUNT, BUTTON_COUNT,
 };
-pub use platform::Platform;
+pub use platform::{Platform, PlatformError, PlatformResult};
 pub use registry::{
-    CoreCapabilities, CoreInfo, CoreRegistration, CoreRegistry, PresentationSupport,
+    AudioInfo, CoreCapabilities, CoreInfo, CoreOption, CoreRegistration, CoreRegistry, InputInfo,
+    OptionKind, PresentationSupport, ScreenInfo, ScreenRotation,
 };
-pub use video::{PixelFormat, VideoFrame, VideoSink};
+pub use state::{content_hash, StateEnvelope, StateError, MAX_STATE_PAYLOAD};
+pub use video::{FrameError, PixelFormat, VideoFrame, VideoSink};
 
 /// Version of the source-level core contract. Cores and frontends built
 /// against a different major version must not be mixed.
-pub const CORE_API_VERSION: u32 = 1;
+pub const CORE_API_VERSION: u32 = 2;
 
 /// Errors reported by a core while loading content or running.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,6 +125,48 @@ pub trait Core: 'static {
     fn run(&mut self) -> CoreResult<ExitStatus>;
 }
 
+/// Per-session configuration negotiated before the core starts.
+///
+/// Cores must read this instead of mutating process environment variables.
+/// `audio` is the frontend's requested output format; a core that cannot honor
+/// it may fall back to [`CoreInfo::audio`](crate::CoreInfo::audio).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SessionConfig {
+    /// Requested audio format. [`AudioConfig::silence`] means no audio device.
+    pub audio: AudioConfig,
+    /// Ask the core to use a fixed clock/seed where it supports one.
+    pub deterministic: bool,
+    /// Seed for deterministic RTC/random inputs; `0` means the core default.
+    pub seed: u64,
+}
+
+impl Default for SessionConfig {
+    fn default() -> Self {
+        Self {
+            audio: AudioConfig::silence(),
+            deterministic: false,
+            seed: 0,
+        }
+    }
+}
+
+impl SessionConfig {
+    pub fn headless() -> Self {
+        Self::default()
+    }
+
+    pub fn with_audio(mut self, audio: AudioConfig) -> Self {
+        self.audio = audio;
+        self
+    }
+
+    pub fn deterministic(mut self, seed: u64) -> Self {
+        self.deterministic = true;
+        self.seed = seed;
+        self
+    }
+}
+
 /// Services owned by the frontend and handed to a core at load time.
 ///
 /// Sinks are stored by the core and called from the core thread. They are
@@ -127,6 +178,7 @@ pub struct CoreContext {
     pub audio: Box<dyn AudioSink>,
     pub events: Box<dyn EventSink>,
     pub control: std::sync::Arc<CoreControl>,
+    pub session: SessionConfig,
 }
 
 impl CoreContext {
@@ -143,7 +195,14 @@ impl CoreContext {
             audio,
             events,
             control,
+            session: SessionConfig::default(),
         }
+    }
+
+    /// Overrides session configuration (audio format, deterministic mode).
+    pub fn with_session(mut self, session: SessionConfig) -> Self {
+        self.session = session;
+        self
     }
 }
 
@@ -154,8 +213,8 @@ mod tests {
 
     struct FakePlatform;
     impl Platform for FakePlatform {
-        fn read_file(&self, _path: &str) -> Option<Vec<u8>> {
-            None
+        fn read_content(&self, path: &str) -> crate::PlatformResult<Vec<u8>> {
+            Err(crate::PlatformError::not_found(path))
         }
         fn save_dir(&self) -> std::path::PathBuf {
             std::path::PathBuf::new()
@@ -202,9 +261,15 @@ mod tests {
             id: "fake",
             name: "Fake",
             version: "0",
+            state_revision: 1,
             extensions: &[],
             capabilities: CoreCapabilities::empty(),
             presentation: PresentationSupport::Cpu,
+            pixel_formats: &[PixelFormat::Rgba8],
+            audio: AudioInfo::SILENT,
+            input: InputInfo::NONE,
+            screens: &[],
+            options: &[],
         };
         let mut core = FakeCore { info, frames: 0 };
         let context = CoreContext::new(

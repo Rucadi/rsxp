@@ -62,3 +62,8 @@ opt-level = 3
 
 [patch."https://github.com/kelpsyberry/dust"]
 dust-soft-3d = { path = "cores/nds/vendor/dust-soft-3d" }
+
+# proc-bitfield 0.5.3's "nightly" feature still uses the old `impl const Trait`
+# syntax, which modern rustc rejects in favor of `const impl Trait`.
+[patch.crates-io]
+proc-bitfield = { path = "cores/nds/vendor/proc-bitfield" }

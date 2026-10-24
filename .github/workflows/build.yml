@@ -121,6 +121,34 @@ jobs:
           path: artifacts/*.AppImage
           if-no-files-found: error
 
+  core-matrix:
+    name: Core feature matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install audio build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      - name: Core contract and GBA tests
+        run: cargo test --locked -p rsxp-core -p rsxp-frontend -p rsxp-core-gba
+      - name: Core-only and GBA-only builds
+        run: |
+          cargo test --locked -p rsxp-cores --no-default-features --features gba
+          cargo build --locked -p rsxp-desktop --no-default-features --features gba
+      - name: Verify the GBA-only binary has no RGSS/MRI dependency
+        run: |
+          if cargo tree -p rsxp-desktop --no-default-features --features gba -e normal |
+            grep -Eq 'rsxp-rgss|rsxp-rgss-ruby|magnus'; then
+            echo "GBA-only build unexpectedly links RGSS or MRI" >&2
+            exit 1
+          fi
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: DS core tests (nightly)
+        run: cargo test --locked -p rsxp-core-nds
+
   desktop:
     name: Desktop / ${{ matrix.platform }}
     runs-on: ${{ matrix.os }}

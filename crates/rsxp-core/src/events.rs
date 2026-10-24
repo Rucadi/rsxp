@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Low-frequency session events and presentation/window requests.
 
+use crate::control::CommandOutcome;
 use crate::video::PixelFormat;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -78,6 +79,16 @@ pub enum CoreEvent {
     Status(String),
     /// A non-fatal error the user should see without ending the session.
     Error(String),
+    /// Result of a request queued with
+    /// [`CoreControl::send_request`](crate::CoreControl::send_request).
+    /// Cores must report every request they do not handle as
+    /// [`CommandOutcome::Unsupported`].
+    CommandResult {
+        id: u64,
+        outcome: CommandOutcome,
+    },
+    /// Final session status. The frontend emits this once when a worker ends,
+    /// including for load failures and unwinds; cores should not emit it.
     Exited(ExitStatus),
 }
 

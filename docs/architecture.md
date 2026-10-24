@@ -32,6 +32,13 @@ flowchart TD
 | `demo` | Standalone Rust scene; no Ruby game runtime |
 | `archive-list` / `archive-cat` | Decode archive data; no Ruby execution |
 
+Cargo features select what the binary links. `gba`, `nds` and `rgss` are enabled
+by default. `--no-default-features --features gba` builds a cartridge-only
+binary: `run --game ROM` routes through `rsxp_cores::catalog()` and the generic
+cartridge host, without MRI, the RGSS engine or the DS toolchain. Interactive
+cartridge sessions require the dashboard session transport; `--headless`
+supports PPM capture.
+
 The dashboard owns winit, egui and its presentation GPU on the main thread.
 `dashboard::Session` starts the same executable with `run`, a loopback address
 and a per-launch random token. Background threads collect output and exchange

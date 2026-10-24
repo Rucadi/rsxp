@@ -8,11 +8,21 @@ use std::{
 };
 struct PlatformFs(PathBuf);
 impl Platform for PlatformFs {
-    fn read_file(&self, name: &str) -> Option<Vec<u8>> {
-        std::fs::read(self.0.join(name)).ok()
+    fn read_content(&self, name: &str) -> rsxp_core::PlatformResult<Vec<u8>> {
+        std::fs::read(self.0.join(name)).map_err(|_| rsxp_core::PlatformError::not_found(name))
     }
-    fn write_file(&self, name: &str, bytes: &[u8]) -> Result<(), String> {
-        std::fs::write(self.0.join(name), bytes).map_err(|e| e.to_string())
+    fn read_system_file(&self, name: &str) -> rsxp_core::PlatformResult<Option<Vec<u8>>> {
+        match std::fs::read(self.0.join(name)) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error.into()),
+        }
+    }
+    fn read_save(&self, name: &str) -> rsxp_core::PlatformResult<Option<Vec<u8>>> {
+        self.read_system_file(name)
+    }
+    fn write_save(&self, name: &str, bytes: &[u8]) -> rsxp_core::PlatformResult<()> {
+        std::fs::write(self.0.join(name), bytes).map_err(|error| error.into())
     }
     fn save_dir(&self) -> PathBuf {
         self.0.clone()

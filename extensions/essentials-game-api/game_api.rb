@@ -62,7 +62,7 @@ module RSXP
       when 'game_status'
         game_status
       when 'get_surroundings'
-        radius = Integer(args.fetch(0, '5'))
+        radius = Integer(argument(args, 0, '5'))
         raise ArgumentError, 'radius must be 1..15' unless (1..15).cover?(radius)
         surroundings(radius)
       when 'world_map'
@@ -113,7 +113,7 @@ module RSXP
       when 'press_key'
         key = args.fetch(0).to_s.downcase
         scan = SCANCODES[key] || raise(ArgumentError, 'key must be up, down, left, right, action, or cancel')
-        frames = Integer(args.fetch(1, '1'))
+        frames = Integer(argument(args, 1, '1'))
         raise ArgumentError, 'frames must be 1..60' unless (1..60).cover?(frames)
         @keys[scan] = [frames, !@keys.key?(scan)]
         { 'key' => key, 'frames' => frames, 'accepted' => true }

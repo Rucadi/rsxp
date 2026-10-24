@@ -860,6 +860,19 @@ impl DesktopApp {
                 });
                 continue;
             }
+            if let Some(result) = self
+                .shared
+                .workspace
+                .backend
+                .handle_plugin_operation(&request.operation, &request.arguments)
+            {
+                let _ = self.shared.dispatch_plugin_response(OperationResponse {
+                    id: request.id,
+                    generation: request.generation,
+                    result: result.map_err(|error| OperationError::new("host", error)),
+                });
+                continue;
+            }
             let Some((operation, args)) = legacy_plugin_call(&request) else {
                 let _ = self.shared.dispatch_plugin_response(OperationResponse {
                     id: request.id,
@@ -947,11 +960,7 @@ impl DesktopApp {
             .unwrap_or_default();
         for request in requests {
             match request {
-                crate::webview::PluginWebViewRequest::Api {
-                    id,
-                    method,
-                    target,
-                } => {
+                crate::webview::PluginWebViewRequest::Api { id, method, target } => {
                     if method.eq_ignore_ascii_case("OPTIONS") {
                         if let Some((_, _, view)) = &self.plugin_webview {
                             let _ = view.respond(id, 200, "{}");
@@ -981,11 +990,9 @@ impl DesktopApp {
                         }
                     }
                 }
-                crate::webview::PluginWebViewRequest::Asset {
-                    id,
-                    category,
-                    name,
-                } => self.pending_webview_assets.push((id, category, name, 0)),
+                crate::webview::PluginWebViewRequest::Asset { id, category, name } => {
+                    self.pending_webview_assets.push((id, category, name, 0))
+                }
             }
         }
         let pending_assets = std::mem::take(&mut self.pending_webview_assets);
@@ -995,8 +1002,12 @@ impl DesktopApp {
                 if data_url.is_some() || attempts >= 30 {
                     let _ = view.respond_asset(id, data_url.as_deref());
                 } else {
-                    self.pending_webview_assets
-                        .push((id, category, name, attempts.saturating_add(1)));
+                    self.pending_webview_assets.push((
+                        id,
+                        category,
+                        name,
+                        attempts.saturating_add(1),
+                    ));
                 }
             }
         }

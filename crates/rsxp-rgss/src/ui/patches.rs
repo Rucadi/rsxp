@@ -2,8 +2,7 @@
 //! Left-hand "Tools" panel: tool selection and the runtime-patch catalog.
 //!
 //! `draw_patches_panel` builds the resizable `workspace-game-panel` side panel.
-//! It shows the logical game size, a row of tool tabs (`Tool::Runtime`,
-//! `Tool::Essentials`, and the feature-gated `Tool::OnlinePlay`),
+//! It shows the logical game size and the native runtime tool tab;
 //! and dispatches to the matching body:
 //!
 //! * `draw_patch_catalog(ui, user_patches)` lists patches from
@@ -32,9 +31,6 @@ impl Workspace {
                 ui.vertical(|ui| {
                     ui.style_mut().spacing.button_padding = egui::vec2(12.0, 8.0);
                     ui.selectable_value(&mut self.tool, Tool::Runtime, "Runtime");
-                    ui.selectable_value(&mut self.tool, Tool::Essentials, "Pokémon Essentials");
-                    #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
-                    ui.selectable_value(&mut self.tool, Tool::OnlinePlay, "Online play");
                 });
                 ui.add_space(12.0);
                 egui::ScrollArea::vertical().show(ui, |ui| {
@@ -45,13 +41,6 @@ impl Workspace {
                             self.draw_patch_catalog(ui, true);
                             ui.separator();
                             draw_plugin_ui(ui);
-                        }
-                        #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
-                        Tool::OnlinePlay => self.draw_cable_club_panel(ui),
-                        Tool::Essentials => {
-                            self.draw_patch_catalog(ui, false);
-                            #[cfg(feature = "game-api")]
-                            self.draw_essentials_tools(ui);
                         }
                     }
                 });

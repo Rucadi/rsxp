@@ -2,9 +2,9 @@
 // rsxp:name = PokeAPI Explorer
 // rsxp:version = 0.1.0
 // rsxp:capabilities = ui.webview
-// The generic core operations are declared here so the explorer is also a
-// discoverable extension surface. Their execution remains in the generic
-// bridge; this plugin only supplies the API client UI.
+// The generic game/input operations are declared here so the explorer is also
+// a discoverable extension surface. Their game-thread implementation remains
+// in the injected Essentials adapter; this plugin supplies the API client UI.
 // rsxp:operation = game_status
 // rsxp:route = GET /v1/game/status game_status
 // rsxp:operation = get_surroundings

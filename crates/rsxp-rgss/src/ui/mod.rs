@@ -3,8 +3,8 @@
 //!
 //! The desktop window and the browser canvas both render this module: the
 //! toolbar, the runtime-patches panel, the output log, the performance panel, the game
-//! view placement, and — behind `game-api` — the API console and the
-//! Essentials inspector windows. A frontend supplies per-frame
+//! view placement, and — behind `game-api` — the native host controls. A frontend supplies
+//! per-frame
 //! [`WorkspaceInfo`] plus an injected [`backend::Backend`] for runtime services,
 //! then reads back a [`WorkspaceOutput`] describing where the game view landed
 //! and which global actions (fullscreen, save import/export) were requested.
@@ -23,8 +23,8 @@
 //!   `fullscreen_request`, and `export_saves` / `import_saves` intents.
 //! * [`ViewMode`] — how the game view is placed (docked, workspace-fullscreen,
 //!   or floating).
-//! * `Tool` (private) — the active native tool tab (runtime, Essentials,
-//!   online play); game explorers are supplied by plugins.
+//! * `Tool` (private) — the active native tool tab (runtime or online play);
+//!   game explorers are supplied by plugins.
 //!
 //! ## Backend use
 //! All runtime interaction goes through `Workspace::backend`; the workspace
@@ -42,9 +42,7 @@
 //! (toolbar, logs, patches, performance, game_view, session, and the `game-api`
 //! explorers).
 pub mod backend;
-mod connections;
 mod game_view;
-mod inspector;
 mod library;
 mod logs;
 mod patches;
@@ -138,9 +136,6 @@ impl Default for WorkspaceOutput {
 enum Tool {
     #[default]
     Runtime,
-    Essentials,
-    #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
-    OnlinePlay,
 }
 
 pub struct Workspace {
@@ -160,36 +155,6 @@ pub struct Workspace {
     controller_settings_open: bool,
     was_global_fullscreen: bool,
     reset_confirm: bool,
-    #[cfg(feature = "game-api")]
-    api_error: Option<String>,
-    #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
-    cable_bind: String,
-    #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
-    cable_port: String,
-    #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
-    cable_client_host: String,
-    #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
-    cable_client_port: String,
-    #[cfg(feature = "game-api")]
-    cable_error: Option<String>,
-    #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
-    cable_saved: Option<String>,
-    #[cfg(feature = "game-api")]
-    api_pending: Option<u64>,
-    #[cfg(feature = "game-api")]
-    api_pending_operation: Option<String>,
-    #[cfg(feature = "game-api")]
-    api_response: String,
-    #[cfg(feature = "game-api")]
-    api_response_json: Option<serde_json::Value>,
-    #[cfg(feature = "game-api")]
-    essentials_debug: Option<bool>,
-    #[cfg(feature = "game-api")]
-    essentials_debug_pending: Option<u64>,
-    #[cfg(feature = "game-api")]
-    essentials_debug_queried: bool,
-    #[cfg(feature = "game-api")]
-    essentials_debug_notice: Option<(bool, String)>,
     /// `Some((done, total))` shows a download progress screen instead of the
     /// workspace (used while the browser preloads the game).
     loading: Option<(u32, u32)>,
@@ -214,36 +179,6 @@ impl Default for Workspace {
             controller_settings_open: false,
             was_global_fullscreen: false,
             reset_confirm: false,
-            #[cfg(feature = "game-api")]
-            api_error: None,
-            #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
-            cable_bind: "0.0.0.0".into(),
-            #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
-            cable_port: "25565".into(),
-            #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
-            cable_client_host: "127.0.0.1".into(),
-            #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
-            cable_client_port: "25565".into(),
-            #[cfg(feature = "game-api")]
-            cable_error: None,
-            #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
-            cable_saved: None,
-            #[cfg(feature = "game-api")]
-            api_pending: None,
-            #[cfg(feature = "game-api")]
-            api_pending_operation: None,
-            #[cfg(feature = "game-api")]
-            api_response: String::new(),
-            #[cfg(feature = "game-api")]
-            api_response_json: None,
-            #[cfg(feature = "game-api")]
-            essentials_debug: None,
-            #[cfg(feature = "game-api")]
-            essentials_debug_pending: None,
-            #[cfg(feature = "game-api")]
-            essentials_debug_queried: false,
-            #[cfg(feature = "game-api")]
-            essentials_debug_notice: None,
             loading: None,
         }
     }
@@ -360,10 +295,6 @@ impl Workspace {
             draw_loading(ui, done, total);
             return output;
         }
-
-        #[cfg(feature = "game-api")]
-        self.poll_api_response();
-        #[cfg(feature = "game-api")]
 
         if !self.controls_visible {
             self.draw_game_view(ui, &mut output, info.logical_size);

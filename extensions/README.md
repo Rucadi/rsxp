@@ -77,6 +77,10 @@ inventory actions, and the HTML item explorer.
 `essentials-encounters.rhai` provides current-map encounter tables and polls
 the generic status endpoint so map transitions reload the view.
 
+Plugin routes are intentionally not compiled into the host OpenAPI document;
+the live `/v1/extensions/routes` discovery endpoint is the source of truth for
+Rhai-owned API routes.
+
 ## HTML plugin views
 
 A plugin that declares `ui.webview` can open an HTML GUI from its Rhai event

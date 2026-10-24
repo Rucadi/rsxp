@@ -379,16 +379,6 @@ fn text_result(text: &str, is_error: bool) -> String {
     out
 }
 
-const CORE_TOOLS: &str = r#"{"tools":[
-  {"name":"game_status","description":"Get live scene, frame, screen size, map dimensions, camera position and player state.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
-  {"name":"get_surroundings","description":"Inspect nearby tile IDs and events on the current map.","inputSchema":{"type":"object","properties":{"radius":{"type":"integer","minimum":1,"maximum":15,"default":5}},"additionalProperties":false}},
-  {"name":"world_map","description":"List all game maps, dimensions, metadata positions, and explicit map-connection offsets.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
-  {"name":"map_preview","description":"Get actual RGSS tile layers and tileset filenames for one map.","inputSchema":{"type":"object","properties":{"map_id":{"type":"integer","minimum":1}},"required":["map_id"],"additionalProperties":false}},
-  {"name":"teleport","description":"Transfer the player to any in-bounds tile on a game map.","inputSchema":{"type":"object","properties":{"map_id":{"type":"integer","minimum":1},"x":{"type":"integer","minimum":0},"y":{"type":"integer","minimum":0}},"required":["map_id","x","y"],"additionalProperties":false}},
-  {"name":"press_key","description":"Press a control through RGSS input for 1–60 game updates.","inputSchema":{"type":"object","properties":{"key":{"type":"string","enum":["up","down","left","right","action","cancel"]},"frames":{"type":"integer","minimum":1,"maximum":60,"default":1}},"required":["key"],"additionalProperties":false}},
-  {"name":"release_all_keys","description":"Release controls held through this API.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}
-] }"#;
-
 #[derive(Clone, Debug)]
 struct ExtensionRoute {
     method: String,
@@ -442,16 +432,13 @@ fn extension_routes() -> Result<Vec<ExtensionRoute>, String> {
         .collect()
 }
 
-fn tools() -> String {
-    let mut listing = Parser::parse(CORE_TOOLS).expect("built-in MCP tools must be valid JSON");
+fn tools_from_routes(routes: impl IntoIterator<Item = ExtensionRoute>) -> String {
+    let mut listing = Json::Object(vec![("tools".into(), Json::Array(Vec::new()))]);
     let Json::Object(fields) = &mut listing else {
-        return CORE_TOOLS.to_owned();
+        return "{\"tools\":[]}".into();
     };
     let Some((_, Json::Array(tools))) = fields.iter_mut().find(|(key, _)| key == "tools") else {
-        return CORE_TOOLS.to_owned();
-    };
-    let Ok(routes) = extension_routes() else {
-        return json(&listing);
+        return "{\"tools\":[]}".into();
     };
     let mut seen = std::collections::HashSet::new();
     for route in routes {
@@ -489,6 +476,10 @@ fn tools() -> String {
         ]));
     }
     json(&listing)
+}
+
+fn tools() -> String {
+    tools_from_routes(extension_routes().unwrap_or_default())
 }
 
 fn url_encode(value: &str) -> String {
@@ -581,14 +572,7 @@ fn call_extension_tool(name: &str, args: &Json) -> Result<String, String> {
 }
 
 fn call_game(path: &str) -> Result<String, String> {
-    let method = if path == "/v1/input/held" {
-        "DELETE"
-    } else if path.starts_with("/v1/input/press") || path.starts_with("/v1/game/teleport") {
-        "POST"
-    } else {
-        "GET"
-    };
-    call_game_with_method(method, path)
+    call_game_with_method("GET", path)
 }
 
 fn call_game_with_method(method: &str, path: &str) -> Result<String, String> {
@@ -660,45 +644,7 @@ fn handle(message: Json) -> Option<String> {
         "tools/call" => {
             let name = params.get("name").and_then(Json::string).unwrap_or("");
             let args_obj = params.get("arguments").unwrap_or(&Json::Null);
-            let result = match name {
-                "game_status" => call_game("/v1/game/status"),
-                "release_all_keys" => call_game("/v1/input/held"),
-                "get_surroundings" => {
-                    let radius = args_obj.get("radius").and_then(Json::integer).unwrap_or(5);
-                    if !(1..=15).contains(&radius) {
-                        Err("radius must be 1..15".into())
-                    } else {
-                        call_game(&format!("/v1/game/surroundings?radius={radius}"))
-                    }
-                }
-                "world_map" => call_game("/v1/game/world-map"),
-                "map_preview" => {
-                    let map_id = args_obj.get("map_id").and_then(Json::integer).unwrap_or(-1);
-                    if map_id < 1 {
-                        Err("map_id must be positive".into())
-                    } else {
-                        call_game(&format!("/v1/game/maps/{map_id}/tiles"))
-                    }
-                }
-                "teleport" => {
-                    let map_id = args_obj.get("map_id").and_then(Json::integer).unwrap_or(-1);
-                    let x = args_obj.get("x").and_then(Json::integer).unwrap_or(-1);
-                    let y = args_obj.get("y").and_then(Json::integer).unwrap_or(-1);
-                    call_game(&format!("/v1/game/teleport?map_id={map_id}&x={x}&y={y}"))
-                }
-                "press_key" => {
-                    let key = args_obj.get("key").and_then(Json::string).unwrap_or("");
-                    let frames = args_obj.get("frames").and_then(Json::integer).unwrap_or(1);
-                    if !["up", "down", "left", "right", "action", "cancel"].contains(&key) {
-                        Err("key must be up, down, left, right, action, or cancel".into())
-                    } else if !(1..=60).contains(&frames) {
-                        Err("frames must be 1..60".into())
-                    } else {
-                        call_game(&format!("/v1/input/press?key={key}&frames={frames}"))
-                    }
-                }
-                _ => call_extension_tool(name, args_obj),
-            };
+            let result = call_extension_tool(name, args_obj);
             let (content, failed) = match result {
                 Ok(raw) => match Parser::parse(&raw) {
                     Ok(value) => (json(&value), false),
@@ -775,19 +721,22 @@ mod tests {
     }
 
     #[test]
-    fn invalid_control_arguments_return_mcp_tool_error() {
-        let request = Parser::parse(
-            r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"press_key","arguments":{"key":"sideways"}}}"#,
-        )
+    fn extension_tools_are_advertised_from_plugin_routes() {
+        let listing = Parser::parse(&tools_from_routes([
+            ExtensionRoute {
+                method: "GET".into(),
+                path: "/v1/game/status".into(),
+                operation: "game_status".into(),
+                arguments: vec![],
+            },
+            ExtensionRoute {
+                method: "POST".into(),
+                path: "/v1/game/teleport".into(),
+                operation: "teleport".into(),
+                arguments: vec!["map_id".into(), "x".into(), "y".into()],
+            },
+        ]))
         .unwrap();
-        let reply = handle(request).unwrap();
-        assert!(reply.contains("\"isError\":true"));
-        assert!(reply.contains("key must be up"));
-    }
-
-    #[test]
-    fn built_in_tools_are_advertised_without_game_specific_handlers() {
-        let listing = Parser::parse(&tools()).unwrap();
         let names = listing
             .get("tools")
             .and_then(|value| match value {
@@ -797,15 +746,11 @@ mod tests {
             .unwrap();
         assert!(names
             .iter()
-            .any(|tool| tool.get("name").and_then(Json::string) == Some("world_map")));
+            .any(|tool| tool.get("name").and_then(Json::string) == Some("game_status")));
         assert!(names
             .iter()
             .any(|tool| tool.get("name").and_then(Json::string) == Some("teleport")));
-        assert!(!names.iter().any(|tool| {
-            tool.get("name")
-                .and_then(Json::string)
-                .is_some_and(|name| name.starts_with("pokemon_essentials_"))
-        }));
+        assert_eq!(names.len(), 2);
     }
 
     #[test]
@@ -825,28 +770,14 @@ mod tests {
 
     #[cfg(feature = "api-docs")]
     #[test]
-    fn generated_openapi_lists_the_live_and_essentials_endpoints() {
+    fn generated_openapi_lists_only_route_discovery() {
         use utoipa::OpenApi as _;
         let spec = openapi::ApiDoc::openapi().to_pretty_json().unwrap();
         Parser::parse(&spec).expect("generated OpenAPI should be valid JSON");
-        for endpoint in [
-            "/v1/game/status",
-            "/v1/game/surroundings",
-            "/v1/game/world-map",
-            "/v1/game/maps/{map_id}/tiles",
-            "/v1/game/teleport",
-            "/v1/pokemon-essentials/status",
-            "/v1/pokemon-essentials/party",
-            "/v1/pokemon-essentials/party/{slot}",
-            "/v1/pokemon-essentials/encounters/current-map",
-            "/v1/pokemon-essentials/npcs/current-map",
-            "/v1/pokemon-essentials/battle",
-            "/v1/pokemon-essentials/wild-encounter",
-            "/v1/pokemon-essentials/debug",
-            "/v1/input/press",
-            "/v1/input/held",
-        ] {
-            assert!(spec.contains(endpoint), "missing OpenAPI path {endpoint}");
-        }
+        assert!(spec.contains("/v1/extensions/routes"));
+        assert!(!spec.contains("/v1/game/"));
+        assert!(!spec.contains("/v1/input/"));
+        assert!(!spec.contains("pokemon-essentials"));
+        assert!(!spec.contains("Pokémon Essentials"));
     }
 }

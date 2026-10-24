@@ -15,9 +15,8 @@
 //! into a 256-entry cache; otherwise it uses the bounded background decoder in
 //! the private `assets` submodule.
 //!
-//! The Cable Club methods (non-WASM) delegate to `crate::cable_club`, and
-//! `save_endpoint` writes the game's `Data/serverinfo.ini` under `game_root` (or
-//! the current directory).
+//! Plugin webview assets are resolved from the active game root (or the
+//! browser-provided asset reader).
 #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
 mod assets;
 
@@ -69,22 +68,6 @@ impl crate::ui::backend::Backend for LocalServices {
     }
     fn set_patch_value(&self, id: &str, v: f64) -> bool {
         crate::runtime_patch::set_value(id, v)
-    }
-    #[cfg(feature = "game-api")]
-    fn listening_port(&self) -> Option<u16> {
-        crate::api_bridge::listening_port()
-    }
-    #[cfg(feature = "game-api")]
-    fn start_api(&self, port: u16) -> Result<(), String> {
-        crate::api_bridge::start(port)
-    }
-    #[cfg(feature = "game-api")]
-    fn take_response(&self, id: u64) -> Option<Result<String, String>> {
-        crate::api_bridge::take_ui_response(id)
-    }
-    #[cfg(feature = "game-api")]
-    fn send_request(&self, op: &str, args: Vec<String>) -> Result<u64, String> {
-        crate::api_bridge::send_from_ui(op, args)
     }
     #[cfg(feature = "game-api")]
     fn asset_image(&self, category: &str, name: &str) -> Option<std::sync::Arc<image::RgbaImage>> {
@@ -139,25 +122,12 @@ impl crate::ui::backend::Backend for LocalServices {
         }
     }
     #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
-    fn cable_status(&self) -> crate::cable_club::ServerStatus {
-        crate::cable_club::status()
-    }
-    #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
-    fn stop_cable(&self) {
-        crate::cable_club::stop()
-    }
-    #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
-    fn start_cable(&self, bind: &str, port: u16) -> Result<(), String> {
-        crate::cable_club::start(bind, port)
-    }
-    #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
-    fn save_endpoint(&self, host: &str, port: u16) -> Result<std::path::PathBuf, String> {
-        let root = self
-            .game_root
-            .clone()
-            .or_else(|| std::env::current_dir().ok())
-            .ok_or("No game directory")?;
-        crate::cable_club::save_client_endpoint_at(&root, host, port)
+    fn handle_plugin_operation(
+        &self,
+        operation: &str,
+        arguments: &serde_json::Value,
+    ) -> Option<Result<serde_json::Value, String>> {
+        crate::cable_club::handle_plugin_operation(operation, arguments, self.game_root.as_deref())
     }
 }
 

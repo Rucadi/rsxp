@@ -1313,13 +1313,17 @@ fn on_shutdown() { }
                 "/../../extensions/essentials-runtime-patches.rhai"
             ),
             concat!(env!("CARGO_MANIFEST_DIR"), "/../../extensions/pokeapi.rhai"),
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../extensions/essentials-online-play.rhai"
+            ),
         ] {
             let package = ExtensionPackage::from_rhai_file(path).unwrap();
             assert!(!package.manifest.id.is_empty());
             host.load(package).unwrap();
         }
         host.activate_all().unwrap();
-        assert_eq!(host.ui().count(), 2);
+        assert_eq!(host.ui().count(), 3);
     }
 
     fn dynamic_demo_package() -> ExtensionPackage {

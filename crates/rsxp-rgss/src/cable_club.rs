@@ -36,6 +36,8 @@ use std::{
     time::Duration,
 };
 
+use serde_json::{json, Value};
+
 const MAX_RECORD_BYTES: usize = 256 * 1024;
 const MAX_PARTY_FIELDS: usize = 8192;
 const MAX_CLIENTS: usize = 64;
@@ -137,6 +139,81 @@ pub fn status() -> ServerStatus {
         .and_then(|active| active.as_ref().map(|handle| Arc::clone(&handle.status)))
         .and_then(|status| status.lock().ok().map(|status| status.clone()))
         .unwrap_or_default()
+}
+
+/// Handles host-side operations requested by the Online Play extension.
+/// Keeping this adapter beside the relay keeps the frontend generic: it only
+/// forwards plugin requests and does not know any game or feature names.
+#[cfg(feature = "game-api")]
+pub fn handle_plugin_operation(
+    operation: &str,
+    arguments: &Value,
+    game_root: Option<&std::path::Path>,
+) -> Option<Result<Value, String>> {
+    let operation = operation.rsplit_once('.')?.1;
+    match operation {
+        "cable_status" => {
+            let current = status();
+            let clients = current
+                .clients
+                .into_iter()
+                .map(|client| {
+                    json!({
+                        "name": client.name,
+                        "address": client.address,
+                        "room_code": client.room_code,
+                        "state": client.state,
+                    })
+                })
+                .collect::<Vec<_>>();
+            Some(Ok(json!({
+                "address": current.address,
+                "clients": clients,
+                "error": current.error,
+            })))
+        }
+        "cable_start" => {
+            let bind = arguments
+                .get("bind")
+                .and_then(Value::as_str)
+                .unwrap_or("0.0.0.0");
+            let Some(port) = value_u16(arguments.get("port")) else {
+                return Some(Err("Port must be between 1 and 65535".into()));
+            };
+            Some(start(bind, port).map(|_| json!({"started": true})))
+        }
+        "cable_stop" => {
+            stop();
+            Some(Ok(json!({"stopped": true})))
+        }
+        "cable_save" => {
+            let host = arguments
+                .get("host")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let Some(port) = value_u16(arguments.get("port")) else {
+                return Some(Err("Port must be between 1 and 65535".into()));
+            };
+            let result = if let Some(root) = game_root {
+                save_client_endpoint_at(root, host, port)
+            } else {
+                std::env::current_dir()
+                    .map_err(|error| error.to_string())
+                    .and_then(|root| save_client_endpoint_at(&root, host, port))
+            };
+            Some(result.map(|path| json!({"saved": true, "path": path})))
+        }
+        _ => None,
+    }
+}
+
+#[cfg(feature = "game-api")]
+fn value_u16(value: Option<&Value>) -> Option<u16> {
+    value
+        .and_then(Value::as_u64)
+        .and_then(|value| u16::try_from(value).ok())
+        .or_else(|| value?.as_str()?.parse().ok())
+        .filter(|value| *value != 0)
 }
 
 #[derive(Clone)]

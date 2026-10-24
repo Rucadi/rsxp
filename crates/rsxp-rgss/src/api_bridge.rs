@@ -12,9 +12,9 @@
 //! [`poll`] yields zero or more newline-terminated requests, each
 //! `id<TAB>method<TAB>arg…`, where `id` is a monotonic `u64`. `route_http` maps
 //! an HTTP method and target (`/v1/…`, with URL-decoded query parameters) to
-//! `(operation, args)` or an HTTP `(status, message)`. Built-in routes stay
-//! small and generic; extension routes are registered by the host and only
-//! have their path arguments extracted here. Extension Ruby owns validation,
+//! `(operation, args)` or an HTTP `(status, message)`. All HTTP routes are
+//! registered by the host from loaded extensions and only have their path
+//! arguments extracted here. Extension Ruby owns validation,
 //! game-state access, and the JSON response. `respond` completes the request
 //! with that JSON string unchanged.
 //!
@@ -167,45 +167,7 @@ pub fn extension_routes_json() -> String {
 }
 
 pub fn route_http(method: &str, target: &str) -> Result<(String, Vec<String>), (u16, String)> {
-    let (path, query) = target.split_once('?').unwrap_or((target, ""));
-    let query: Vec<(String, String)> = query
-        .split('&')
-        .filter_map(|pair| {
-            let (key, value) = pair.split_once('=')?;
-            Some((url_decode(key)?, url_decode(value)?))
-        })
-        .collect();
-    let value = |name: &str| {
-        query
-            .iter()
-            .find(|(key, _)| key == name)
-            .map(|(_, value)| value.as_str())
-    };
-    let (operation, args) = match (method, path) {
-        ("GET", "/v1/game/status") => ("game_status", vec![]),
-        ("GET", "/v1/game/surroundings") => (
-            "get_surroundings",
-            vec![value("radius").unwrap_or("5").to_string()],
-        ),
-        ("POST", "/v1/game/teleport") => (
-            "teleport",
-            vec![
-                value("map_id").unwrap_or("").to_string(),
-                value("x").unwrap_or("").to_string(),
-                value("y").unwrap_or("").to_string(),
-            ],
-        ),
-        ("POST", "/v1/input/press") => (
-            "press_key",
-            vec![
-                value("key").unwrap_or("").to_string(),
-                value("frames").unwrap_or("1").to_string(),
-            ],
-        ),
-        ("DELETE", "/v1/input/held") => ("release_all_keys", vec![]),
-        _ => return route_extension(method, target),
-    };
-    Ok((operation.to_owned(), args))
+    route_extension(method, target)
 }
 
 fn route_extension(method: &str, target: &str) -> Result<(String, Vec<String>), (u16, String)> {
@@ -344,17 +306,7 @@ pub fn take_ui_response(id: u64) -> Option<Result<String, String>> {
 }
 
 fn is_supported_operation(method: &str) -> bool {
-    let builtin = matches!(
-        method,
-        "game_status"
-            | "get_surroundings"
-            | "teleport"
-            | "ruby_inject"
-            | "ruby_unload"
-            | "start_cable_club"
-            | "press_key"
-            | "release_all_keys"
-    );
+    let builtin = matches!(method, "ruby_inject" | "ruby_unload" | "start_cable_club");
     builtin
         || EXTENSION_OPERATIONS
             .get()
@@ -456,6 +408,18 @@ mod tests {
             ),
             (
                 "GET".into(),
+                "/v1/game/status".into(),
+                "game_status".into(),
+                vec![],
+            ),
+            (
+                "GET".into(),
+                "/v1/game/surroundings".into(),
+                "get_surroundings".into(),
+                vec!["radius".into()],
+            ),
+            (
+                "GET".into(),
                 "/v1/game/world-map".into(),
                 "world_map".into(),
                 vec![],
@@ -465,6 +429,24 @@ mod tests {
                 "/v1/game/maps/{map_id}/tiles".into(),
                 "map_preview".into(),
                 vec!["map_id".into()],
+            ),
+            (
+                "POST".into(),
+                "/v1/game/teleport".into(),
+                "teleport".into(),
+                vec!["map_id".into(), "x".into(), "y".into()],
+            ),
+            (
+                "POST".into(),
+                "/v1/input/press".into(),
+                "press_key".into(),
+                vec!["key".into(), "frames".into()],
+            ),
+            (
+                "DELETE".into(),
+                "/v1/input/held".into(),
+                "release_all_keys".into(),
+                vec![],
             ),
             (
                 "GET".into(),
@@ -732,6 +714,7 @@ mod tests {
     #[test]
     fn egui_requests_use_the_game_queue_without_starting_http() {
         assert_eq!(listening_port(), None);
+        register_test_extension_routes();
         let id = send_from_ui("game_status", Vec::new()).unwrap();
         let request = String::from_utf8(poll()).unwrap();
         assert_eq!(request, format!("{id}\tgame_status\n"));

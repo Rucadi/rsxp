@@ -116,6 +116,17 @@ impl Default for SharedApp {
             .load(package)
             .expect("bundled Essentials inventory plugin must load");
         #[cfg(not(target_arch = "wasm32"))]
+        {
+            let package = ExtensionPackage::load(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../extensions/essentials-online-play.rhai"
+            ))
+            .expect("bundled Essentials online-play plugin must be valid");
+            plugins
+                .load(package)
+                .expect("bundled Essentials online-play plugin must load");
+        }
+        #[cfg(not(target_arch = "wasm32"))]
         load_external_plugins(&mut plugins);
         rsxp::api_bridge::register_extension_routes(plugins.route_aliases());
         Self::new(

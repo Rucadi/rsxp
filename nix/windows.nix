@@ -17,6 +17,14 @@ let
   crossCC = crossPkgs.stdenv.cc;
   mingwRuntime = crossPkgs.windows.mingw_w64;
 
+  # webview2-com-sys links the MinGW build to the WebView2 loader DLL. The
+  # crate ships the matching architecture-specific loader beside its import
+  # libraries, but Cargo only consumes the latter during linking.
+  webview2ComSys = pkgs.fetchurl {
+    url = "https://crates.io/api/v1/crates/webview2-com-sys/0.39.1/download";
+    hash = "sha256-s6BxMndRF9YGWFPZ0ReBV7jJDiKN5HEp1rzix+3r7fs=";
+  };
+
 in
 crossPkgs.rustPlatform.buildRustPackage {
   pname = "rsxp";
@@ -174,6 +182,14 @@ crossPkgs.rustPlatform.buildRustPackage {
         cp "$dll" "$out/bin/"
       fi
     done
+
+    # webview2-com-sys uses the dynamic WebView2 loader for MinGW. Ship the
+    # x64 loader next to rsxp.exe so Windows can resolve it from the portable
+    # distribution directory.
+    webview2_src="$TMPDIR/webview2-com-sys"
+    mkdir -p "$webview2_src"
+    tar -xzf ${webview2ComSys} -C "$webview2_src" --strip-components=1
+    cp "$webview2_src/x64/WebView2Loader.dll" "$out/bin/"
 
     # Ruby's extension modules and standard library are shipped next to the
     # executable. Keep any DLLs from Ruby in the same loader-search directory.

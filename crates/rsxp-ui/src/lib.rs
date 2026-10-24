@@ -67,26 +67,26 @@ impl Default for SharedApp {
         plugins
             .load(package)
             .expect("bundled PokeAPI plugin must load");
-        let package = ExtensionPackage::load(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../extensions/essentials-world-map.rhai"
-        ))
+        let package = ExtensionPackage::from_rhai(
+            "essentials-world-map",
+            include_str!("../../../extensions/essentials-world-map.rhai").into(),
+        )
         .expect("bundled Essentials World Map plugin must be valid");
         plugins
             .load(package)
             .expect("bundled Essentials World Map plugin must load");
-        let package = ExtensionPackage::load(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../extensions/essentials-movedex.rhai"
-        ))
+        let package = ExtensionPackage::from_rhai(
+            "essentials-movedex",
+            include_str!("../../../extensions/essentials-movedex.rhai").into(),
+        )
         .expect("bundled Essentials Movedex plugin must be valid");
         plugins
             .load(package)
             .expect("bundled Essentials Movedex plugin must load");
-        let package = ExtensionPackage::load(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../extensions/essentials-itemdex.rhai"
-        ))
+        let package = ExtensionPackage::from_rhai(
+            "essentials-itemdex",
+            include_str!("../../../extensions/essentials-itemdex.rhai").into(),
+        )
         .expect("bundled Essentials Itemdex plugin must be valid");
         plugins
             .load(package)
@@ -99,10 +99,10 @@ impl Default for SharedApp {
         plugins
             .load(package)
             .expect("bundled Essentials Pokedex plugin must load");
-        let package = ExtensionPackage::load(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../extensions/essentials-encounters.rhai"
-        ))
+        let package = ExtensionPackage::from_rhai(
+            "essentials-encounters",
+            include_str!("../../../extensions/essentials-encounters.rhai").into(),
+        )
         .expect("bundled Essentials encounters plugin must be valid");
         plugins
             .load(package)
@@ -117,10 +117,10 @@ impl Default for SharedApp {
             .expect("bundled Essentials inventory plugin must load");
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let package = ExtensionPackage::load(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../extensions/essentials-online-play.rhai"
-            ))
+            let package = ExtensionPackage::from_rhai(
+                "essentials-online-play",
+                include_str!("../../../extensions/essentials-online-play.rhai").into(),
+            )
             .expect("bundled Essentials online-play plugin must be valid");
             plugins
                 .load(package)

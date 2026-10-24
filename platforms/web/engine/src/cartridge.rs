@@ -260,6 +260,11 @@ pub fn web_core_init(name: &str, bytes: &[u8]) -> Result<String, JsValue> {
         .and_then(|extension| extension.to_str())
         .map(str::to_ascii_lowercase)
         .ok_or_else(|| JsValue::from_str("The ROM must be a .gba or .nds file"))?;
+    if !matches!(extension.as_str(), "gba" | "nds") {
+        return Err(JsValue::from_str(&format!(
+            "Unsupported cartridge file '{name}'; expected a .gba or .nds ROM"
+        )));
+    }
     let path = Path::new(name);
     let probe = rsxp_core::ContentProbe::new(path, false, bytes);
     let registration = rsxp_cores::catalog()

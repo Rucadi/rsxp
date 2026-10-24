@@ -16,6 +16,7 @@ let
       libxkbcommon
       vulkan-loader
       wayland
+      glib
     ]
   );
 in

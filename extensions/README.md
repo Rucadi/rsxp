@@ -91,9 +91,10 @@ let html = "<button onclick=\"fetch('/v1/game/status').then(r => r.json()).then(
 webview_open("main", "My plugin", html);
 ```
 
-On desktop this creates an internal Wry/WebKit view. The host starts the
-loopback game API when the view is opened and rewrites relative `/v1/...`
-requests to that API. The transport includes CORS headers for plugin pages.
+On desktop this creates a native Wry/WebKit view (a separate resizable window
+on Linux and macOS). The host starts the loopback game API when the view is
+opened and rewrites relative `/v1/...` requests to that API. The transport
+includes CORS headers for plugin pages.
 In the browser the same plugin HTML is placed in an iframe overlay; its
 `fetch('/v1/...')` calls are routed through the WebAssembly game API bridge,
 so plugins do not need separate native and browser source files. The browser

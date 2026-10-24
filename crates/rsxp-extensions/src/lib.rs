@@ -512,6 +512,11 @@ pub struct ExtensionHost {
     generation: u64,
     registry: OperationRegistry,
     instances: BTreeMap<String, ExtensionInstance>,
+    /// Package order is significant for lifecycle hooks: extensions may
+    /// inject Ruby modules that later extensions depend on. Keep the map for
+    /// stable lookup/UI ordering, but use this list for activation and request
+    /// delivery.
+    load_order: Vec<String>,
     request_owners: HashMap<u64, String>,
     shutdown_requests: Vec<OperationRequest>,
     activated: bool,
@@ -576,6 +581,7 @@ impl ExtensionHost {
         if self.activated {
             instance.activate()?;
         }
+        self.load_order.push(id.clone());
         self.instances.insert(id, instance);
         Ok(())
     }
@@ -591,6 +597,7 @@ impl ExtensionHost {
     }
 
     pub fn unload(&mut self, id: &str) -> Result<(), ExtensionError> {
+        self.load_order.retain(|loaded| loaded != id);
         let result = if let Some(mut instance) = self.instances.remove(id) {
             let result = instance.shutdown();
             let shutdown_requests = instance.take_requests();
@@ -608,8 +615,11 @@ impl ExtensionHost {
     }
 
     pub fn activate_all(&mut self) -> Result<(), ExtensionError> {
-        for instance in self.instances.values_mut() {
-            instance.activate()?;
+        let load_order = self.load_order.clone();
+        for id in load_order {
+            if let Some(instance) = self.instances.get_mut(&id) {
+                instance.activate()?;
+            }
         }
         self.activated = true;
         Ok(())
@@ -665,10 +675,12 @@ impl ExtensionHost {
 
     pub fn take_requests(&mut self) -> Vec<OperationRequest> {
         let mut requests = std::mem::take(&mut self.shutdown_requests);
-        for (owner, instance) in &self.instances {
-            for request in instance.take_requests() {
-                self.request_owners.insert(request.id, owner.clone());
-                requests.push(request);
+        for owner in &self.load_order {
+            if let Some(instance) = self.instances.get_mut(owner) {
+                for request in instance.take_requests() {
+                    self.request_owners.insert(request.id, owner.clone());
+                    requests.push(request);
+                }
             }
         }
         requests
@@ -1618,6 +1630,27 @@ fn on_shutdown() { }
             node,
             UiNode::Label { text, .. } if text == "Essentials is active."
         )));
+    }
+
+    #[test]
+    fn ruby_extension_requests_follow_load_order() {
+        let mut host = ExtensionHost::new();
+        // `essentials-encounters` sorts before `essentials-game-api`; the
+        // latter must still inject first because encounters extends it.
+        host.load(game_api_package()).unwrap();
+        host.load(encounters_package()).unwrap();
+        host.activate_all().unwrap();
+
+        let requests = host.take_requests();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(
+            requests[0].operation,
+            "essentials-game-api.__ruby.inject"
+        );
+        assert_eq!(
+            requests[1].operation,
+            "essentials-encounters.__ruby.inject"
+        );
     }
 
     #[test]

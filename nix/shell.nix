@@ -12,6 +12,7 @@ let
       libxkbcommon
       vulkan-loader
       wayland
+      pkgs.webkitgtk_4_1
     ]
   );
 in
@@ -41,8 +42,6 @@ pkgs.mkShell {
     pkgs.ruby_4_0
     pkgs.zlib
     pkgs.libffi
-    pkgs.webkitgtk_4_1
-
   ];
   LD_LIBRARY_PATH = lib.optionalString isLinux (
     lib.makeLibraryPath (runtimeLibraries ++ [ pkgs.ruby_4_0 ])

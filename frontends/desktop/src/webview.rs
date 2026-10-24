@@ -9,11 +9,15 @@
 //! reparented into an arbitrary winit surface. The GTK path works on both X11
 //! and Wayland, at the cost of hosting the view in its own toplevel window.
 //! GTK events are pumped from the egui update loop, as wry recommends for
-//! winit hosts. Other platforms keep the embedded child webview. The browser
-//! frontend uses a DOM iframe for the equivalent operation.
+//! winit hosts. macOS uses a hidden child only as a Wry opener and presents
+//! the actual page in Wry's native popup window; other desktop platforms keep
+//! the embedded child webview. The browser frontend uses a DOM iframe for the
+//! equivalent operation.
 
 use eframe::Frame;
 use std::sync::{Arc, Mutex};
+#[cfg(target_os = "macos")]
+use wry::NewWindowResponse;
 use wry::{WebView, WebViewBuilder};
 
 #[cfg(not(target_os = "linux"))]
@@ -22,7 +26,7 @@ use wry::{dpi::LogicalPosition, dpi::LogicalSize, Rect};
 #[cfg(target_os = "linux")]
 use gtk::prelude::*;
 
-/// Size of the embedded panel (non-Linux) or standalone window (Linux).
+/// Size of the standalone window or popup, and the embedded panel fallback.
 const VIEW_SIZE: (f64, f64) = (720.0, 560.0);
 /// Position of the embedded panel inside the dashboard window (non-Linux).
 #[cfg(not(target_os = "linux"))]
@@ -87,7 +91,6 @@ impl PluginWebView {
             html
         );
         let builder = WebViewBuilder::new()
-            .with_html(document)
             .with_ipc_handler(move |request| {
                 let Ok(value) = serde_json::from_str::<serde_json::Value>(request.body()) else {
                     return;
@@ -135,19 +138,56 @@ impl PluginWebView {
         #[cfg(target_os = "linux")]
         {
             let _ = frame;
-            Self::open_linux(title, builder, requests)
+            Self::open_linux(title, builder.with_html(document), requests)
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let window = frame
+                .winit_window()
+                .ok_or_else(|| "the desktop window is not available".to_owned())?;
+            Self::open_macos(window, builder, &document, requests)
         }
         #[cfg(not(target_os = "linux"))]
+        #[cfg(not(target_os = "macos"))]
         {
             let window = frame
                 .winit_window()
                 .ok_or_else(|| "the desktop window is not available".to_owned())?;
             let view = builder
+                .with_html(document)
                 .with_bounds(bounds(VIEW_POSITION, VIEW_SIZE))
                 .build_as_child(window)
                 .map_err(|error| format!("could not open plugin webview: {error}"))?;
             Ok(Self { view, requests })
         }
+    }
+
+    /// Wry can create a real native popup for `window.open` on macOS. Keep a
+    /// hidden child webview as the opener so the popup shares the same WKWebView
+    /// configuration and IPC handler, then write the plugin document into the
+    /// popup. The popup is owned by Wry and gets normal title-bar controls and
+    /// resize behavior.
+    #[cfg(target_os = "macos")]
+    fn open_macos(
+        window: &winit::window::Window,
+        builder: WebViewBuilder<'_>,
+        document: &str,
+        requests: Arc<Mutex<Vec<PluginWebViewRequest>>>,
+    ) -> Result<Self, String> {
+        let launcher = format!(
+            "<!doctype html><html><head><script>{}</script></head><body><script>\n                const popup = window.open('about:blank', '_blank', 'width={},height={},resizable=yes');\n                if (popup) {{\n                    popup.document.open();\n                    popup.document.write({});\n                    popup.document.close();\n                }}\n            </script></body></html>",
+            native_bridge_script(),
+            VIEW_SIZE.0 as i32,
+            VIEW_SIZE.1 as i32,
+            javascript_string(document),
+        );
+        let view = builder
+            .with_html(launcher)
+            .with_visible(false)
+            .with_new_window_req_handler(|_, _| NewWindowResponse::Allow)
+            .build_as_child(window)
+            .map_err(|error| format!("could not open plugin webview: {error}"))?;
+        Ok(Self { view, requests })
     }
 
     /// Builds the webview inside an expanding GTK `Box`, which wry supports on
@@ -232,9 +272,35 @@ impl PluginWebView {
 fn native_bridge_script() -> &'static str {
     r#"
       (() => {
+        // On macOS the visible page is a native popup created by window.open,
+        // while the hidden opener owns Wry's IPC handler and the response
+        // evaluator. Delegate popup calls to that opener so request replies
+        // resolve in the same JavaScript context that created them.
+        let openerBridge = null;
+        try {
+          if (window.opener && window.opener.RSXP && window.opener.RSXP.__native) {
+            openerBridge = window.opener.RSXP;
+          }
+        } catch (_) {}
+        if (openerBridge) {
+          window.RSXP = window.RSXP || {};
+          window.RSXP.api = (...args) => openerBridge.api(...args);
+          window.RSXP.http = window.RSXP.api;
+          window.RSXP.asset = (...args) => openerBridge.asset(...args);
+          const nativeFetch = window.fetch.bind(window);
+          window.fetch = (input, init = {}) => {
+            const raw = typeof input === 'string' ? input : input.url;
+            if (!raw.startsWith('/v1/')) return nativeFetch(input, init);
+            const method = String(init.method || (typeof input === 'string' ? 'GET' : input.method) || 'GET').toUpperCase();
+            return window.RSXP.api(method, raw, init.body || '');
+          };
+          return;
+        }
+
         const pending = new Map();
         let next = 1;
         window.RSXP = window.RSXP || {};
+        window.RSXP.__native = true;
         window.RSXP.api = (method, target, body = '') => new Promise((resolve, reject) => {
           const id = next++;
           pending.set(id, { kind: 'api', resolve, reject });
@@ -269,6 +335,18 @@ fn native_bridge_script() -> &'static str {
         };
       })();
     "#
+}
+
+#[cfg(target_os = "macos")]
+fn javascript_string(value: &str) -> String {
+    // JSON is valid JavaScript string syntax. Escape HTML-sensitive characters
+    // as well so a plugin containing `</script>` cannot terminate the launcher
+    // script before the popup receives its document.
+    serde_json::to_string(value)
+        .expect("serializing a Rust string to JSON cannot fail")
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+        .replace('&', "\\u0026")
 }
 
 #[cfg(not(target_os = "linux"))]

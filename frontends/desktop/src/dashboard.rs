@@ -1329,18 +1329,43 @@ impl eframe::App for DesktopApp {
 fn legacy_plugin_call(request: &OperationRequest) -> Option<(&str, Vec<String>)> {
     if request.operation.ends_with(".__ruby.inject") {
         let source = request.arguments.get("source")?.as_str()?;
-        let patch_name = format!("rhai-{}", request.id);
+        let name = request
+            .arguments
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("plugin");
+        let name = name
+            .chars()
+            .map(|character| {
+                if character.is_ascii_alphanumeric() || matches!(character, '_' | '-') {
+                    character
+                } else {
+                    '-'
+                }
+            })
+            .collect::<String>();
+        let patch_name = format!(
+            "rhai-{}-{}",
+            if name.is_empty() { "plugin" } else { &name },
+            request.id
+        );
         return Some((
             "ruby_inject",
             vec![patch_name, rsxp::api_bridge::hex_encode(source)],
         ));
     }
     if request.operation.ends_with(".__ruby.unload") {
-        let handle = request.arguments.get("handle")?.as_i64()?;
-        if handle <= 0 {
-            return None;
-        }
-        return Some(("ruby_unload", vec![format!("rhai-{handle}")]));
+        let handle = request.arguments.get("handle")?;
+        let handle = handle
+            .as_str()
+            .map(str::to_owned)
+            .or_else(|| {
+                handle
+                    .as_i64()
+                    .filter(|value| *value > 0)
+                    .map(|value| format!("rhai-{value}"))
+            })?;
+        return Some(("ruby_unload", vec![handle]));
     }
     let operation = request.operation.rsplit_once('.')?.1;
     let arguments = request.arguments.as_object()?.values().map(|value| {

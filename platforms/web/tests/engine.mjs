@@ -50,7 +50,10 @@ console.log('OK');
 // The browser inspector uses the shared game-thread queue without a listener.
 const { strict: assert } = await import('node:assert');
 assert.equal(call('api_supported'), '1');
-assert.match(call('api_game_bridge'), /module GameAPI/);
+// The game-specific Ruby API is now installed by the Rhai extension package.
+// The legacy endpoint remains available for compatibility, but intentionally
+// has no bundled module to avoid loading the old in-core bridge twice.
+assert.equal(call('api_game_bridge'), '');
 const requestId = wasm.web_game_request('game_status', []);
 assert.equal(wasm.web_game_response(requestId), undefined);
 assert.equal(call('api_poll'), `${requestId}\tgame_status\n`);

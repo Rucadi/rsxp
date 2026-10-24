@@ -17,6 +17,7 @@ let
       vulkan-loader
       wayland
       glib
+      webkitgtk_4_1
     ]
   );
 in

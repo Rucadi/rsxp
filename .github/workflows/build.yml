@@ -66,50 +66,24 @@ jobs:
           if-no-files-found: error
 
   appimage:
-    name: Linux / AppImage (Debian 11)
+    name: Linux / AppImage (Nix)
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      # The AppImage is built in a plain Debian 11 image rather than with Nix,
-      # so it links against an old glibc (2.31) and runs on Ubuntu 20.04+ and
-      # every newer distribution. See packaging/appimage/Dockerfile.
-      - uses: docker/setup-buildx-action@v3
-      - name: Build the AppImage toolchain image
-        uses: docker/build-push-action@v6
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v17
         with:
-          context: packaging/appimage
-          file: packaging/appimage/Dockerfile
-          tags: rsxp-appimage
-          load: true
-          cache-from: type=gha,scope=appimage
-          cache-to: type=gha,mode=max,scope=appimage
-      - name: Restore Rust build cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            .appimage-cache/cargo-registry
-            .appimage-cache/cargo-git
-            .appimage-cache/target
-          key: appimage-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            appimage-${{ runner.os }}-
-      - name: Build AppImage
+          name: rsxp
+          authToken: '${{ secrets.CACHIX_KEY }}'
+      - name: Build AppImage with its Nix runtime closure
         run: |
-          mkdir -p .appimage-cache/cargo-registry .appimage-cache/cargo-git \
-            .appimage-cache/target artifacts
-          docker run --rm \
-            --user "$(id -u):$(id -g)" \
-            --env HOME=/tmp \
-            --volume "$PWD":/src \
-            --volume "$PWD/.appimage-cache/cargo-registry":/usr/local/cargo/registry \
-            --volume "$PWD/.appimage-cache/cargo-git":/usr/local/cargo/git \
-            --volume "$PWD/.appimage-cache/target":/src/target \
-            --workdir /src \
-            rsxp-appimage \
-            bash tools/build-appimage.sh /src/artifacts
+          nix build --print-build-logs .#appimage --out-link result-appimage
+          mkdir -p artifacts
+          cp -L result-appimage artifacts/rsxp-linux-x86_64.AppImage
+          chmod +x artifacts/rsxp-linux-x86_64.AppImage
       - name: Smoke-test AppImage without a build environment
         run: |
           export APPIMAGE_EXTRACT_AND_RUN=1

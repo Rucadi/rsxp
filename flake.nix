@@ -2,9 +2,11 @@
   description = "Native Rust engine for RPG Maker RGSS games";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs.nix-appimage.url = "github:ralismark/nix-appimage";
+  inputs.nix-appimage.inputs.nixpkgs.follows = "nixpkgs";
 
   outputs =
-    { self, nixpkgs }:
+    { self, nixpkgs, nix-appimage }:
     let
       lib = nixpkgs.lib;
       systems = [
@@ -29,6 +31,7 @@
           rsxp = package;
         }
         // lib.optionalAttrs (system == "x86_64-linux") {
+          appimage = nix-appimage.bundlers.${system}.default package;
           windows = import ./nix/windows.nix {
             pkgs = nixpkgs.legacyPackages.x86_64-linux;
           };

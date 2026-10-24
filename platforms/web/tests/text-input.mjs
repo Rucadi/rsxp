@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { rubySource } from '../../tools/ruby-sources.mjs';
+import { rubySource } from '../../../tools/ruby-sources.mjs';
 import init, * as engine from '../dist/pkg/rsxp_web.js';
 import { DefaultRubyVM } from '../node_modules/@ruby/wasm-wasi/dist/esm/browser.js';
 import { PRELUDE } from '../browser/ruby-host.js';

@@ -16,3 +16,21 @@ resolver = "3"
 lto = true
 opt-level = 3
 codegen-units = 1
+
+# Dust's pinned dependencies use unstable SIMD APIs. Keep the same vendored
+# fixes as the desktop workspace so the browser build resolves identically.
+[patch."https://github.com/kelpsyberry/emu-utils"]
+emu-utils = { path = "../../cores/nds/vendor/emu-utils" }
+
+[patch."https://github.com/kelpsyberry/dust"]
+dust-soft-3d = { path = "../../cores/nds/vendor/dust-soft-3d" }
+
+[patch.crates-io]
+proc-bitfield = { path = "../../cores/nds/vendor/proc-bitfield" }
+
+# The ARM7TDMI interpreter in RustBoyAdvance-NG miscompiles at opt-level 2/3
+# for wasm32: a retail ROM jumps to an invalid PC and the undefined-instruction
+# panic fires. Level 1 keeps the browser GBA core correct while the rest of the
+# release build stays fully optimized.
+[profile.release.package.arm7tdmi]
+opt-level = 1

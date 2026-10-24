@@ -392,9 +392,14 @@ impl Core for NdsAdapter {
                 })
                 .collect::<String>()
         );
-        let save_path = context.platform.save_dir().join(&self.save_name);
+        let save_dir = context.platform.save_dir();
+        let save_path = save_dir.join(&self.save_name);
         let saved = match context.platform.read_save(&self.save_name) {
             Ok(Some(bytes)) => Some(bytes),
+            // An empty save directory means the platform owns save storage
+            // (for example a browser memory store). Never probe `std::fs`,
+            // which is unsupported there.
+            Ok(None) if save_dir.as_os_str().is_empty() => None,
             Ok(None) => match std::fs::read(&save_path) {
                 Ok(bytes) => Some(bytes),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,

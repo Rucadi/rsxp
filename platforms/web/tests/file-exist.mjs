@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { DefaultRubyVM } from '../node_modules/@ruby/wasm-wasi/dist/esm/browser.js';
 import { PRELUDE } from '../browser/ruby-host.js';
-import { rubySource } from '../../tools/ruby-sources.mjs';
+import { rubySource } from '../../../tools/ruby-sources.mjs';
 
 const root = resolve(import.meta.dirname, '..', '..');
 const wasm = readFileSync(resolve(import.meta.dirname, '../dist/ruby/ruby+stdlib.wasm'));

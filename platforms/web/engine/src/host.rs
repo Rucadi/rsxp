@@ -30,6 +30,14 @@ impl Host for WebHost {
     fn audio(&mut self) -> Option<&mut dyn rsxp::host::AudioBackend> {
         Some(&mut self.audio)
     }
+    fn has_performance_ui(&self) -> bool {
+        // The shared egui workspace owns the performance panel and the F10
+        // shortcut, so the engine must not paint a second in-game overlay.
+        true
+    }
+    fn now(&self) -> f64 {
+        crate::now_seconds()
+    }
     fn read_file(&self, path: &str) -> Option<Vec<u8>> {
         read_via_host(path)
     }

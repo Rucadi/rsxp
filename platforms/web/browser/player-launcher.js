@@ -7,6 +7,7 @@ const bundle = globalThis.RSXP_BUNDLE;
 const canvas = document.getElementById('screen');
 const picker = document.getElementById('game-folder');
 const zipPicker = document.getElementById('game-zip');
+const romPicker = document.getElementById('game-rom');
 const status = document.getElementById('launch-status');
 const events = new AbortController();
 const on = (target, name, callback, options = {}) => target.addEventListener(name, callback, { ...options, signal: events.signal });
@@ -26,16 +27,20 @@ const launcher = createLauncher({
   update({ title, status: message, busy }) { engine.web_eframe_launcher(title, message, busy); },
   pickFolder() { picker.value = ''; picker.click(); },
   pickZip() { zipPicker.value = ''; zipPicker.click(); },
+  pickRom() { romPicker.value = ''; romPicker.click(); },
   async launch({ game, releaseSource }) {
+    const cartridge = Boolean(game.rom);
+    // A cartridge session never starts ruby.wasm, so leave the interpreter
+    // module and RGSS bundle untouched (and avoid parsing ~30 MiB of Ruby).
+    if (!cartridge) await bundle.load('ruby/browser.umd.js');
     // Keep the renderer and WASM instance alive across the launcher/game boundary.
     globalThis.RSXP_PLAYER = {
       game, releaseSource, engineInitialized: true, eframeInitialized: true,
-      rubyBytes: bundle.decode(bundle.payload.ruby),
-      rgssSource: bundle.payload.rgss,
+      rubyBytes: cartridge ? undefined : bundle.decode(bundle.payload.ruby),
+      rgssSource: cartridge ? '' : bundle.payload.rgss,
       warmManifest: bundle.payload.manifest,
       status(text) { console.log(text); },
     };
-    await bundle.load('ruby/browser.umd.js');
     active = false;
     engine.web_eframe_finish_launcher();
     try {
@@ -52,11 +57,15 @@ const launcher = createLauncher({
 });
 on(picker, 'change', () => launcher.folder(picker.files));
 on(zipPicker, 'change', () => launcher.zip(zipPicker.files[0]));
+on(romPicker, 'change', () => launcher.rom(romPicker.files[0]));
 on(window, 'resize', resize);
 on(canvas, 'dragover', event => event.preventDefault());
 on(canvas, 'drop', event => {
   event.preventDefault();
-  if (event.dataTransfer.files.length === 1) launcher.zip(event.dataTransfer.files[0]);
+  if (event.dataTransfer.files.length !== 1) return;
+  const file = event.dataTransfer.files[0];
+  if (/\.(gba|nds)$/i.test(file.name)) launcher.rom(file);
+  else launcher.zip(file);
 });
 function paint() {
   if (!active) return;

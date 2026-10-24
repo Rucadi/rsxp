@@ -239,7 +239,9 @@ impl SessionPanel {
         ui.add_space(16.0);
         ui.separator();
         if self.capabilities.zip_import {
-            ui.label("Choose a game folder with Game.ini and Data, or open a ZIP archive.");
+            ui.label(
+                "Choose a game folder with Game.ini and Data, open a ZIP archive, or load a GBA/DS ROM.",
+            );
             if ui
                 .add_enabled(!self.busy, egui::Button::new("Open ZIP archive…"))
                 .clicked()
@@ -247,6 +249,17 @@ impl SessionPanel {
                 actions.import_zip = true;
             }
             ui.weak("Folder and ZIP files are read locally on your device.");
+        }
+        if self.capabilities.rom_import {
+            ui.add_space(12.0);
+            ui.label("Game Boy Advance or Nintendo DS ROM");
+            if ui
+                .add_enabled(!self.busy, egui::Button::new("Open GBA/NDS ROM…"))
+                .clicked()
+            {
+                actions.browse_game_file = true;
+            }
+            ui.weak("The ROM is read locally on your device.");
         }
         if self.capabilities.torrent_import {
             ui.add_space(12.0);

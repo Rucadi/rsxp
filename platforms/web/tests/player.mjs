@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { rubySource } from '../../tools/ruby-sources.mjs';
+import { rubySource } from '../../../tools/ruby-sources.mjs';
 
 test('Rust-packaged player includes both runtimes and current browser sources', () => {
   const html = readFileSync(new URL('../dist/player.html', import.meta.url), 'utf8');

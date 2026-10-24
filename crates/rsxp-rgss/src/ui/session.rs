@@ -48,6 +48,8 @@ pub struct SessionCapabilities {
     pub ruby_jit: bool,
     pub zip_import: bool,
     pub torrent_import: bool,
+    /// A host-provided single-file picker for GBA/DS ROMs.
+    pub rom_import: bool,
 }
 impl SessionCapabilities {
     pub const DESKTOP: Self = Self {
@@ -56,6 +58,7 @@ impl SessionCapabilities {
         ruby_jit: true,
         zip_import: false,
         torrent_import: false,
+        rom_import: false,
     };
     pub const BROWSER: Self = Self {
         paths: false,
@@ -63,6 +66,7 @@ impl SessionCapabilities {
         ruby_jit: false,
         zip_import: true,
         torrent_import: true,
+        rom_import: true,
     };
 }
 impl Default for SessionCapabilities {

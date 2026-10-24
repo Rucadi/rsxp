@@ -18,6 +18,7 @@ function harness({ supplied, launch = async () => {} } = {}) {
       location: { pathname: '/player.html' }, fetch: async () => ({ ok: false }),
       update: state => updates.push(state), launch,
       pickFolder: () => picks.push('folder'), pickZip: () => picks.push('zip'),
+      pickRom: () => picks.push('rom'),
     }),
   };
 }
@@ -46,6 +47,23 @@ test('ZIP import intent opens the host picker used by the shared library', () =>
   const { launcher, picks } = harness();
   launcher.action({ zip: true });
   assert.deepEqual(picks, ['zip']);
+});
+
+test('GBA/DS ROM intent opens the ROM picker and launches a cartridge session', async () => {
+  let started;
+  const { launcher, picks, updates } = harness({ launch: async game => { started = game; } });
+  launcher.action({ browse_game_file: true });
+  assert.deepEqual(picks, ['rom']);
+  const bytes = Uint8Array.from([0, 1, 2, 3]);
+  await launcher.rom({
+    name: 'Pokemon.gba',
+    size: bytes.length,
+    async arrayBuffer() { return bytes.buffer; },
+  });
+  assert.equal(updates.at(-1).title, 'Pokemon');
+  await launcher.action({ open: 'Pokemon' });
+  assert.equal(started.game.rom.name, 'Pokemon.gba');
+  assert.deepEqual(await started.game.readRom(), bytes);
 });
 
 test('invalid folders leave the shared launcher idle and report the error', async () => {

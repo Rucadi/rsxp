@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Platform services for the shared Rust SessionPanel. No widgets or layout here.
-import { createLocalGame } from './local-game.js';
+import { createLocalGame, createRomGame, isRom } from './local-game.js';
 import { openZip, downloadTorrent } from './game-import.js';
 
-export function createLauncher({ bundle, supplied, document, location, fetch, update, launch, pickFolder, pickZip }) {
+export function createLauncher({ bundle, supplied, document, location, fetch, update, launch, pickFolder, pickZip, pickRom }) {
   let prepared;
   let controller;
   let starting = false;
@@ -83,11 +83,23 @@ export function createLauncher({ bundle, supplied, document, location, fetch, up
       if (!/\.zip$/i.test(file.name)) { report('Choose a ZIP file containing one game.'); return; }
       return prepare(async signal => openZip(file, { zip: await zipLibrary(), signal }));
     },
+    rom(file) {
+      if (!file) return;
+      if (!isRom(file.name)) { report('Choose a .gba or .nds ROM file.'); return; }
+      return prepare(async () => {
+        const game = createRomGame(file, {
+          playerName: decodeURIComponent(location.pathname.split('/').pop() || 'player.html'),
+        });
+        await game.validate();
+        return { game, async dispose() {} };
+      });
+    },
     action(action) {
       if (action.cancel) controller?.abort();
       if (controller || starting) return;
       if (action.browse) pickFolder();
       if (action.zip) pickZip();
+      if (action.browse_game_file) pickRom();
       if (action.open) return start();
       if (action.download) return prepare(async signal => {
         const [{ default: WebTorrent }, zip] = await Promise.all([bundle.load('vendor/webtorrent.js'), zipLibrary()]);

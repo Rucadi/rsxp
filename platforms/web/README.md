@@ -37,9 +37,12 @@ Game composition remains in the shared CPU renderer.
 
 The library launcher is also shared Rust UI (`SessionPanel`). The browser boots
 that workspace before a game is selected; its adapter supplies folder/ZIP/torrent
-imports and the prepared game appears in the shared library. Select **Play game**
-to start. Desktop keeps native path/ROM selection, recent games, backups, and JIT
-options through host capabilities. See [shared frontend migration](../docs/shared-frontend.md)
+imports plus a `.gba`/`.nds` ROM picker (also available by dropping a ROM on the
+canvas) and the prepared game appears in the shared library. Select **Play game**
+to start. ROMs run through the same `rsxp-core` cartridge contract as the
+desktop build, with the shared egui workspace, input mapping and FPS panel.
+Desktop keeps native path/ROM selection, recent games, backups, and JIT options
+through host capabilities. See [shared frontend migration](../../docs/shared-frontend.md)
 for the eframe, Android, filesystem, and future iOS boundaries.
 
 ## Layout
@@ -71,7 +74,7 @@ to JavaScript to Rust WASM pipeline without game assets or a DOM. It reports
 static/changing sprite synchronization and full update/render time, Ruby
 allocations, bridge calls, and a deterministic framebuffer hash. Timings exclude
 startup and canvas presentation; compare the same workload on the same host.
-See [web performance](../docs/web-performance.md) for the optimization details.
+See [web performance](../../docs/web-performance.md) for the optimization details.
 
 `serve` defaults to loopback. `--port PORT` and `--bind ADDRESS` change the listener.
 Assets resolve case-insensitively; hidden files and symlinks are excluded.
@@ -248,6 +251,19 @@ packages from `platforms/web/node_modules/` if already present. Node is used for
 tests and benchmarks, which are separate from the build.
 
 Rust build-tool tests: `cargo test --manifest-path platforms/web/xtask/Cargo.toml`.
+
+## GBA and DS ROMs
+
+The generic player and the embedded player accept a single `.gba` or `.nds`
+file. Use **Open GBA/NDS ROM…** in the library or drop the file on the canvas.
+The ROM is read locally, copied into the engine's virtual filesystem and routed
+through the shared `rsxp-core` GBA/DS adapters; it is never uploaded. GBA uses
+the bundled replacement BIOS, and DS uses Dust's HLE BIOS plus generated
+firmware unless `bios7.bin`/`bios9.bin`/`firmware.bin` are supplied through the
+normal virtual file path. Both cores present CPU frames through the same
+workspace used by RGSS, including the F1 workspace, F10 performance panel and
+keyboard/gamepad input. Cartridge battery saves stay in memory for the browser
+session; use the RGSS save export/import flow for Ruby games.
 
 ## ZIP and WebTorrent imports
 

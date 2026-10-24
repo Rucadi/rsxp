@@ -274,12 +274,13 @@ Implemented in this tree:
 - typed platform I/O and separate content/system/save namespaces;
 - session audio negotiation, palette-capable frames and a bounded SPSC PCM ring;
 - screen/input/option descriptors in `CoreInfo` and command result events;
-- GBA state replay validation in addition to pixel/state-production tests.
+- GBA state replay validation in addition to pixel/state-production tests;
+- browser GBA/DS content routed through `rsxp-core`, with the blocking `run`
+  contract driven one frame at a time from `requestAnimationFrame`.
 
 Still a target, not demonstrated here:
 
-- web and mobile have not been migrated to `rsxp-core`;
-- browser execution scheduling for the blocking `run` contract is a prototype;
+- mobile has not been migrated to `rsxp-core`;
 - GBA's backend still writes its battery file directly into the content-scoped
   `save/` directory; routing those writes through the storage worker requires an
   upstream backend accessor. DS save writes already use `Platform::write_save`;

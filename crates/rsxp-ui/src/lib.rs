@@ -52,6 +52,23 @@ impl SharedApp {
         self.info = info;
     }
 
+    /// Updates the live performance figures shown by the workspace.
+    ///
+    /// Runners that don't have a complete [`WorkspaceInfo`] still need to
+    /// report the FPS counters; keeping this separate avoids overwriting the
+    /// frontend-specific flags when a frame arrives.
+    pub fn set_performance(&mut self, fps: f64, frames: u64) {
+        self.info.fps = fps;
+        self.info.frames = frames;
+    }
+
+    /// True while an egui text field or other widget owns the keyboard.
+    pub fn wants_keyboard(&self) -> bool {
+        self.context
+            .as_ref()
+            .is_some_and(egui::Context::egui_wants_keyboard_input)
+    }
+
     pub fn set_game_paint_callback(&mut self, callback: Option<egui::PaintCallback>) {
         self.workspace.set_game_paint_callback(callback);
     }

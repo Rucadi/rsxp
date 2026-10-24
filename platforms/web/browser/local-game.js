@@ -1,6 +1,47 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // File-picker adapter. Assets keep their original File objects until preloaded;
 // the running game reads the engine's virtual files with no network fallback.
+
+/** True for single-file cartridge content the shared core registry accepts. */
+export function isRom(name = '') {
+  return /\.(gba|nds)$/i.test(name);
+}
+
+/**
+ * Wraps a selected GBA/DS ROM in the same interface the RGSS library uses.
+ * `rom` tells `app.js` to start a cartridge core instead of ruby.wasm.
+ */
+export function createRomGame(file, { playerName = 'player.html' } = {}) {
+  if (!file?.name || !isRom(file.name)) throw new Error('Choose a .gba or .nds ROM file.');
+  const name = file.name;
+  const title = name.replace(/\.(gba|nds)$/i, '') || 'Cartridge game';
+  return {
+    folder: title,
+    title,
+    // Browser pages cannot retain a native path; the name and size identify
+    // the save/bundle namespace for this player origin.
+    storageId: `rom:${name}:${file.size}`,
+    rom: { name, size: file.size },
+    paths: [],
+    archives: [],
+    has: path => path === name,
+    async readRom() {
+      return new Uint8Array(await file.arrayBuffer());
+    },
+    async read(path) {
+      if (path !== name) throw new Error(`ROM file not found: ${path}`);
+      return this.readRom();
+    },
+    async validate() {
+      if (!file.size) throw new Error('The selected ROM is empty.');
+    },
+    rubyManifest() {
+      return [];
+    },
+    releaseSource() {},
+  };
+}
+
 export function createLocalGame(files, { playerName = 'player.html' } = {}) {
   const index = new Map();
   let folder = '';

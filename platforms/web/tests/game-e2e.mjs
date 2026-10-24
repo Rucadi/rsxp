@@ -7,7 +7,7 @@ import { PRELUDE } from '../browser/ruby-host.js';
 import { DefaultRubyVM } from '../node_modules/@ruby/wasm-wasi/dist/esm/browser.js';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { rubySource } from '../../tools/ruby-sources.mjs';
+import { rubySource } from '../../../tools/ruby-sources.mjs';
 
 const gameRoot = resolve(import.meta.dirname, '..', '..', 'ericlostie');
 const manifest = JSON.parse(readFileSync(resolve(import.meta.dirname, '../browser/assets.json'), 'utf8'));

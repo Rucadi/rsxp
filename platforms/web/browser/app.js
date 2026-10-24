@@ -104,6 +104,14 @@ let engineReady = false;
 let gameStarted = false;
 // True once the WebGPU + egui workspace is active.
 let gpuMode = false;
+// GBA/DS sessions route keyboard, mouse and gamepad input to the shared core
+// control plane instead of the RGSS runtime.
+let cartridgeMode = false;
+
+function sendKey(code, down) {
+  if (cartridgeMode) engine.web_core_key(code, down);
+  else engine.web_key(code, down);
+}
 
 function bytesToBase64(bytes) {
   let binary = '';
@@ -318,12 +326,78 @@ async function fetchCached(path) {
   return new Uint8Array(await response.arrayBuffer());
 }
 
+function startControllerLoop() {
+  let savedControls;
+  try {
+    savedControls = localStorage.getItem('rsxp.controls');
+    if (savedControls) engine.web_controls_load(savedControls);
+  } catch { /* Storage may be disabled. Controls still work for this run. */ }
+  const pollGamepads = createGamepadInput({
+    getGamepads: () => navigator.getGamepads?.() || [],
+    readMapping: () => engine.web_controls(),
+    writeKey: (key, down) => sendKey(key, down),
+    connected: count => engine.web_controllers_connected(count),
+  });
+  function controllerFrame() {
+    pollGamepads(document.hasFocus() && !document.hidden && !textInput);
+    const encoded = engine.web_controls();
+    if (encoded !== savedControls) {
+      try { localStorage.setItem('rsxp.controls', encoded); } catch {}
+      savedControls = encoded;
+    }
+    requestAnimationFrame(controllerFrame);
+  }
+  window.addEventListener('blur', () => pollGamepads(false));
+  requestAnimationFrame(controllerFrame);
+}
+
+async function mainCartridge() {
+  cartridgeMode = true;
+  gpuMode = true;
+  textInput = false;
+  setTextInputMode(false);
+  if (!player?.eframeInitialized) await engine.web_init_eframe(canvas);
+  const rom = localGame.rom;
+  status(`Loading ${rom.name}…`);
+  engine.web_eframe_loading(0, 0);
+  await nextAnimationFrame();
+  // Loading can take a moment for large DS ROMs. Yield once so the workspace
+  // paints the previous state before the core blocks the thread.
+  engine.web_core_init(rom.name, await localGame.readRom());
+  status(`Running ${rom.name}.`);
+  startControllerLoop();
+  let running = true;
+  function frame() {
+    if (!running) return;
+    try {
+      const messages = JSON.parse(engine.web_core_take_messages());
+      for (const message of messages) status(message);
+      engine.web_core_step();
+      engine.web_core_present();
+      if (engine.web_eframe_take_reset()) {
+        running = false;
+        engine.web_core_stop();
+        location.reload();
+        return;
+      }
+      requestAnimationFrame(frame);
+    } catch (error) {
+      running = false;
+      console.error(error);
+      status('Stopped: ' + error);
+      engine.web_eframe_game_stopped(`Game stopped: ${error}`);
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
 async function main() {
   status('Starting engine…');
   if (!player?.engineInitialized) await init(player ? { module_or_path: player.engineBytes } : undefined);
   if (player) player.engineBytes = undefined;
   engineReady = true;
   engine.web_set_reader(globalThis.RSXP.readFile);
+  if (localGame?.rom) return mainCartridge();
 
   // Read Game.ini first so the engine (and the WebGPU surface) has the right
   // size before the game itself is downloaded.
@@ -356,28 +430,7 @@ async function main() {
   }
   if (!player?.eframeInitialized) await engine.web_init_eframe(canvas);
   engine.web_init(width, height, version, version === 1 ? 40 : 60, null);
-  let savedControls;
-  try {
-    savedControls = localStorage.getItem('rsxp.controls');
-    if (savedControls) engine.web_controls_load(savedControls);
-  } catch { /* Storage may be disabled. Controls still work for this run. */ }
-  const pollGamepads = createGamepadInput({
-    getGamepads: () => navigator.getGamepads?.() || [],
-    readMapping: () => engine.web_controls(),
-    writeKey: (key, down) => engine.web_key(key, down),
-    connected: count => engine.web_controllers_connected(count),
-  });
-  function controllerFrame() {
-    pollGamepads(document.hasFocus() && !document.hidden && !textInput);
-    const encoded = engine.web_controls();
-    if (encoded !== savedControls) {
-      try { localStorage.setItem('rsxp.controls', encoded); } catch {}
-      savedControls = encoded;
-    }
-    requestAnimationFrame(controllerFrame);
-  }
-  window.addEventListener('blur', () => pollGamepads(false));
-  requestAnimationFrame(controllerFrame);
+  startControllerLoop();
 
   // eframe owns browser presentation and canvas input; game frames are submitted
   // to the same SharedApp texture used by native hosts.
@@ -516,6 +569,11 @@ function canvasPoint(event) {
 
 // UI shortcuts belong to egui. F11 reaches the engine input path, which
 // toggles pacing even while the workspace UI is hidden.
+//
+// eframe installs its own canvas listeners and stops propagation for most
+// events. Capture on `window` runs before that, so the game still receives
+// input while egui keeps working. Never stop propagation here: the workspace
+// needs the same F1/F2/F3/F10 keys.
 const workspaceKeys = new Set(['F1', 'F2', 'F3', 'F10']);
 window.addEventListener('keydown', (event) => {
   if ((event.metaKey || event.ctrlKey) && event.code === 'KeyC' && !textInput) {
@@ -527,14 +585,15 @@ window.addEventListener('keydown', (event) => {
     event.preventDefault();
     return;
   }
+  if (engine.web_eframe_wants_keyboard === undefined || engine.web_eframe_wants_keyboard()) return;
   const code = scancode(event.code);
-  const textKey = textInput && Array.from(event.key).length === 1
+  const textKey = !cartridgeMode && textInput && Array.from(event.key).length === 1
     && !event.ctrlKey && !event.metaKey && !event.altKey;
   if (code) {
-    engine.web_key(code, true);
+    sendKey(code, true);
     if (!textKey) event.preventDefault();
   }
-});
+}, true);
 window.addEventListener('keyup', (event) => {
   if ((event.metaKey || event.ctrlKey) && event.code === 'KeyC' && !textInput) {
     event.preventDefault();
@@ -546,17 +605,45 @@ window.addEventListener('keyup', (event) => {
   }
   const code = scancode(event.code);
   if (code) {
-    engine.web_key(code, false);
+    sendKey(code, false);
     event.preventDefault();
   }
-});
+}, true);
+function gamePoint(event) {
+  const point = canvasPoint(event);
+  const scale = window.devicePixelRatio || 1;
+  const [gx0, gy0, gw0, gh0] = Array.from(engine.web_eframe_game_rect());
+  const [gx, gy, gw, gh] = [gx0, gy0, gw0, gh0].map(value => value * scale);
+  const inside = gw > 0 && gh > 0
+    && point.x >= gx && point.x < gx + gw && point.y >= gy && point.y < gy + gh;
+  return {
+    x: inside ? Math.round(((point.x - gx) / gw) * engine.web_width()) : 0,
+    y: inside ? Math.round(((point.y - gy) / gh) * engine.web_height()) : 0,
+    coreX: inside ? Math.round(((point.x - gx) / gw) * (engine.web_core_size()[0] || 0)) : 0,
+    coreY: inside ? Math.round(((point.y - gy) / gh) * (engine.web_core_size()[1] || 0)) : 0,
+    inside,
+  };
+}
 canvas.addEventListener('mousemove', (event) => {
   const point = canvasPoint(event);
   if (gpuMode) {
     const scale = window.devicePixelRatio || 1;
     const [gx0, gy0, gw0, gh0] = Array.from(engine.web_eframe_game_rect());
     const [gx, gy, gw, gh] = [gx0, gy0, gw0, gh0].map(value => value * scale);
-    if (gw > 0 && gh > 0 && point.x >= gx && point.x < gx + gw && point.y >= gy && point.y < gy + gh) {
+    const inside = gw > 0 && gh > 0
+      && point.x >= gx && point.x < gx + gw && point.y >= gy && point.y < gy + gh;
+    if (cartridgeMode) {
+      const [width, height] = engine.web_core_size();
+      if (inside && width > 0 && height > 0) {
+        engine.web_core_pointer(
+          Math.round(((point.x - gx) / gw) * width),
+          Math.round(((point.y - gy) / gh) * height),
+          true,
+        );
+      } else {
+        engine.web_core_pointer(0, 0, false);
+      }
+    } else if (inside) {
       engine.web_mouse(
         Math.round(((point.x - gx) / gw) * engine.web_width()),
         Math.round(((point.y - gy) / gh) * engine.web_height()),
@@ -567,10 +654,11 @@ canvas.addEventListener('mousemove', (event) => {
     }
     return;
   }
-  engine.web_mouse(Math.round(point.x), Math.round(point.y), true);
+  if (cartridgeMode) engine.web_core_pointer(Math.round(point.x), Math.round(point.y), true);
+  else engine.web_mouse(Math.round(point.x), Math.round(point.y), true);
 });
 canvas.addEventListener('mousedown', (event) => {
-  if (textInput) {
+  if (textInput && !cartridgeMode) {
     const point = canvasPoint(event);
     const scale = window.devicePixelRatio || 1;
     const gameRect = gpuMode
@@ -582,12 +670,27 @@ canvas.addEventListener('mousedown', (event) => {
       setTextInputMode(true);
     }
   }
+  if (cartridgeMode) {
+    const point = gamePoint(event);
+    if (point.inside) engine.web_core_pointer(point.coreX, point.coreY, true);
+    engine.web_core_pointer_button(true);
+  }
 });
-canvas.addEventListener('mouseleave', () => engine.web_mouse(0, 0, false));
+canvas.addEventListener('mouseup', () => {
+  if (cartridgeMode) engine.web_core_pointer_button(false);
+});
+canvas.addEventListener('mouseleave', () => {
+  if (cartridgeMode) {
+    engine.web_core_pointer(0, 0, false);
+    engine.web_core_pointer_button(false);
+  } else {
+    engine.web_mouse(0, 0, false);
+  }
+});
 canvas.addEventListener(
   'wheel',
   (event) => {
-    engine.web_scroll(event.deltaY < 0 ? 1 : -1);
+    if (!cartridgeMode) engine.web_scroll(event.deltaY < 0 ? 1 : -1);
     event.preventDefault();
   },
   { passive: false },

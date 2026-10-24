@@ -16,8 +16,6 @@ let
   );
 in
 pkgs.mkShell {
-  inputsFrom = [ (import ./package.nix { inherit pkgs; }) ];
-
   packages =
     with pkgs;
     [
@@ -32,8 +30,15 @@ pkgs.mkShell {
     ]
     ++ lib.optionals isLinux [ pkgs.mold ];
 
+  nativeBuildInputs = [
+    pkgs.pkg-config
+    pkgs.ruby_4_0
+    pkgs.rustPlatform.bindgenHook
+  ];
+
   # Keep dynamically linked cargo binaries runnable outside the build phase.
-  buildInputs = [
+  buildInputs = runtimeLibraries ++ [
+    pkgs.ruby_4_0
     pkgs.zlib
     pkgs.libffi
   ];

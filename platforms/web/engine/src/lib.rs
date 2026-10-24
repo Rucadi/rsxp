@@ -17,13 +17,21 @@
 //! and UI input;
 //! this module supplies game frames and browser-specific file services.
 mod audio;
+mod cartridge;
 mod files;
 mod host;
 
 // Keep the Rust and JavaScript API names stable while isolating platform services.
+pub use cartridge::{
+    web_core_fast_forward, web_core_init, web_core_key, web_core_pause, web_core_pointer,
+    web_core_pointer_button, web_core_present, web_core_reset, web_core_size, web_core_step,
+    web_core_stop, web_core_take_messages,
+};
 pub use files::{web_add_archive, web_add_file, web_file_count, web_read_file, web_set_reader};
 use host::WebHost;
+use js_sys::Uint8Array;
 use rsxp::engine::{self, Runtime, RuntimeOptions, ScriptedKey};
+use rsxp::graphics::Bitmap;
 use rsxp::host::InputEvent;
 use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
@@ -31,6 +39,69 @@ use wasm_bindgen::JsValue;
 
 thread_local! {
     static WEB_RUNNER: RefCell<Option<eframe::WebRunner>> = const { RefCell::new(None) };
+    static PERFORMANCE: RefCell<Performance> = const { RefCell::new(Performance::new()) };
+    // Retained storage keeps frame conversion allocation-free after the first
+    // frame at each screen size (headless checks and canvas fallback paths).
+    static FRAMEBUFFER: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Milliseconds since page load, or zero when the browser clock is unavailable.
+pub(crate) fn now_seconds() -> f64 {
+    web_sys::window()
+        .and_then(|window| window.performance())
+        .map(|performance| performance.now() / 1000.0)
+        .unwrap_or(0.0)
+}
+
+struct Performance {
+    last_frames: u64,
+    window_start: f64,
+    window_frames: u64,
+    fps: f64,
+}
+
+impl Performance {
+    const fn new() -> Self {
+        Self {
+            last_frames: 0,
+            window_start: 0.0,
+            window_frames: 0,
+            fps: 0.0,
+        }
+    }
+
+    /// Samples frames over a half-second window. Calling this more often than
+    /// frames arrive is harmless; duplicate presents do not count.
+    fn sample(&mut self, frames: u64, now: f64) -> f64 {
+        if frames < self.last_frames || self.window_start == 0.0 {
+            self.last_frames = frames;
+            self.window_start = now;
+            self.window_frames = 0;
+        } else if frames > self.last_frames {
+            self.window_frames += frames - self.last_frames;
+            self.last_frames = frames;
+        }
+        let elapsed = now - self.window_start;
+        if elapsed >= 0.5 {
+            self.fps = self.window_frames as f64 / elapsed;
+            self.window_start = now;
+            self.window_frames = 0;
+        }
+        self.fps
+    }
+}
+
+/// Uploads one completed frame and updates the workspace metrics. Shared by
+/// the RGSS runtime and cartridge cores so both report the same FPS counter.
+pub(crate) fn present_bitmap(bitmap: &Bitmap, frames: u64) {
+    let now = now_seconds();
+    let fps = PERFORMANCE.with(|performance| performance.borrow_mut().sample(frames, now));
+    let _ = with_eframe_app(|app| {
+        app.set_logical_size((bitmap.width(), bitmap.height()));
+        app.update_bitmap(bitmap);
+        app.set_performance(fps, frames);
+        app.request_repaint();
+    });
 }
 
 /// Starts the shared eframe application on the browser canvas.
@@ -64,11 +135,7 @@ fn with_eframe_app<R>(f: impl FnOnce(&mut rsxp_ui::SharedApp) -> R) -> Option<R>
 #[wasm_bindgen]
 pub fn web_eframe_present() {
     let _ = engine::with_runtime(|runtime| {
-        with_eframe_app(|app| {
-            app.set_logical_size((runtime.target().width(), runtime.target().height()));
-            app.update_bitmap(runtime.target());
-            app.request_repaint();
-        })
+        present_bitmap(runtime.target(), runtime.frame_count());
     });
 }
 
@@ -93,6 +160,7 @@ pub fn web_eframe_launcher_actions() -> String {
     with_eframe_app(|app| {
         let actions = std::mem::take(&mut app.workspace.session_actions);
         serde_json::json!({"open": actions.open, "browse": actions.browse,
+            "browse_game_file": actions.browse_game_file,
             "zip": actions.import_zip, "download": actions.download, "cancel": actions.cancel})
         .to_string()
     })
@@ -142,6 +210,13 @@ pub fn web_eframe_game_rect() -> Vec<f32> {
         vec![r.min.x, r.min.y, r.width(), r.height()]
     })
     .unwrap_or_default()
+}
+
+/// True while the shared workspace (search box, patch editor, API tool) owns
+/// the keyboard, so the page does not also feed those keys to the game.
+#[wasm_bindgen]
+pub fn web_eframe_wants_keyboard() -> bool {
+    with_eframe_app(|app| app.wants_keyboard()).unwrap_or(false)
 }
 
 #[wasm_bindgen]
@@ -208,6 +283,25 @@ pub fn web_native_call(request: &[u8]) -> Result<Option<Box<[u8]>>, JsValue> {
         Ok(None) => Ok(None),
         Err(message) => Err(JsValue::from_str(&message)),
     }
+}
+
+/// A synchronous zero-copy view of the current framebuffer's RGBA bytes.
+///
+/// Kept for headless verification and hosts that read the CPU frame directly.
+/// The page's normal path uploads it through the shared eframe texture.
+#[wasm_bindgen]
+pub fn web_framebuffer() -> Uint8Array {
+    engine::with_runtime(|runtime| {
+        FRAMEBUFFER.with(|framebuffer| {
+            let mut framebuffer = framebuffer.borrow_mut();
+            runtime.target().write_rgba(&mut framebuffer);
+            // SAFETY: the returned view is consumed synchronously by the
+            // caller. Refreshing the view after wasm memory growth is the
+            // caller's responsibility, as in the pre-eframe canvas path.
+            unsafe { Uint8Array::view(&framebuffer) }
+        })
+    })
+    .unwrap_or_else(|| Uint8Array::new(&JsValue::NULL))
 }
 
 #[wasm_bindgen]

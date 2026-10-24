@@ -581,6 +581,10 @@ impl Core for GbaAdapter {
         let period = 1.0 / FRAME_RATE;
         let mut next_deadline = 0.0f64;
         let mut audio_paused = false;
+        // The frontend may drive the core one frame at a time (the browser
+        // cannot block its main thread across a whole session). Treat the
+        // frame limit as a per-`run` budget so repeated calls each advance.
+        let mut run_frames = 0u64;
         while !control.should_stop() {
             self.apply_commands(&mut commands);
             if control.should_stop() {
@@ -606,8 +610,9 @@ impl Core for GbaAdapter {
             }
             self.present_frame();
             self.drain_audio();
+            run_frames += 1;
             if let Some(limit) = control.frame_limit()
-                && self.frames >= limit
+                && run_frames >= limit
             {
                 break;
             }

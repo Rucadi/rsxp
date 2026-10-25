@@ -54,9 +54,12 @@ assert.equal(call('api_supported'), '1');
 // The legacy endpoint remains available for compatibility, but intentionally
 // has no bundled module to avoid loading the old in-core bridge twice.
 assert.equal(call('api_game_bridge'), '');
-const requestId = wasm.web_game_request('game_status', []);
+// Before extension activation only the core bridge operations are registered;
+// game-specific operations arrive with the active Rhai package. Use the
+// built-in Ruby injection operation to verify the shared queue transport.
+const requestId = wasm.web_game_request('ruby_inject', ['engine_test', '']);
 assert.equal(wasm.web_game_response(requestId), undefined);
-assert.equal(call('api_poll'), `${requestId}\tgame_status\n`);
+assert.equal(call('api_poll'), `${requestId}\truby_inject\tengine_test\t\n`);
 wasm.web_native_call(new TextEncoder().encode(`api_respond\t${requestId}\n{"map_id":3}`));
 assert.deepEqual(JSON.parse(wasm.web_game_response(requestId)), { map_id: 3 });
 assert.equal(wasm.web_game_response(requestId), undefined);

@@ -1118,7 +1118,7 @@ fn isolated_runner_transport(renderer: &str) {
                 let paused = polls <= 2;
                 write(
                     &mut control_stream,
-                    serde_json::json!({"paused":paused,"keys":[40],"downs":if polls==3{vec![40]}else{vec![]},"rate":120,"api":if polls==3{"91\tgame_status\n"}else{""}}),
+                    serde_json::json!({"paused":paused,"keys":[40],"downs":if polls==3{vec![40]}else{vec![]},"rate":120,"api":if polls==3{"91\truby_inject\tengine_test\t00\n"}else{""}}),
                 );
             } else {
                 frames += 1;
@@ -1144,7 +1144,7 @@ fn isolated_runner_transport(renderer: &str) {
                 }
                 if let Some(replies) = header["replies"].as_array() {
                     replied |= replies.iter().any(|r| {
-                        r[0] == 91 && r[1].as_str().is_some_and(|s| s.contains("resolution"))
+                        r[0] == 91 && r[1].as_str().is_some_and(|s| s.contains("registered"))
                     });
                 }
             }

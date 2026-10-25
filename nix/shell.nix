@@ -21,6 +21,7 @@ pkgs.mkShell {
     with pkgs;
     [
       cargo
+      curl
       rustc
       rustfmt
       clippy

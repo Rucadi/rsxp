@@ -73,7 +73,14 @@ module System
   def self.is_wine? = false
   def self.data_directory
     base=ENV['XDG_DATA_HOME'] || (ENV['HOME'] && File.join(ENV['HOME'],'.local','share')) || File.join(Dir.pwd,'.local','share')
-    path=File.join(base,'rsxp',game_title.gsub(/[^[:alnum:]_. -]/,'_'))
+    name=game_title.gsub(/[^[:alnum:]_. -]/,'_')
+    name='game' if name.empty? || name=='.' || name=='..'
+    path=ENV['RSXP_HOME'] ? File.join(ENV['RSXP_HOME'],'saves','rgss',name) : File.join(base,'rsxp',name)
+    legacy=File.join(base,'rsxp',name)
+    if ENV['RSXP_HOME'] && !File.exist?(path) && File.directory?(legacy)
+      FileUtils.mkdir_p(File.dirname(path))
+      FileUtils.cp_r(legacy,path)
+    end
     begin
       FileUtils.mkdir_p(path)
     rescue StandardError

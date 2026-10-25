@@ -56,6 +56,10 @@ pub fn validate(args: &[String]) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn run(args: &[String]) -> Result<u8, Box<dyn Error>> {
+    let settings = args.windows(2).find(|a| a[0] == "--game")
+        .map(|a| rsxp_provision::settings::for_game(Path::new(&a[1])))
+        .transpose().map_err(|e| e.to_string())?.unwrap_or_default();
+    for (key,value) in settings.environment() { set_startup_env(key,value); }
     let options::RunOptions {
         renderer,
         script,
@@ -63,8 +67,11 @@ pub fn run(args: &[String]) -> Result<u8, Box<dyn Error>> {
         headless,
         frames,
         output,
-        version,
+        mut version,
     } = options::RunOptions::parse(args)?;
+    if version.is_none() { version = settings.rgss; }
+    let data_root = rsxp_provision::root(game.as_deref());
+    set_startup_env("RSXP_HOME", data_root);
     #[cfg(not(feature = "rgss"))]
     let _ = (&renderer, version);
     if let Some(path) = game.as_ref().or(script.as_ref())
@@ -103,6 +110,8 @@ pub fn run(args: &[String]) -> Result<u8, Box<dyn Error>> {
         // Live frame-rate/fast-forward/reset controls start from their defaults;
         // the workspace UI drives them from here.
         rsxp::runtime_settings::reset();
+        rsxp::runtime_settings::set_fast_forward(settings.fast_forward);
+        if let Some(fps) = settings.fps { rsxp::runtime_settings::set_rate_override(fps); }
         // Pre-enable runtime patches so headless runs and CI can exercise them
         // without the workspace UI.
         rsxp::runtime_patch::reset();
@@ -112,6 +121,7 @@ pub fn run(args: &[String]) -> Result<u8, Box<dyn Error>> {
                 eprintln!("Runtime patch enabled: {id}");
             }
         }
+        for (id,value) in &settings.patch_values { rsxp::runtime_patch::set_value(id,*value); }
         let ruby = ruby_rgss_core::RubyCore::new().map_err(std::io::Error::other)?;
         let status = ruby.startup_status();
         // Run Ruby finalizers while the Rust resource registry is still available.

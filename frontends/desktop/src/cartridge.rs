@@ -56,13 +56,23 @@ pub fn run(
         .to_path_buf();
     let title = content.label.clone();
     let content_id = ContentId::of(&content)?;
-    let base = data_base().join("rsxp/saves");
+    let base = rsxp_provision::root(Some(&content.path)).join("saves");
     let store = SaveStore::new(&base, registration.info.id, content_id)?;
     if let Ok(copied) = store.migrate_from(&legacy_data_dir(&title))
         && copied > 0
     {
         eprintln!("Cartridge: migrated {copied} legacy save file(s)");
     }
+    // Preserve saves from the previous content-addressed location.
+    let old = data_base()
+        .join("rsxp/saves")
+        .join(registration.info.id)
+        .join(content_id.hex());
+    rsxp_provision::migrate_data(
+        &old,
+        &base.join(registration.info.id).join(content_id.hex()),
+    )
+    .map_err(|e| e.to_string())?;
     let worker = StorageWorker::spawn(Arc::clone(store.storage()), SAVE_QUEUE);
 
     let audio = if headless { None } else { PcmAudio::new() };
@@ -78,6 +88,7 @@ pub fn run(
 
     let control = Arc::new(CoreControl::new());
     control.set_frame_limit(frames);
+    control.set_fast_forward(rsxp_provision::settings::for_game(&content.path).map_err(|e| e.to_string())?.fast_forward);
 
     let runner = if headless { None } else { Runner::connect()? };
     if !headless && runner.is_none() && frames.is_none() && output.is_none() {
@@ -289,7 +300,7 @@ impl HostInput {
         Self {
             control,
             supported: supported.to_vec(),
-            keys: vec![false; 520],
+            keys: vec![false; 648],
             pointer: (0, 0, false),
         }
     }

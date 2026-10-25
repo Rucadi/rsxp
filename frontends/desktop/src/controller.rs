@@ -30,7 +30,7 @@ pub struct Controllers {
 }
 impl Controllers {
     pub fn new() -> Self {
-        let path = if cfg!(target_os = "windows") {
+        let legacy = if cfg!(target_os = "windows") {
             std::env::var_os("APPDATA").map(PathBuf::from)
         } else {
             std::env::var_os("XDG_CONFIG_HOME")
@@ -38,11 +38,16 @@ impl Controllers {
                 .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join(".config")))
         }
         .map(|p| p.join("rsxp/controls"));
+        let path = Some(rsxp_provision::root(None).join("config/controls"));
         if let Some(path) = &path {
-            if let Ok(text) = std::fs::read_to_string(path) {
+            if let Ok(text) = std::fs::read_to_string(path).or_else(|error| {
+                legacy.as_ref().map(std::fs::read_to_string).unwrap_or(Err(error))
+            }) {
                 controls::decode(&text);
             }
         }
+        if let Ok(encoded) = std::env::var("RSXP_CONTROLS") { controls::decode(&encoded); }
+        let path = if std::env::var_os("RSXP_CONTROLS").is_some() { None } else { path };
         let backend = Gilrs::new()
             .map_err(|error| eprintln!("Controller backend unavailable: {error}"))
             .ok();
@@ -52,6 +57,15 @@ impl Controllers {
             path,
             saved: controls::encode(),
         }
+    }
+    /// Per-game overrides must never overwrite the user's global mapping.
+    pub fn use_game_mapping(&mut self, encoded: Option<&str>) {
+        controls::set(controls::Mapping::default());
+        if let Ok(global) = std::fs::read_to_string(rsxp_provision::root(None).join("config/controls")) { controls::decode(&global); }
+        if let Some(encoded) = encoded { controls::decode(encoded); }
+        self.path = None;
+        self.saved = controls::encode();
+        self.held.clear();
     }
     pub fn poll(&mut self, input: &mut Input, focused: bool) {
         let mut buttons = [false; 20];

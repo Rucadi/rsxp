@@ -4619,6 +4619,7 @@ dependencies = [
  "rsxp-cores",
  "rsxp-extension-api",
  "rsxp-frontend",
+ "rsxp-provision",
  "rsxp-rgss-ruby",
  "rsxp-ui",
  "serde_json",
@@ -4659,6 +4660,16 @@ name = "rsxp-frontend"
 version = "0.1.0"
 dependencies = [
  "rsxp-core",
+]
+
+[[package]]
+name = "rsxp-provision"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "zip",
 ]
 
 [[package]]

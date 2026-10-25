@@ -140,6 +140,7 @@ impl SessionPanel {
                 }
             });
             ui.horizontal_wrapped(|ui| {
+                if !self.active {
                 if ui
                     .selectable_label(!self.show_saves && (!self.active || self.open), "Library")
                     .clicked()
@@ -154,6 +155,7 @@ impl SessionPanel {
                 {
                     self.open = !self.open || !self.show_saves;
                     self.show_saves = true;
+                }
                 }
                 if self.active {
                     ui.toggle_value(&mut self.paused, "Pause").on_hover_text(
@@ -176,24 +178,6 @@ impl SessionPanel {
             egui::CentralPanel::default().show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.add_space(8.0);
-                    if self.show_saves {
-                        self.draw_saves(ui, &mut actions);
-                    } else {
-                        self.draw_library(ui, &mut actions);
-                    }
-                });
-            });
-        } else if self.open {
-            egui::Window::new(if self.show_saves {
-                "Save files"
-            } else {
-                "Library"
-            })
-            .id(egui::Id::unique("session-library"))
-            .default_width(860.0)
-            .collapsible(false)
-            .show(&context, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
                     if self.show_saves {
                         self.draw_saves(ui, &mut actions);
                     } else {

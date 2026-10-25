@@ -439,6 +439,11 @@ impl Session {
         if !gpu_available {
             command.args(["--renderer", "software"]);
         }
+        if let Some(path) = args.windows(2).find(|a| a[0] == "--game").map(|a| PathBuf::from(&a[1])) {
+            let settings = rsxp_provision::settings::for_game(&path).map_err(|e| e.to_string())?;
+            for (key,value) in settings.environment() { command.env(key,value); }
+            if let Some(version) = settings.rgss { if !args.iter().any(|a| a == "--rgss") { command.args(["--rgss", &version.to_string()]); } }
+        }
         transport.configure(&mut command);
         let mut child = command
             .spawn()
@@ -587,6 +592,9 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
 }
 
 struct DesktopApp {
+    launcher: crate::launcher::Launcher,
+    active_settings: rsxp_provision::settings::Settings,
+    controllers: crate::controller::Controllers,
     shared: rsxp_ui::SharedApp,
     session: Option<Session>,
     input: Input,
@@ -639,6 +647,9 @@ impl DesktopApp {
         let mut shared = rsxp_ui::SharedApp::default();
         shared.workspace.session = Some(panel);
         Self {
+            launcher: crate::launcher::Launcher::default(),
+            active_settings: Default::default(),
+            controllers: crate::controller::Controllers::new(),
             shared,
             session: None,
             input: Input::default(),
@@ -667,9 +678,17 @@ impl DesktopApp {
     }
 
     fn start_game(&mut self, args: Vec<String>, ctx: &egui::Context) {
+        let settings = args.windows(2).find(|a| a[0] == "--game").map(|a| rsxp_provision::settings::for_game(std::path::Path::new(&a[1]))).transpose();
+        match settings {
+            Ok(settings) => self.active_settings = settings.unwrap_or_default(),
+            Err(error) => { self.shared.workspace.session.as_mut().unwrap().error = Some(error.to_string()); return; }
+        }
+        self.controllers.use_game_mapping(self.active_settings.gamepad.as_deref());
         self.session.take();
         self.input.release_all();
         rsxp::runtime_settings::reset();
+        rsxp::runtime_settings::set_fast_forward(self.active_settings.fast_forward);
+        if let Some(fps) = self.active_settings.fps { rsxp::runtime_settings::set_rate_override(fps); }
         rsxp::runtime_patch::reset();
         rsxp::api_bridge::end_session();
         self.shared.reset_plugins();
@@ -704,6 +723,8 @@ impl DesktopApp {
         if let Ok(patches) = std::env::var("RSXP_PATCH") {
             rsxp::runtime_patch::enable_from(&patches);
         }
+        for patch in &self.active_settings.patches { rsxp::runtime_patch::set_enabled(patch,true); }
+        for (patch,value) in &self.active_settings.patch_values { rsxp::runtime_patch::set_value(patch,*value); }
         self.shared.workspace.backend =
             Box::new(rsxp::workspace_services::LocalServices::new(root.clone()));
         let jit = self.shared.workspace.session.as_ref().unwrap().ruby_jit;
@@ -739,8 +760,21 @@ impl DesktopApp {
                         .unwrap_or_else(|| "Cartridge game".into());
                     panel.title = title.clone();
                     panel.source = rom.to_string_lossy().into_owned();
-                    panel.save_directory = super::library::data_directory(&title)
-                        .map(|path| path.to_string_lossy().into_owned())
+                    panel.save_directory = rsxp_frontend::ContentId::of_file(rom)
+                        .ok()
+                        .map(|id| {
+                            rsxp_provision::root(Some(rom))
+                                .join("saves")
+                                .join(
+                                    rom.extension()
+                                        .unwrap()
+                                        .to_string_lossy()
+                                        .to_ascii_lowercase(),
+                                )
+                                .join(id.hex())
+                                .to_string_lossy()
+                                .into_owned()
+                        })
                         .unwrap_or_default();
                     if let Err(error) = super::library::remember(&mut panel.recent, rom) {
                         panel.error = Some(format!("Could not remember game: {error}"));
@@ -748,9 +782,9 @@ impl DesktopApp {
                 } else if let Some(root) = &root {
                     panel.title = super::library::title(root);
                     panel.source = root.to_string_lossy().into_owned();
-                    panel.save_directory = super::library::save_directory(&panel.title)
-                        .map(|path| path.to_string_lossy().into_owned())
-                        .unwrap_or_default();
+                    panel.save_directory = super::library::data_directory(root, &panel.title)
+                        .to_string_lossy()
+                        .into_owned();
                     if let Err(error) = super::library::remember(&mut panel.recent, root) {
                         panel.error = Some(format!("Could not remember game: {error}"));
                     }
@@ -779,7 +813,7 @@ impl DesktopApp {
                     repeat: false,
                     ..
                 } => {
-                    if let Some(code) = egui_scancode(physical_key.unwrap_or(key)) {
+                    if let Some(code) = egui_scancode(physical_key.unwrap_or(key)).and_then(|code| self.active_settings.translate_key(code)) {
                         if pressed {
                             if code == 68 {
                                 rsxp::runtime_settings::toggle_fast_forward();
@@ -1086,12 +1120,12 @@ impl DesktopApp {
             .unwrap_or_default();
         let mut ups = state.control["ups"].as_array().cloned().unwrap_or_default();
         downs.extend(
-            (-8..512)
+            (-8..640)
                 .filter(|key| ![58, 59, 60, 61, 67, 68].contains(key) && self.input.triggered(*key))
                 .map(|key| json!(key)),
         );
         ups.extend(
-            (-8..512)
+            (-8..640)
                 .filter(|key| ![58, 59, 60, 61, 67, 68].contains(key) && self.input.released(*key))
                 .map(|key| json!(key)),
         );
@@ -1129,7 +1163,7 @@ impl DesktopApp {
             self.shared.workspace.session.as_mut().unwrap().status = "Paused".into();
         }
         state.control = json!({"paused":paused,"performance":self.shared.workspace.performance_visible(),
-            "downs":downs,"ups":ups,"keys":(-8..512).filter(|key| ![58,59,60,61,67,68].contains(key) && self.input.pressed(*key)).collect::<Vec<_>>(),
+            "downs":downs,"ups":ups,"keys":(-8..640).filter(|key| ![58,59,60,61,67,68].contains(key) && self.input.pressed(*key)).collect::<Vec<_>>(),
             "x":mouse.x as i32,"y":mouse.y as i32,"inside":self.input.mouse_inside,
             "scroll":self.input.scroll_v,"text":std::mem::take(&mut self.input.text),"fast":rsxp::runtime_settings::fast_forward(),
             "rate":rsxp::runtime_settings::rate_override(),"api":old_api+api.as_str(),
@@ -1198,9 +1232,31 @@ impl eframe::App for DesktopApp {
             }
         }
         self.collect_input(&ctx);
+        if self.session.is_some() { self.controllers.poll(&mut self.input, !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.focused)); }
         self.poll_session(&ctx);
         if let Some(args) = self.launch.take() {
             self.start_game(args, &ctx);
+        }
+        if self.session.is_none() {
+            let panel = self.shared.workspace.session.as_ref().unwrap();
+            if let Some(path) = self
+                .launcher
+                .draw(ui, &panel.recent, panel.error.as_deref())
+            {
+                match crate::library::discover(&path.to_string_lossy()) {
+                    Ok(source) => {
+                        self.launch = Some(vec![
+                            "--game".into(),
+                            source.path().to_string_lossy().into_owned(),
+                        ])
+                    }
+                    Err(error) => {
+                        self.shared.workspace.session.as_mut().unwrap().error = Some(error)
+                    }
+                }
+                ctx.request_repaint();
+            }
+            return;
         }
         let info = rsxp::ui::WorkspaceInfo {
             logical_size: self.logical_size,
@@ -1356,15 +1412,12 @@ fn legacy_plugin_call(request: &OperationRequest) -> Option<(&str, Vec<String>)>
     }
     if request.operation.ends_with(".__ruby.unload") {
         let handle = request.arguments.get("handle")?;
-        let handle = handle
-            .as_str()
-            .map(str::to_owned)
-            .or_else(|| {
-                handle
-                    .as_i64()
-                    .filter(|value| *value > 0)
-                    .map(|value| format!("rhai-{value}"))
-            })?;
+        let handle = handle.as_str().map(str::to_owned).or_else(|| {
+            handle
+                .as_i64()
+                .filter(|value| *value > 0)
+                .map(|value| format!("rhai-{value}"))
+        })?;
         return Some(("ruby_unload", vec![handle]));
     }
     let operation = request.operation.rsplit_once('.')?.1;

@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "id": "community",
+  "name": "Community fangames and homebrew",
+  "games": [
+    {
+      "id": "rpg-adventure",
+      "title": "RPG Adventure",
+      "version": "1.0",
+      "description": "An RPG Maker game distributed as a ZIP.",
+      "platform": "rpg-maker",
+      "download": { "url": "downloads/adventure.zip", "sha256": "0000000000000000000000000000000000000000000000000000000000000000", "format": "zip" },
+      "entrypoint": "Adventure/Game.ini"
+    },
+    {
+      "id": "gba-homebrew",
+      "title": "GBA Homebrew",
+      "version": "1.0",
+      "platform": "gba",
+      "download": { "url": "downloads/homebrew.gba", "sha256": "0000000000000000000000000000000000000000000000000000000000000000", "format": "rom" },
+      "entrypoint": "homebrew.gba"
+    },
+    {
+      "id": "nds-homebrew",
+      "title": "DS Homebrew",
+      "version": "1.0",
+      "platform": "nds",
+      "download": { "url": "downloads/homebrew.nds", "sha256": "0000000000000000000000000000000000000000000000000000000000000000", "format": "rom" },
+      "entrypoint": "homebrew.nds"
+    },
+    {
+      "id": "gba-patch",
+      "title": "GBA IPS Adventure",
+      "version": "1.0",
+      "platform": "gba",
+      "download": { "url": "downloads/adventure.ips", "sha256": "0000000000000000000000000000000000000000000000000000000000000000", "format": "ips" },
+      "entrypoint": "adventure.gba",
+      "base": { "title": "Exact base game and revision", "sha256": "1111111111111111111111111111111111111111111111111111111111111111" },
+      "output_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    {
+      "id": "nds-patch",
+      "title": "DS IPS Adventure",
+      "version": "1.0",
+      "platform": "nds",
+      "download": { "url": "downloads/ds-adventure.ips", "sha256": "0000000000000000000000000000000000000000000000000000000000000000", "format": "ips" },
+      "entrypoint": "adventure.nds",
+      "base": { "title": "Exact DS base game and revision", "sha256": "1111111111111111111111111111111111111111111111111111111111111111" },
+      "output_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+    }
+  ]
+}

@@ -206,3 +206,10 @@ cargo run -p rsxp-core-runner -- \
 
 See [the DS core guide](cores/nds/README.md) for system files,
 controls, build compatibility, licensing and limitations.
+
+### Game library and software repositories
+
+The desktop launcher supports searchable RPG Maker, GBA, and NDS libraries,
+multiple JSON repositories, verified downloads, and IPS games using a locally
+supplied base ROM. See [software provisioning](docs/software-provision.md) for
+the JSON format, command-line workflow, and portable `RSXP` storage layout.

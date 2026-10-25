@@ -44,17 +44,22 @@ mod gpu_present;
 #[cfg(feature = "rgss")]
 mod host;
 #[cfg(all(feature = "gpu", feature = "rgss"))]
+mod launcher;
+#[cfg(all(feature = "gpu", feature = "rgss"))]
+mod launcher_settings;
+#[cfg(all(feature = "gpu", feature = "rgss"))]
 mod library;
 #[cfg(feature = "rgss")]
 mod media;
+mod provision_cli;
 mod runtime;
 #[cfg(feature = "rgss")]
 mod saves;
 mod session;
 #[cfg(feature = "rgss")]
-mod window;
-#[cfg(feature = "rgss")]
 mod webview;
+#[cfg(feature = "rgss")]
+mod window;
 #[cfg(feature = "rgss")]
 use rsxp::{
     archive::Archive,
@@ -78,6 +83,9 @@ Usage:
   rsxp archive-cat ARCHIVE ENTRY
   rsxp run --script FILE [--rgss 1|2|3] [--headless] [--frames N] [--output frame.ppm]
   rsxp run --game DIRECTORY [--rgss 1|2|3] [--headless] [--frames N] [--output frame.ppm]
+  rsxp software-provision list REPOSITORY...
+  rsxp software-provision install REPOSITORY GAME_ID
+  rsxp software-provision import-base ROM
   rsxp --help
   rsxp --version
 
@@ -291,6 +299,7 @@ fn run() -> Result<u8, Box<dyn Error>> {
     bundled_runtime::configure()?;
     let args: Vec<_> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
+        Some("software-provision") => return provision_cli::run(&args[1..]),
         Some("--help" | "-h") => println!("{HELP}"),
         Some("--version" | "-V") => println!("rsxp {}", env!("CARGO_PKG_VERSION")),
         Some("archive-list" | "archive-cat") => {

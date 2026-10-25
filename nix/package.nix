@@ -67,7 +67,7 @@ pkgs.rustPlatform.buildRustPackage {
   ]
   ++ lib.optionals isLinux [ pkgs.makeWrapper ];
   postFixup = lib.optionalString isLinux ''
-    wrapProgram $out/bin/rsxp --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath runtimeLibraries}
+    wrapProgram $out/bin/rsxp --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath runtimeLibraries} --prefix PATH : ${lib.makeBinPath [ pkgs.curl ]}
   '';
   inherit doCheck;
 

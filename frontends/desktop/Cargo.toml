@@ -7,6 +7,7 @@ license = "GPL-2.0-or-later"
 publish = false
 
 [dependencies]
+rsxp-provision = { path = "../../crates/rsxp-provision" }
 rsxp-core-nds = { path = "../../cores/nds/core", optional = true }
 rsxp-core-gba = { path = "../../cores/gba/core", optional = true }
 rsxp = { path = "../../crates/rsxp-rgss", features = ["gpu", "ui", "game-api", "portable-media"], optional = true }

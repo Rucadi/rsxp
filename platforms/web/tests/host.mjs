@@ -16,7 +16,7 @@ try {
   symlinkSync(join(temp, 'secret'), join(game, 'escape'));
   const player = join(temp, 'player.html');
   execFileSync(binary, ['export', player]);
-  assert.match(readFileSync(player, 'utf8'), /Choose game folder/);
+  assert.match(readFileSync(player, 'utf8'), /Starting workspace/);
   const embedded = join(game, 'game.html');
   execFileSync(binary, ['embed', game, embedded]);
   const html = readFileSync(embedded, 'utf8');

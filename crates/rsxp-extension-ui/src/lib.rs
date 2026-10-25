@@ -27,8 +27,16 @@ impl ExtensionUi {
     }
 
     pub fn draw(&mut self, ui: &mut Ui) {
-        ui.heading("Plugins");
+        ui.horizontal_wrapped(|ui| {
+            ui.heading("Plugins");
+            ui.label(
+                RichText::new(format!("{}", self.descriptions.len()))
+                    .monospace()
+                    .weak(),
+            );
+        });
         ui.weak("Runtime patches and game tools supplied by Rhai plugins.");
+        ui.add_space(4.0);
         ui.horizontal_wrapped(|ui| {
             if ui.button("Paste plugin text…").clicked() {
                 self.events.push(UiEvent {
@@ -47,20 +55,34 @@ impl ExtensionUi {
             }
         });
         if self.descriptions.is_empty() {
-            ui.weak("No plugins loaded.");
+            ui.add_space(8.0);
+            ui.group(|ui| {
+                ui.set_width(ui.available_width());
+                ui.weak("No plugins loaded.");
+                ui.small("Drop a .rhai plugin next to the executable or use Paste plugin text.");
+            });
             return;
         }
+        ui.add_space(6.0);
         for description in &self.descriptions {
             ui.push_id(&description.panel_id, |ui| {
-                ui.collapsing(&description.title, |ui| {
-                    if let Some(error) = &description.error {
-                        ui.colored_label(Color32::RED, error);
-                    }
-                    for node in &description.nodes {
-                        draw_node(ui, &description.panel_id, node, &mut self.events);
-                    }
-                });
+                egui::Frame::new()
+                    .fill(ui.visuals().faint_bg_color)
+                    .corner_radius(egui::CornerRadius::same(8))
+                    .inner_margin(egui::Margin::same(10))
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.collapsing(&description.title, |ui| {
+                            if let Some(error) = &description.error {
+                                ui.colored_label(Color32::RED, error);
+                            }
+                            for node in &description.nodes {
+                                draw_node(ui, &description.panel_id, node, &mut self.events);
+                            }
+                        });
+                    });
             });
+            ui.add_space(6.0);
         }
     }
 }
@@ -111,8 +133,12 @@ fn draw_node(ui: &mut Ui, panel_id: &str, node: &UiNode, events: &mut Vec<UiEven
             options,
         } => {
             let mut selected = value.clone();
+            if !label.is_empty() {
+                ui.label(RichText::new(label).weak());
+            }
             egui::ComboBox::from_id_salt(id)
                 .selected_text(option_label(&selected, options))
+                .width(ui.available_width().min(260.0))
                 .show_ui(ui, |ui| {
                     for option in options {
                         if ui
@@ -127,7 +153,6 @@ fn draw_node(ui: &mut Ui, panel_id: &str, node: &UiNode, events: &mut Vec<UiEven
                         }
                     }
                 });
-            ui.label(RichText::new(label).weak());
         }
         UiNode::Slider {
             id,

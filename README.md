@@ -119,10 +119,12 @@ compatibility limits.
   desktop rendering paths, browser scheduling, ownership and a source map.
 - [Runtime and compatibility](docs/rust-port.md): startup, RGSS behavior,
   supported API areas, limitations and debugging controls.
-- [Game workspace](docs/dashboard.md): game library, session controls, saves
-  and desktop transport.
+- [Game workspace](docs/dashboard.md): game library, session controls, saves,
+  common/per-game settings and desktop transport.
 - [Browser frontend](platforms/web/README.md): build, assets, cooperative Ruby execution
   and browser limitations.
+- [Unified control API](docs/control-api.md): one loopback endpoint for the
+  launcher and player, typed discovery, settings, catalogs and save snapshots.
 - [Live game API](crates/rsxp-rgss/api/README.md): HTTP inspection/control and the MCP executable.
 - [Multi-core architecture](docs/multi-core-architecture.md): core contract,
   content routing, performance rules and the path for GBA/GB/DS cores.

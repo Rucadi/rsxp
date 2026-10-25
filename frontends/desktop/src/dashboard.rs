@@ -51,6 +51,30 @@ use std::{
     time::Duration,
 };
 
+fn start_control_server(
+    root: &std::path::Path,
+    sender: std::sync::mpsc::Sender<crate::control::HostAction>,
+) -> (Option<crate::control::ControlServer>, Option<String>) {
+    let config = rsxp_provision::config::load(root).unwrap_or_default();
+    let enabled = match std::env::var("RSXP_API").ok().as_deref() {
+        Some("0") => false,
+        Some("1") => true,
+        _ => config.api.enabled,
+    };
+    if !enabled {
+        return (None, None);
+    }
+    let port = std::env::var("RSXP_API_PORT")
+        .ok()
+        .and_then(|port| port.parse::<u16>().ok())
+        .filter(|port| *port != 0)
+        .unwrap_or(config.api.port);
+    match crate::control::ControlServer::start(root.to_owned(), port, sender) {
+        Ok(server) => (Some(server), None),
+        Err(error) => (None, Some(error)),
+    }
+}
+
 #[derive(Default)]
 struct Exchange {
     frame: Option<Bitmap>,
@@ -66,6 +90,7 @@ struct Exchange {
     cursor: bool,
 }
 struct Session {
+    core_id: &'static str,
     child: Child,
     exchange: Arc<Mutex<Exchange>>,
     stopping: Arc<AtomicBool>,
@@ -439,10 +464,20 @@ impl Session {
         if !gpu_available {
             command.args(["--renderer", "software"]);
         }
-        if let Some(path) = args.windows(2).find(|a| a[0] == "--game").map(|a| PathBuf::from(&a[1])) {
+        if let Some(path) = args
+            .windows(2)
+            .find(|a| a[0] == "--game")
+            .map(|a| PathBuf::from(&a[1]))
+        {
             let settings = rsxp_provision::settings::for_game(&path).map_err(|e| e.to_string())?;
-            for (key,value) in settings.environment() { command.env(key,value); }
-            if let Some(version) = settings.rgss { if !args.iter().any(|a| a == "--rgss") { command.args(["--rgss", &version.to_string()]); } }
+            for (key, value) in settings.environment() {
+                command.env(key, value);
+            }
+            if let Some(version) = settings.rgss {
+                if !args.iter().any(|a| a == "--rgss") {
+                    command.args(["--rgss", &version.to_string()]);
+                }
+            }
         }
         transport.configure(&mut command);
         let mut child = command
@@ -564,6 +599,7 @@ impl Session {
             }
         });
         Ok(Self {
+            core_id: if is_nds { "nds" } else { "rgss" },
             child,
             exchange,
             stopping,
@@ -575,12 +611,11 @@ impl Session {
 
 pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error>> {
     crate::webview::prepare_runtime();
-    rsxp::api_bridge::start_from_env()?;
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("rsxp · Game workspace")
             .with_inner_size([1100.0, 740.0])
-            .with_min_inner_size([700.0, 500.0]),
+            .with_min_inner_size([460.0, 340.0]),
         ..Default::default()
     };
     eframe::run_native(
@@ -593,6 +628,11 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
 
 struct DesktopApp {
     launcher: crate::launcher::Launcher,
+    root: PathBuf,
+    control: Option<crate::control::ControlServer>,
+    control_sender: std::sync::mpsc::Sender<crate::control::HostAction>,
+    control_actions: std::sync::mpsc::Receiver<crate::control::HostAction>,
+    control_error: Option<String>,
     active_settings: rsxp_provision::settings::Settings,
     controllers: crate::controller::Controllers,
     shared: rsxp_ui::SharedApp,
@@ -601,20 +641,31 @@ struct DesktopApp {
     frame: Bitmap,
     logical_size: (u32, u32),
     game_rect: egui::Rect,
+    touch_rect: egui::Rect,
     launch: Option<Vec<String>>,
     last_args: Vec<String>,
-    save_task: Option<std::sync::mpsc::Receiver<Result<(), String>>>,
+    save_task: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
     text_input: bool,
     fps: f64,
     frames: u64,
     gpu_view: bool,
     gpu_state: Arc<Mutex<GameGpu>>,
     gpu_callback: Option<Arc<GameCallback>>,
+    window_before_fit: Option<egui::Vec2>,
+    fit_window: Option<FitWindow>,
+    last_fit_size: Option<egui::Vec2>,
     extension_bridge: std::collections::HashMap<u64, (u64, u64)>,
     plugin_webview_api_bridge: std::collections::HashMap<u64, u64>,
     pending_webview_assets: Vec<(u64, String, String, u8)>,
     plugin_webview: Option<(String, String, crate::webview::PluginWebView)>,
     pending_webview_commands: Vec<PluginWebViewCommand>,
+}
+
+/// The size a game-only window is being driven toward. Keeping the computed
+/// target fixed avoids a resize feedback loop with asynchronous window
+/// managers and tiling policies.
+struct FitWindow {
+    aspect: f32,
 }
 
 enum PluginWebViewCommand {
@@ -646,8 +697,22 @@ impl DesktopApp {
         panel.recent = super::library::load();
         let mut shared = rsxp_ui::SharedApp::default();
         shared.workspace.session = Some(panel);
+        let root = rsxp_provision::root(None);
+        let (control_sender, control_actions) = crate::control::action_channel();
+        let (control, control_error) = start_control_server(&root, control_sender.clone());
+        if control.is_none()
+            && let Ok(config) = rsxp_provision::config::load(&root)
+            && let Some(panel) = shared.workspace.session.as_mut()
+        {
+            panel.api_port = config.api.port.to_string();
+        }
         Self {
             launcher: crate::launcher::Launcher::default(),
+            root,
+            control,
+            control_sender,
+            control_actions,
+            control_error,
             active_settings: Default::default(),
             controllers: crate::controller::Controllers::new(),
             shared,
@@ -656,6 +721,7 @@ impl DesktopApp {
             frame: Bitmap::new(640, 480).expect("640×480 bitmap allocation"),
             logical_size: (640, 480),
             game_rect: egui::Rect::ZERO,
+            touch_rect: egui::Rect::ZERO,
             last_args: initial.clone().unwrap_or_default(),
             launch: initial,
             save_task: None,
@@ -669,6 +735,9 @@ impl DesktopApp {
                 logical_size: (640, 480),
             })),
             gpu_callback: None,
+            window_before_fit: None,
+            fit_window: None,
+            last_fit_size: None,
             extension_bridge: std::collections::HashMap::new(),
             plugin_webview_api_bridge: std::collections::HashMap::new(),
             pending_webview_assets: Vec::new(),
@@ -677,18 +746,250 @@ impl DesktopApp {
         }
     }
 
+    fn stop_session(&mut self) {
+        self.session.take();
+        rsxp::api_bridge::end_session();
+        self.shared.reset_plugins();
+        self.extension_bridge.clear();
+        self.plugin_webview_api_bridge.clear();
+        self.plugin_webview = None;
+        self.pending_webview_commands.clear();
+        self.input.release_all();
+        if let Some(panel) = self.shared.workspace.session.as_mut() {
+            panel.active = false;
+            panel.status = "Stopped".into();
+        }
+    }
+
+    fn apply_window_aspect(&mut self, ctx: &egui::Context, fit_aspect: Option<f32>, ready: bool) {
+        let fullscreen = ctx.input(|input| input.viewport().fullscreen.unwrap_or(false));
+        match fit_aspect {
+            Some(aspect) if ready && aspect.is_finite() && aspect > 0.05 && !fullscreen => {
+                let current = ctx.content_rect().size();
+                if current.x < 1.0 || current.y < 1.0 {
+                    return;
+                }
+                if self.window_before_fit.is_none() {
+                    self.window_before_fit = Some(current);
+                }
+                let needs_fit = self
+                    .fit_window
+                    .as_ref()
+                    .is_none_or(|fit| (fit.aspect - aspect).abs() > 0.001);
+                if needs_fit {
+                    let base = self.window_before_fit.unwrap_or(current);
+                    let monitor = ctx
+                        .input(|input| input.viewport().monitor_size)
+                        .unwrap_or(current);
+                    let target = fitted_window_size(base, aspect, monitor);
+                    self.fit_window = Some(FitWindow { aspect });
+                    self.last_fit_size = Some(current);
+                    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(target));
+                    ctx.request_repaint();
+                } else {
+                    let ratio = current.x / current.y;
+                    let previous = self.last_fit_size.unwrap_or(current);
+                    let delta = current - previous;
+                    if (ratio - aspect).abs() > 0.01 {
+                        let width_driven = delta.x.abs() >= delta.y.abs();
+                        let driven = if width_driven {
+                            egui::vec2(current.x, current.x / aspect)
+                        } else {
+                            egui::vec2(current.y * aspect, current.y)
+                        };
+                        let monitor = ctx
+                            .input(|input| input.viewport().monitor_size)
+                            .unwrap_or(current);
+                        let target = fitted_window_size(driven, aspect, monitor);
+                        if (target - current).length() > 0.5 {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(target));
+                            ctx.request_repaint();
+                            self.last_fit_size = Some(target);
+                        }
+                    } else {
+                        self.last_fit_size = Some(current);
+                    }
+                }
+            }
+            Some(_) if !ready => {}
+            _ if !fullscreen => {
+                if let Some(size) = self.window_before_fit.take() {
+                    self.fit_window = None;
+                    self.last_fit_size = None;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+                    ctx.request_repaint();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn process_control_actions(&mut self, ctx: &egui::Context) {
+        if let Some(control) = &self.control {
+            control.attach_context(ctx);
+        }
+        while let Ok(action) = self.control_actions.try_recv() {
+            match action {
+                crate::control::HostAction::Launch { path, reply } => {
+                    match crate::library::discover(&path) {
+                        Ok(source) => {
+                            let source = source.path().to_string_lossy().into_owned();
+                            self.launch = Some(vec!["--game".into(), source.clone()]);
+                            let _ = reply.send(Ok(json!({"queued": true, "path": source})));
+                        }
+                        Err(error) => {
+                            let _ = reply.send(Err(error));
+                        }
+                    }
+                }
+                crate::control::HostAction::Stop { reply } => {
+                    self.stop_session();
+                    let _ = reply.send(Ok(json!({"stopped": true})));
+                }
+                crate::control::HostAction::Restart { reply } => {
+                    if self.last_args.is_empty() {
+                        let _ = reply.send(Err("no game has been started yet".into()));
+                    } else {
+                        self.launch = Some(self.last_args.clone());
+                        let _ = reply.send(Ok(json!({"restarting": true, "args": self.last_args})));
+                    }
+                }
+                crate::control::HostAction::Pause { paused, reply } => {
+                    if let Some(panel) = self.shared.workspace.session.as_mut() {
+                        panel.paused = paused;
+                        let _ = reply.send(Ok(json!({"paused": paused})));
+                    } else {
+                        let _ = reply.send(Err("no game session".into()));
+                    }
+                }
+                crate::control::HostAction::Live {
+                    fast_forward,
+                    fps,
+                    paused,
+                    reply,
+                } => {
+                    if let Some(value) = fast_forward {
+                        rsxp::runtime_settings::set_fast_forward(value);
+                    }
+                    if let Some(fps) = fps {
+                        if fps == 0 {
+                            rsxp::runtime_settings::clear_rate_override();
+                        } else {
+                            rsxp::runtime_settings::set_rate_override(fps);
+                        }
+                    }
+                    if let Some(paused) = paused
+                        && let Some(panel) = self.shared.workspace.session.as_mut()
+                    {
+                        panel.paused = paused;
+                    }
+                    let _ = reply.send(Ok(json!({
+                        "fast_forward": rsxp::runtime_settings::fast_forward(),
+                        "fps": rsxp::runtime_settings::rate_override(),
+                        "paused": self.shared.workspace.session.as_ref().is_some_and(|panel| panel.paused),
+                    })));
+                }
+            }
+        }
+        self.update_control_state();
+        ctx.request_repaint();
+    }
+
+    fn stop_control(&mut self) {
+        if let Some(control) = self.control.take() {
+            control.stop();
+            if let Ok(mut config) = rsxp_provision::config::load(&self.root) {
+                config.api.enabled = false;
+                let _ = rsxp_provision::config::save(&self.root, &config);
+            }
+        }
+    }
+
+    fn start_control(&mut self, port: u16) {
+        self.control.take();
+        match crate::control::ControlServer::start(
+            self.root.clone(),
+            port,
+            self.control_sender.clone(),
+        ) {
+            Ok(server) => {
+                self.control = Some(server);
+                self.control_error = None;
+                self.shared.workspace.session.as_mut().unwrap().api_error = None;
+                if let Ok(mut config) = rsxp_provision::config::load(&self.root) {
+                    config.api.enabled = true;
+                    config.api.port = port;
+                    let _ = rsxp_provision::config::save(&self.root, &config);
+                }
+            }
+            Err(error) => {
+                self.control_error = Some(error.clone());
+                self.shared.workspace.session.as_mut().unwrap().api_error = Some(error);
+            }
+        }
+    }
+
+    fn update_control_state(&mut self) {
+        let control = self
+            .control
+            .as_ref()
+            .map(|control| (control.port(), control.discovery_url(), control.snapshot()));
+        let control_error = self.control_error.clone();
+        if let Some(panel) = self.shared.workspace.session.as_mut() {
+            panel.api_running = control.is_some();
+            if let Some((port, url, _)) = &control {
+                panel.api_port = port.to_string();
+                panel.api_status = format!("Listening · {url}");
+            } else {
+                panel.api_status = String::new();
+            }
+            panel.api_error = control_error;
+        }
+        let Some((_, _, mut state)) = control else {
+            return;
+        };
+        let panel = self.shared.workspace.session.as_ref();
+        if let Some(panel) = panel {
+            state.running = self.session.is_some() && panel.active;
+            state.paused = panel.paused;
+            state.title = panel.title.clone();
+            state.source = panel.source.clone();
+            state.save_directory = panel.save_directory.clone();
+            state.game_key = if panel.source.is_empty() {
+                String::new()
+            } else {
+                rsxp_provision::settings::key_for_path(std::path::Path::new(&panel.source)).0
+            };
+        }
+        state.fast_forward = rsxp::runtime_settings::fast_forward();
+        state.fps = rsxp::runtime_settings::rate_override();
+        if let Some(control) = &self.control {
+            control.update(state);
+        }
+    }
+
     fn start_game(&mut self, args: Vec<String>, ctx: &egui::Context) {
-        let settings = args.windows(2).find(|a| a[0] == "--game").map(|a| rsxp_provision::settings::for_game(std::path::Path::new(&a[1]))).transpose();
+        let settings = args
+            .windows(2)
+            .find(|a| a[0] == "--game")
+            .map(|a| rsxp_provision::settings::for_game(std::path::Path::new(&a[1])))
+            .transpose();
         match settings {
             Ok(settings) => self.active_settings = settings.unwrap_or_default(),
-            Err(error) => { self.shared.workspace.session.as_mut().unwrap().error = Some(error.to_string()); return; }
+            Err(error) => {
+                self.shared.workspace.session.as_mut().unwrap().error = Some(error.to_string());
+                return;
+            }
         }
-        self.controllers.use_game_mapping(self.active_settings.gamepad.as_deref());
+        self.controllers
+            .use_game_mapping(self.active_settings.gamepad.as_deref());
         self.session.take();
         self.input.release_all();
         rsxp::runtime_settings::reset();
         rsxp::runtime_settings::set_fast_forward(self.active_settings.fast_forward);
-        if let Some(fps) = self.active_settings.fps { rsxp::runtime_settings::set_rate_override(fps); }
+        if let Some(fps) = self.active_settings.fps {
+            rsxp::runtime_settings::set_rate_override(fps);
+        }
         rsxp::runtime_patch::reset();
         rsxp::api_bridge::end_session();
         self.shared.reset_plugins();
@@ -723,8 +1024,12 @@ impl DesktopApp {
         if let Ok(patches) = std::env::var("RSXP_PATCH") {
             rsxp::runtime_patch::enable_from(&patches);
         }
-        for patch in &self.active_settings.patches { rsxp::runtime_patch::set_enabled(patch,true); }
-        for (patch,value) in &self.active_settings.patch_values { rsxp::runtime_patch::set_value(patch,*value); }
+        for patch in &self.active_settings.patches {
+            rsxp::runtime_patch::set_enabled(patch, true);
+        }
+        for (patch, value) in &self.active_settings.patch_values {
+            rsxp::runtime_patch::set_value(patch, *value);
+        }
         self.shared.workspace.backend =
             Box::new(rsxp::workspace_services::LocalServices::new(root.clone()));
         let jit = self.shared.workspace.session.as_ref().unwrap().ruby_jit;
@@ -813,7 +1118,9 @@ impl DesktopApp {
                     repeat: false,
                     ..
                 } => {
-                    if let Some(code) = egui_scancode(physical_key.unwrap_or(key)).and_then(|code| self.active_settings.translate_key(code)) {
+                    if let Some(code) = egui_scancode(physical_key.unwrap_or(key))
+                        .and_then(|code| self.active_settings.translate_key(code))
+                    {
                         if pressed {
                             if code == 68 {
                                 rsxp::runtime_settings::toggle_fast_forward();
@@ -827,11 +1134,22 @@ impl DesktopApp {
                 egui::Event::Text(text) if self.text_input => self.input.push_text(&text),
                 egui::Event::PointerButton {
                     button, pressed, ..
-                } if self.game_rect.contains(
+                } if (if self.touch_rect != egui::Rect::ZERO {
+                    self.touch_rect
+                } else {
+                    self.game_rect
+                })
+                .contains(
                     ctx.input(|input| input.pointer.latest_pos().unwrap_or(egui::Pos2::ZERO)),
-                ) && !ctx.egui_wants_pointer_input() =>
+                ) && (self.touch_rect != egui::Rect::ZERO
+                    || !ctx.egui_wants_pointer_input()) =>
                 {
                     let code = match button {
+                        egui::PointerButton::Primary
+                            if self
+                                .session
+                                .as_ref()
+                                .is_some_and(|session| session.core_id == "nds") => 1,
                         egui::PointerButton::Primary => -1,
                         egui::PointerButton::Middle => -2,
                         egui::PointerButton::Secondary => -3,
@@ -845,9 +1163,15 @@ impl DesktopApp {
                     }
                 }
                 egui::Event::MouseWheel { delta, .. }
-                    if self.game_rect.contains(
+                    if (if self.touch_rect != egui::Rect::ZERO {
+                        self.touch_rect
+                    } else {
+                        self.game_rect
+                    })
+                    .contains(
                         ctx.input(|input| input.pointer.latest_pos().unwrap_or(egui::Pos2::ZERO)),
-                    ) && !ctx.egui_wants_pointer_input() =>
+                    ) && (self.touch_rect != egui::Rect::ZERO
+                        || !ctx.egui_wants_pointer_input()) =>
                 {
                     self.input.scroll_v += delta.y.signum() as i32;
                 }
@@ -1078,7 +1402,7 @@ impl DesktopApp {
             let panel = self.shared.workspace.session.as_mut().unwrap();
             panel.busy = false;
             match result {
-                Ok(()) => panel.status = "Save files copied".into(),
+                Ok(message) => panel.status = message,
                 Err(error) => panel.error = Some(error),
             }
             self.save_task = None;
@@ -1130,32 +1454,54 @@ impl DesktopApp {
                 .map(|key| json!(key)),
         );
         let pointer = ctx.input(|input| input.pointer.latest_pos());
-        let rect = self.game_rect;
+        let rect = if self.touch_rect != egui::Rect::ZERO {
+            self.touch_rect
+        } else {
+            self.game_rect
+        };
+        let source_size = if self.touch_rect != egui::Rect::ZERO {
+            egui::vec2(256.0, 192.0)
+        } else {
+            egui::vec2(self.logical_size.0 as f32, self.logical_size.1 as f32)
+        };
         if let Some(position) = pointer {
-            let over_game = rect.contains(position) && !ctx.egui_wants_pointer_input();
-            let scale = (rect.width() / self.logical_size.0 as f32)
-                .min(rect.height() / self.logical_size.1 as f32)
+            let over_game = rect.contains(position)
+                && (self.touch_rect != egui::Rect::ZERO || !ctx.egui_wants_pointer_input());
+            let scale = (rect.width() / source_size.x)
+                .min(rect.height() / source_size.y)
                 .max(0.001);
-            let origin = rect.center()
-                - egui::vec2(self.logical_size.0 as f32, self.logical_size.1 as f32) * scale * 0.5;
+            let origin = rect.center() - source_size * scale * 0.5;
             let game_position = (position - origin) / scale;
             self.input.mouse_x = game_position.x as i32;
-            self.input.mouse_y = game_position.y as i32;
+            self.input.mouse_y = game_position.y as i32
+                + if self.touch_rect != egui::Rect::ZERO {
+                    192
+                } else {
+                    0
+                };
             self.input.mouse_inside = over_game
                 && game_position.x >= 0.0
                 && game_position.y >= 0.0
                 && game_position.x < self.logical_size.0 as f32
-                && game_position.y < self.logical_size.1 as f32;
+                && game_position.y < source_size.y;
         } else {
             self.input.mouse_inside = false;
         }
-        let scale = (rect.width() / self.logical_size.0 as f32)
-            .min(rect.height() / self.logical_size.1 as f32)
+        let scale = (rect.width() / source_size.x)
+            .min(rect.height() / source_size.y)
             .max(0.001);
         let mouse = pointer
             .map(|point| {
                 (point - rect.center()) / scale
-                    + egui::vec2(self.logical_size.0 as f32, self.logical_size.1 as f32) * 0.5
+                    + source_size * 0.5
+                    + egui::vec2(
+                        0.0,
+                        if self.touch_rect != egui::Rect::ZERO {
+                            192.0
+                        } else {
+                            0.0
+                        },
+                    )
             })
             .unwrap_or(egui::Pos2::ZERO.to_vec2());
         let paused = self.shared.workspace.session.as_ref().unwrap().paused;
@@ -1232,17 +1578,22 @@ impl eframe::App for DesktopApp {
             }
         }
         self.collect_input(&ctx);
-        if self.session.is_some() { self.controllers.poll(&mut self.input, !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.focused)); }
+        self.process_control_actions(&ctx);
+        if self.session.is_some() {
+            self.controllers.poll(
+                &mut self.input,
+                !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.focused),
+            );
+        }
         self.poll_session(&ctx);
         if let Some(args) = self.launch.take() {
             self.start_game(args, &ctx);
         }
         if self.session.is_none() {
+            self.apply_window_aspect(&ctx, None, true);
             let panel = self.shared.workspace.session.as_ref().unwrap();
-            if let Some(path) = self
-                .launcher
-                .draw(ui, &panel.recent, panel.error.as_deref())
-            {
+            let error = self.control_error.as_deref().or(panel.error.as_deref());
+            if let Some(path) = self.launcher.draw(ui, &panel.recent, error) {
                 match crate::library::discover(&path.to_string_lossy()) {
                     Ok(source) => {
                         self.launch = Some(vec![
@@ -1259,6 +1610,7 @@ impl eframe::App for DesktopApp {
             return;
         }
         let info = rsxp::ui::WorkspaceInfo {
+            core_id: self.session.as_ref().map_or("rgss", |session| session.core_id),
             logical_size: self.logical_size,
             fps: self.fps,
             frames: self.frames,
@@ -1295,12 +1647,26 @@ impl eframe::App for DesktopApp {
             ctx.request_repaint();
         }
         self.process_plugin_webviews(frame);
-        self.game_rect = self.shared.take_output().game_rect;
+        let output = self.shared.take_output();
+        self.apply_window_aspect(&ctx, output.fit_aspect, self.frames > 0);
+        self.game_rect = output.game_rect;
+        self.touch_rect = output.touch_rect;
+        let output_create_backup = output.create_backup;
+        let output_restore_latest = output.restore_latest_backup;
+        let output_open_game = output.open_game_folder;
+        let output_open_save = output.open_save_folder;
+        let output_open_patches = output.open_patches_folder;
         self.gpu_state.lock().unwrap().rect = self.game_rect;
         if self.session.is_some() {
             ctx.request_repaint_after(Duration::from_millis(16));
         }
         let actions = std::mem::take(&mut self.shared.workspace.session_actions);
+        if let Some(port) = actions.start_api {
+            self.start_control(port);
+        }
+        if actions.stop_api {
+            self.stop_control();
+        }
         if actions.browse {
             if let Some(path) = rfd::FileDialog::new()
                 .set_title("Choose an RPG Maker game folder or GBA/DS ROM")
@@ -1346,19 +1712,102 @@ impl eframe::App for DesktopApp {
             }
         }
         if actions.stop {
-            self.session.take();
-            rsxp::api_bridge::end_session();
-            self.shared.reset_plugins();
-            self.extension_bridge.clear();
-            self.plugin_webview = None;
-            self.pending_webview_commands.clear();
-            self.input.release_all();
-            let panel = self.shared.workspace.session.as_mut().unwrap();
-            panel.active = false;
-            panel.status = "Stopped".into();
+            self.stop_session();
         }
         if actions.restart || rsxp::runtime_settings::reset_requested() {
             self.launch = Some(self.last_args.clone());
+        }
+        let create_backup = actions.create_backup || output_create_backup;
+        let restore_latest = actions.restore_latest || output_restore_latest;
+        if (create_backup || restore_latest)
+            && self.save_task.is_none()
+            && (self.session.is_none() || (create_backup && !restore_latest))
+        {
+            let panel = self.shared.workspace.session.as_ref().unwrap();
+            let source = if !panel.source.is_empty() {
+                panel.source.clone()
+            } else {
+                self.last_args
+                    .windows(2)
+                    .find(|pair| pair[0] == "--game")
+                    .map(|pair| pair[1].clone())
+                    .unwrap_or_default()
+            };
+            let configured_save = panel.save_directory.clone();
+            let location = save_location(&self.root, &source);
+            match location {
+                Some((key, default_save)) => {
+                    let save = if configured_save.is_empty() {
+                        default_save
+                    } else {
+                        PathBuf::from(configured_save)
+                    };
+                    let root = self.root.clone();
+                    let (sender, receiver) = std::sync::mpsc::channel();
+                    self.shared.workspace.session.as_mut().unwrap().busy = true;
+                    std::thread::spawn(move || {
+                        let result = if restore_latest {
+                            rsxp_provision::backup::list(&root, &key).and_then(|backups| {
+                                let latest = backups
+                                    .first()
+                                    .ok_or_else(|| std::io::Error::other("no backups exist"))?;
+                                rsxp_provision::backup::restore(&root, &key, &latest.name, &save)
+                                    .map(|info| format!("Restored backup {}", info.name))
+                            })
+                        } else {
+                            rsxp_provision::backup::create(&root, &key, &save, None)
+                                .map(|info| format!("Backup {} created", info.name))
+                        };
+                        let _ = sender.send(result.map_err(|error| error.to_string()));
+                    });
+                    self.save_task = Some(receiver);
+                }
+                None if restore_latest || create_backup => {
+                    if let Some(panel) = self.shared.workspace.session.as_mut() {
+                        panel.error =
+                            Some("Open or select a game before creating a save backup".into());
+                    }
+                }
+                None => {}
+            }
+        } else if restore_latest && self.session.is_some() {
+            self.shared.workspace.session.as_mut().unwrap().error =
+                Some("Stop the game before restoring a save backup".into());
+        }
+        if output_open_game || output_open_save || output_open_patches {
+            let panel = self.shared.workspace.session.as_ref().unwrap();
+            let source = if !panel.source.is_empty() {
+                panel.source.clone()
+            } else {
+                self.last_args
+                    .windows(2)
+                    .find(|pair| pair[0] == "--game")
+                    .map(|pair| pair[1].clone())
+                    .unwrap_or_default()
+            };
+            if source.is_empty() {
+                if let Some(panel) = self.shared.workspace.session.as_mut() {
+                    panel.error = Some("Select a game before opening its folders".into());
+                }
+            } else {
+                let path = PathBuf::from(&source);
+                let game = rsxp_provision::folders::game_directory(&path);
+                let save = save_location(&self.root, &source).map(|(_, save)| save);
+                if output_open_game {
+                    let _ = rsxp_provision::folders::open(&game);
+                }
+                if output_open_save {
+                    if let Some(save) = save {
+                        let _ = rsxp_provision::folders::ensure(&save);
+                        let _ = rsxp_provision::folders::open(&save);
+                    }
+                }
+                if output_open_patches {
+                    let patches = rsxp_provision::folders::patches_directory(&game);
+                    let _ = rsxp_provision::folders::ensure(&patches);
+                    let _ = rsxp_provision::folders::open(&patches);
+                }
+            }
         }
         for (restore, operation) in [(false, actions.backup), (true, actions.restore)] {
             if let Some((from, to)) = operation
@@ -1369,7 +1818,9 @@ impl eframe::App for DesktopApp {
                 self.shared.workspace.session.as_mut().unwrap().busy = true;
                 std::thread::spawn(move || {
                     let _ = sender.send(
-                        super::saves::copy(&from, &to, restore).map_err(|error| error.to_string()),
+                        super::saves::copy(&from, &to, restore)
+                            .map(|()| "Save files copied".to_string())
+                            .map_err(|error| error.to_string()),
                     );
                 });
                 self.save_task = Some(receiver);
@@ -1377,6 +1828,34 @@ impl eframe::App for DesktopApp {
         }
         ctx.request_repaint_after(Duration::from_millis(16));
     }
+}
+
+fn save_location(root: &std::path::Path, source: &str) -> Option<(String, PathBuf)> {
+    if source.is_empty() {
+        return None;
+    }
+    let path = PathBuf::from(source);
+    let (key, _) = rsxp_provision::settings::key_for_path(&path);
+    let cartridge = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("gba") || extension.eq_ignore_ascii_case("nds")
+        });
+    let save = if cartridge {
+        let id = rsxp_frontend::ContentId::of_file(&path).ok()?;
+        root.join("saves")
+            .join(
+                path.extension()
+                    .and_then(|extension| extension.to_str())
+                    .unwrap_or("rom")
+                    .to_ascii_lowercase(),
+            )
+            .join(id.hex())
+    } else {
+        rsxp_provision::folders::save_directory(root, &rsxp_provision::folders::title(&path))
+    };
+    Some((key, save))
 }
 
 /// Adapts the generic plugin request envelope to the RGSS bridge's positional
@@ -1482,9 +1961,73 @@ fn egui_scancode(key: egui::Key) -> Option<i32> {
     })
 }
 
+/// Size a native window so its client area has `aspect` while preserving the
+/// current height whenever possible. The result is clamped to the monitor so a
+/// portrait DS window cannot grow taller than the screen.
+fn fitted_window_size(current: egui::Vec2, aspect: f32, monitor: egui::Vec2) -> egui::Vec2 {
+    let aspect = aspect.clamp(0.05, 20.0);
+    let mut height = current.y.max(240.0);
+    let mut width = height * aspect;
+    // Keep the client area above the window's minimum size so a portrait DS
+    // window is not clamped by the window manager into the wrong aspect.
+    const MIN_WIDTH: f32 = 460.0;
+    const MIN_HEIGHT: f32 = 340.0;
+    if width < MIN_WIDTH {
+        width = MIN_WIDTH;
+        height = width / aspect;
+    }
+    if height < MIN_HEIGHT {
+        height = MIN_HEIGHT;
+        width = height * aspect;
+    }
+    let max = egui::vec2(
+        (monitor.x.max(320.0) * 0.96).max(240.0),
+        (monitor.y.max(240.0) * 0.92).max(180.0),
+    );
+    if width > max.x {
+        width = max.x;
+        height = width / aspect;
+    }
+    if height > max.y {
+        height = max.y;
+        width = height * aspect;
+    }
+    egui::vec2(width.round().max(1.0), height.round().max(1.0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn window_fit_preserves_aspect_for_rpg_maker_gba_and_ds() {
+        let current = egui::vec2(1100.0, 740.0);
+        let monitor = egui::vec2(1920.0, 1080.0);
+        for aspect in [4.0 / 3.0, 3.0 / 2.0, 256.0 / 384.0] {
+            let size = fitted_window_size(current, aspect, monitor);
+            assert!(
+                (size.x / size.y - aspect).abs() < 0.01,
+                "aspect {aspect}: {size:?}"
+            );
+            assert!(size.x <= monitor.x && size.y <= monitor.y, "{size:?}");
+        }
+        // A portrait DS window keeps the current height and narrows the width.
+        let ds = fitted_window_size(current, 256.0 / 384.0, monitor);
+        assert!((ds.y - 740.0).abs() < 1.0);
+        assert!((ds.x - 493.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn window_fit_clamps_tall_windows_to_the_monitor() {
+        let size = fitted_window_size(
+            egui::vec2(700.0, 2000.0),
+            256.0 / 384.0,
+            egui::vec2(800.0, 600.0),
+        );
+        assert!((size.x / size.y - 256.0 / 384.0).abs() < 0.01);
+        assert!(size.y <= 600.0 * 0.93);
+        assert!(size.x <= 800.0);
+    }
 
     #[cfg(not(windows))]
     #[test]

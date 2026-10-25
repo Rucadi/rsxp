@@ -15,16 +15,13 @@
 //! (defaults `127.0.0.1` / `47821`).
 //!
 //! This binary is only built with the `api-docs` feature (see `Cargo.toml`).
-//! With that feature, `--openapi` prints the utoipa-generated document from the
-//! `openapi` module instead of starting the stdio loop.
+//! With that feature, `--openapi` prints the shared control catalog as OpenAPI
+//! 3.1 instead of starting the stdio loop.
 use std::{
     io::{self, BufRead, BufReader, Read, Write},
     net::TcpStream,
     time::Duration,
 };
-#[cfg(feature = "api-docs")]
-#[path = "openapi.rs"]
-mod openapi;
 
 #[derive(Clone, Debug)]
 enum Json {
@@ -50,6 +47,7 @@ impl Json {
             None
         }
     }
+    #[allow(dead_code)]
     fn integer(&self) -> Option<i64> {
         match self {
             Self::Number(v) => v.parse().ok(),
@@ -387,6 +385,227 @@ struct ExtensionRoute {
     arguments: Vec<String>,
 }
 
+#[derive(Clone, Debug)]
+struct ApiParameter {
+    name: String,
+    location: String,
+    kind: String,
+    required: bool,
+    description: String,
+    choices: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+struct ApiEndpoint {
+    id: String,
+    method: String,
+    path: String,
+    summary: String,
+    description: String,
+    parameters: Vec<ApiParameter>,
+}
+
+fn discovery_endpoints() -> Result<Vec<ApiEndpoint>, String> {
+    let value = Parser::parse(&call_game("/v1/discovery")?)?;
+    let endpoints = value
+        .get("endpoints")
+        .and_then(|value| match value {
+            Json::Array(endpoints) => Some(endpoints),
+            _ => None,
+        })
+        .ok_or("control discovery returned no endpoints")?;
+    endpoints
+        .iter()
+        .map(|endpoint| {
+            let parameters = endpoint
+                .get("parameters")
+                .and_then(|value| match value {
+                    Json::Array(parameters) => Some(parameters),
+                    _ => None,
+                })
+                .map_or(&[][..], Vec::as_slice)
+                .iter()
+                .filter_map(|parameter| {
+                    Some(ApiParameter {
+                        name: parameter.get("name")?.string()?.to_owned(),
+                        location: parameter
+                            .get("in")
+                            .and_then(Json::string)
+                            .unwrap_or("query")
+                            .to_owned(),
+                        kind: parameter
+                            .get("type")
+                            .and_then(Json::string)
+                            .unwrap_or("string")
+                            .to_owned(),
+                        required: matches!(parameter.get("required"), Some(Json::Bool(true))),
+                        description: parameter
+                            .get("description")
+                            .and_then(Json::string)
+                            .unwrap_or("")
+                            .to_owned(),
+                        choices: parameter
+                            .get("enum")
+                            .and_then(|value| match value {
+                                Json::Array(values) => Some(values),
+                                _ => None,
+                            })
+                            .map_or(&[][..], Vec::as_slice)
+                            .iter()
+                            .filter_map(Json::string)
+                            .map(str::to_owned)
+                            .collect(),
+                    })
+                })
+                .collect();
+            Ok(ApiEndpoint {
+                id: endpoint
+                    .get("id")
+                    .and_then(Json::string)
+                    .ok_or("endpoint has no id")?
+                    .to_owned(),
+                method: endpoint
+                    .get("method")
+                    .and_then(Json::string)
+                    .ok_or("endpoint has no method")?
+                    .to_owned(),
+                path: endpoint
+                    .get("path")
+                    .and_then(Json::string)
+                    .ok_or("endpoint has no path")?
+                    .to_owned(),
+                summary: endpoint
+                    .get("summary")
+                    .and_then(Json::string)
+                    .unwrap_or("")
+                    .to_owned(),
+                description: endpoint
+                    .get("description")
+                    .and_then(Json::string)
+                    .unwrap_or("")
+                    .to_owned(),
+                parameters,
+            })
+        })
+        .collect()
+}
+
+fn tool_name(id: &str) -> String {
+    id.chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '_' | '-') {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn tools_from_discovery(endpoints: &[ApiEndpoint]) -> String {
+    let mut tools = Vec::new();
+    for endpoint in endpoints {
+        let mut properties = Vec::new();
+        let mut required = Vec::new();
+        for parameter in &endpoint.parameters {
+            let mut schema = vec![("type".into(), Json::String(parameter.kind.clone()))];
+            if !parameter.description.is_empty() {
+                schema.push((
+                    "description".into(),
+                    Json::String(parameter.description.clone()),
+                ));
+            }
+            if !parameter.choices.is_empty() {
+                schema.push((
+                    "enum".into(),
+                    Json::Array(
+                        parameter
+                            .choices
+                            .iter()
+                            .map(|choice| Json::String(choice.clone()))
+                            .collect(),
+                    ),
+                ));
+            }
+            properties.push((parameter.name.clone(), Json::Object(schema)));
+            if parameter.required {
+                required.push(Json::String(parameter.name.clone()));
+            }
+        }
+        let description = if endpoint.description.is_empty() {
+            endpoint.summary.clone()
+        } else {
+            format!("{} {}", endpoint.summary, endpoint.description)
+        };
+        tools.push(Json::Object(vec![
+            ("name".into(), Json::String(tool_name(&endpoint.id))),
+            ("description".into(), Json::String(description)),
+            (
+                "inputSchema".into(),
+                Json::Object(vec![
+                    ("type".into(), Json::String("object".into())),
+                    ("properties".into(), Json::Object(properties)),
+                    ("required".into(), Json::Array(required)),
+                    ("additionalProperties".into(), Json::Bool(false)),
+                ]),
+            ),
+        ]));
+    }
+    json(&Json::Object(vec![("tools".into(), Json::Array(tools))]))
+}
+
+fn call_discovered_tool(name: &str, args: &Json) -> Result<String, String> {
+    let endpoints = discovery_endpoints()?;
+    let endpoint = endpoints
+        .iter()
+        .find(|endpoint| endpoint.id == name || tool_name(&endpoint.id) == name)
+        .ok_or_else(|| format!("unknown control operation: {name}"))?;
+    let mut path = String::new();
+    for (index, segment) in endpoint.path.split('/').enumerate() {
+        if index > 0 {
+            path.push('/');
+        }
+        if let Some(parameter) = segment
+            .strip_prefix('{')
+            .and_then(|value| value.strip_suffix('}'))
+        {
+            let value = args
+                .get(parameter)
+                .ok_or_else(|| format!("missing required argument: {parameter}"))?;
+            path.push_str(&url_encode(&json_argument(value)?));
+        } else {
+            path.push_str(segment);
+        }
+    }
+    let mut first = true;
+    let mut body = Vec::new();
+    for parameter in &endpoint.parameters {
+        let Some(value) = args.get(&parameter.name) else {
+            if parameter.required && parameter.location == "body" {
+                return Err(format!("missing required argument: {}", parameter.name));
+            }
+            continue;
+        };
+        match parameter.location.as_str() {
+            "path" => {}
+            "body" => body.push((parameter.name.clone(), value.clone())),
+            _ => {
+                path.push(if first { '?' } else { '&' });
+                first = false;
+                path.push_str(&url_encode(&parameter.name));
+                path.push('=');
+                path.push_str(&url_encode(&json_argument(value)?));
+            }
+        }
+    }
+    let body = if body.is_empty() {
+        None
+    } else {
+        Some(Json::Object(body))
+    };
+    call_game_json(&endpoint.method, &path, body.as_ref())
+}
+
 fn extension_routes() -> Result<Vec<ExtensionRoute>, String> {
     let value = Parser::parse(&call_game("/v1/extensions/routes")?)?;
     let routes = value
@@ -479,7 +698,10 @@ fn tools_from_routes(routes: impl IntoIterator<Item = ExtensionRoute>) -> String
 }
 
 fn tools() -> String {
-    tools_from_routes(extension_routes().unwrap_or_default())
+    match discovery_endpoints() {
+        Ok(endpoints) if !endpoints.is_empty() => tools_from_discovery(&endpoints),
+        _ => tools_from_routes(extension_routes().unwrap_or_default()),
+    }
 }
 
 fn url_encode(value: &str) -> String {
@@ -576,6 +798,10 @@ fn call_game(path: &str) -> Result<String, String> {
 }
 
 fn call_game_with_method(method: &str, path: &str) -> Result<String, String> {
+    call_game_json(method, path, None)
+}
+
+fn call_game_json(method: &str, path: &str, body: Option<&Json>) -> Result<String, String> {
     let host = std::env::var("RSXP_API_HOST").unwrap_or_else(|_| "127.0.0.1".into());
     let port = std::env::var("RSXP_API_PORT").unwrap_or_else(|_| "47821".into());
     let mut stream = TcpStream::connect(format!("{host}:{port}"))
@@ -587,9 +813,11 @@ fn call_game_with_method(method: &str, path: &str) -> Result<String, String> {
     stream
         .set_write_timeout(timeout)
         .map_err(|e| e.to_string())?;
+    let body = body.map(json).unwrap_or_default();
     write!(
         stream,
-        "{method} {path} HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: close\r\n\r\n"
+        "{method} {path} HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
     )
     .map_err(|e| e.to_string())?;
     let mut response = String::new();
@@ -600,7 +828,7 @@ fn call_game_with_method(method: &str, path: &str) -> Result<String, String> {
         .split_once("\r\n\r\n")
         .ok_or("invalid HTTP response from game API")?;
     let status = headers.lines().next().unwrap_or_default();
-    if !status.contains(" 200 ") {
+    if !status.contains(" 200 ") && !status.contains(" 204 ") {
         let value = Parser::parse(body)?;
         return Err(value
             .get("error")
@@ -644,7 +872,8 @@ fn handle(message: Json) -> Option<String> {
         "tools/call" => {
             let name = params.get("name").and_then(Json::string).unwrap_or("");
             let args_obj = params.get("arguments").unwrap_or(&Json::Null);
-            let result = call_extension_tool(name, args_obj);
+            let result = call_discovered_tool(name, args_obj)
+                .or_else(|_| call_extension_tool(name, args_obj));
             let (content, failed) = match result {
                 Ok(raw) => match Parser::parse(&raw) {
                     Ok(value) => (json(&value), false),
@@ -661,11 +890,14 @@ fn handle(message: Json) -> Option<String> {
 fn main() -> io::Result<()> {
     #[cfg(feature = "api-docs")]
     if std::env::args().any(|arg| arg == "--openapi") {
-        use utoipa::OpenApi as _;
+        let status = serde_json::json!({
+            "base_url": "http://127.0.0.1:47821",
+            "mode": "launcher",
+            "game_running": false,
+        });
         println!(
             "{}",
-            openapi::ApiDoc::openapi()
-                .to_pretty_json()
+            serde_json::to_string_pretty(&rsxp_control::Catalog::standard().openapi(status))
                 .map_err(io::Error::other)?
         );
         return Ok(());
@@ -696,6 +928,13 @@ fn main() -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn control_tool_names_are_mcp_safe() {
+        assert_eq!(tool_name("launcher.launch"), "launcher_launch");
+        assert_eq!(tool_name("game.press"), "game_press");
+        assert_eq!(tool_name("press_key"), "press_key");
+    }
 
     #[test]
     fn parses_nested_requests_and_supplementary_unicode() {
@@ -770,14 +1009,14 @@ mod tests {
 
     #[cfg(feature = "api-docs")]
     #[test]
-    fn generated_openapi_lists_only_route_discovery() {
-        use utoipa::OpenApi as _;
-        let spec = openapi::ApiDoc::openapi().to_pretty_json().unwrap();
+    fn generated_openapi_lists_the_unified_control_catalog() {
+        let spec = rsxp_control::Catalog::standard()
+            .openapi(serde_json::json!({"base_url": "http://127.0.0.1:47821"}))
+            .to_string();
         Parser::parse(&spec).expect("generated OpenAPI should be valid JSON");
+        assert!(spec.contains("/v1/launcher/launch"));
+        assert!(spec.contains("/v1/saves/backup"));
+        assert!(spec.contains("/v1/game/status"));
         assert!(spec.contains("/v1/extensions/routes"));
-        assert!(!spec.contains("/v1/game/"));
-        assert!(!spec.contains("/v1/input/"));
-        assert!(!spec.contains("pokemon-essentials"));
-        assert!(!spec.contains("Pokémon Essentials"));
     }
 }

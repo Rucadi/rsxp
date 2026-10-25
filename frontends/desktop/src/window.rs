@@ -143,6 +143,10 @@ impl ApplicationHandler for WindowApp {
         #[cfg(not(feature = "gpu"))]
         let consumed = false;
         match event {
+            WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+                #[cfg(feature = "gpu")]
+                self.egui_context.request_repaint();
+            }
             WindowEvent::CloseRequested => self.open = false,
             WindowEvent::Focused(true) => self.focused = true,
             WindowEvent::Focused(false) => {

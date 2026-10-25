@@ -99,21 +99,23 @@ globalThis.__rsxp_openPluginWebview = (payload) => {
   Object.assign(root.style, {
     position: 'fixed', left: 'min(320px, 5vw)', top: '5vh', width: 'min(720px, 90vw)',
     height: 'min(560px, 85vh)', zIndex: '10000', display: 'flex', flexDirection: 'column',
-    background: '#202124', border: '1px solid #777', borderRadius: '6px',
-    boxShadow: '0 12px 40px rgba(0,0,0,.45)', overflow: 'hidden', resize: 'both',
+    background: '#1A1A2E', border: '1px solid rgba(255,0,110,.45)', borderRadius: '12px',
+    boxShadow: '0 0 36px rgba(255,0,110,.22), 0 18px 48px rgba(0,0,0,.55)', overflow: 'hidden', resize: 'both',
     minWidth: '420px', minHeight: '240px', maxWidth: '95vw', maxHeight: '90vh',
   });
   const header = document.createElement('header');
   Object.assign(header.style, {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    minHeight: '32px', padding: '0 8px 0 12px', color: '#eee', font: '13px sans-serif',
+    minHeight: '38px', padding: '0 8px 0 14px', color: '#EEEEF0',
+    background: '#12121F', borderBottom: '1px solid #2A2A3E',
+    font: '12px/1.4 "Space Mono",ui-monospace,monospace', letterSpacing: '.04em',
     cursor: 'grab', userSelect: 'none', touchAction: 'none',
   });
   const label = document.createElement('span');
   label.textContent = String(value.title || value.view_id || 'Plugin');
   const close = document.createElement('button');
   close.type = 'button'; close.textContent = '×';
-  Object.assign(close.style, { color: '#eee', background: 'transparent', border: '0', fontSize: '22px', cursor: 'pointer' });
+  Object.assign(close.style, { color: '#FF006E', background: 'transparent', border: '0', fontSize: '22px', cursor: 'pointer', lineHeight: '1' });
   close.addEventListener('click', () => closePluginWebview(value.plugin_id, value.view_id));
   header.append(label, close);
 
@@ -340,6 +342,53 @@ try {
 } catch {
   saveStore = {};
 }
+const backupStoreKey = `rsxp-backups:${gameRoot}`;
+let backupStore = {};
+try {
+  backupStore = JSON.parse(localStorage.getItem(backupStoreKey) || '{}') || {};
+} catch {
+  backupStore = {};
+}
+function writeBackupStore() {
+  try {
+    localStorage.setItem(backupStoreKey, JSON.stringify(backupStore));
+  } catch (error) {
+    status('Could not persist save backup: ' + error);
+  }
+}
+function backupName() {
+  return new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').replace('Z', '');
+}
+function createSaveBackup(name = '') {
+  if (!Object.keys(saveStore).length) {
+    status('No save files exist yet. Save in the game first.');
+    return null;
+  }
+  const chosen = String(name || '').trim() || backupName();
+  backupStore[chosen] = { created: Date.now(), files: { ...saveStore } };
+  writeBackupStore();
+  status(`Save backup ${chosen} created.`);
+  return chosen;
+}
+function latestBackupName() {
+  return Object.keys(backupStore).sort().at(-1) || '';
+}
+function restoreLatestSaveBackup() {
+  const name = latestBackupName();
+  if (!name) {
+    status('No save backups exist yet.');
+    return;
+  }
+  const backup = backupStore[name];
+  if (!backup?.files) {
+    status(`Backup ${name} is invalid.`);
+    return;
+  }
+  saveStore = { ...backup.files };
+  writeSaveStore();
+  status(`Restored save backup ${name}. Reloading…`);
+  setTimeout(() => location.reload(), 300);
+}
 function writeSaveStore() {
   try {
     localStorage.setItem(saveStoreKey, JSON.stringify(saveStore));
@@ -414,6 +463,24 @@ importInput.addEventListener('change', () => {
 });
 globalThis.__rsxp_exportSaves = exportSaves;
 globalThis.__rsxp_importSaves = () => importInput.click();
+globalThis.__rsxp_createSaveBackup = createSaveBackup;
+globalThis.__rsxp_restoreLatestSaveBackup = restoreLatestSaveBackup;
+
+function pumpPlayerActions() {
+  if (engine.web_eframe_player_actions === undefined) return;
+  let actions;
+  try { actions = JSON.parse(engine.web_eframe_player_actions() || '{}'); } catch { return; }
+  if (actions.export_saves) exportSaves();
+  if (actions.import_saves) importInput.click();
+  if (actions.create_backup) createSaveBackup();
+  if (actions.restore_latest) restoreLatestSaveBackup();
+  if (actions.open_game_folder || actions.open_save_folder || actions.open_patches_folder) {
+    status('Browsers cannot open native folders. Use Export saves or the desktop player for filesystem folders.');
+  }
+  if (actions.start_api || actions.stop_api) {
+    status('The browser control API is always available as window.RSXP.control; it has no TCP listener.');
+  }
+}
 
 const dispatchNative = createNativeDispatcher(engine, (enabled) => {
   textInput = enabled;
@@ -452,6 +519,206 @@ globalThis.RSXP = {
   },
 };
 globalThis.MKXP = globalThis.RSXP;
+
+// ---------------------------------------------------------------------------
+// Typed control bridge. A browser cannot bind a TCP listener, so the same
+// operation catalog is exposed here. Discovery comes from the Rust catalog;
+// browser-owned settings/saves use local storage, and game operations go
+// through the shared Ruby bridge.
+// ---------------------------------------------------------------------------
+const browserSettingsKey = 'rsxp-settings';
+function browserSettings() {
+  try { return JSON.parse(localStorage.getItem(browserSettingsKey) || '{}') || {}; }
+  catch { return {}; }
+}
+function saveBrowserSettings(settings) {
+  localStorage.setItem(browserSettingsKey, JSON.stringify(settings));
+}
+function browserGameKey() {
+  return localGame?.storageId || gameRoot;
+}
+function browserSettingsMerge(base = {}, overlay = {}) {
+  return {
+    ...base,
+    ...overlay,
+    patches: [...new Set([...(base.patches || []), ...(overlay.patches || [])])],
+    patch_values: { ...(base.patch_values || {}), ...(overlay.patch_values || {}) },
+    keyboard: { ...(base.keyboard || {}), ...(overlay.keyboard || {}) },
+  };
+}
+function effectiveBrowserSettings() {
+  const settings = browserSettings();
+  const override = settings.games?.[browserGameKey()] || {};
+  return browserSettingsMerge(settings.common || {}, override);
+}
+function controlError(status, message) {
+  const error = new Error(String(message || 'control request failed'));
+  error.status = status;
+  throw error;
+}
+function browserBackupInfo(name) {
+  const backup = backupStore[name];
+  const files = backup?.files || {};
+  const bytes = Object.values(files).reduce((total, value) => total + Math.ceil(String(value).length * 0.75), 0);
+  return {
+    name,
+    created_at: Math.floor((backup?.created || 0) / 1000),
+    created_at_utc: new Date(backup?.created || 0).toISOString(),
+    files: Object.keys(files).length,
+    bytes,
+    path: `browser-storage:${name}`,
+  };
+}
+async function controlRequest(method, target, body) {
+  const upper = String(method || 'GET').toUpperCase();
+  const url = new URL(String(target || '/'), 'http://rsxp.invalid');
+  const path = url.pathname.replace(/\/+$/, '') || '/';
+  const payload = body === undefined || body === null || body === ''
+    ? {}
+    : (typeof body === 'string' ? JSON.parse(body) : body);
+  const settings = browserSettings();
+
+  if (upper === 'GET' && (path === '/' || path === '/v1')) {
+    const discovery = JSON.parse(engine.web_control_discovery());
+    return { server: 'rsxp-control', api_version: discovery.api_version, discovery: 'browser://rsxp/v1/discovery', openapi: 'browser://rsxp/v1/openapi.json', status: 'browser://rsxp/v1/status' };
+  }
+  if (upper === 'GET' && path === '/v1/discovery') return JSON.parse(engine.web_control_discovery());
+  if (upper === 'GET' && path === '/v1/openapi.json') return JSON.parse(engine.web_control_openapi());
+  if (upper === 'GET' && path === '/v1/status') return JSON.parse(engine.web_control_discovery()).status;
+  if (upper === 'GET' && path === '/v1/extensions/routes') return JSON.parse(engine.web_control_routes());
+
+  if (path === '/v1/settings/common') {
+    if (upper === 'GET') return settings.common || {};
+    if (upper === 'PUT' || upper === 'PATCH') {
+      settings.common = payload;
+      saveBrowserSettings(settings);
+      return settings.common;
+    }
+  }
+  if (path.startsWith('/v1/settings/games/')) {
+    const key = decodeURIComponent(path.slice('/v1/settings/games/'.length));
+    if (upper === 'GET') {
+      const override = settings.games?.[key] ?? null;
+      return { key, override, settings: browserSettingsMerge(settings.common || {}, override || {}) };
+    }
+    if (upper === 'PUT' || upper === 'PATCH') {
+      settings.games ||= {};
+      if (payload.settings === null) delete settings.games[key];
+      else settings.games[key] = payload.settings || payload;
+      saveBrowserSettings(settings);
+      return { key, override: settings.games[key] ?? null, settings: browserSettingsMerge(settings.common || {}, settings.games[key] || {}) };
+    }
+  }
+  if (upper === 'GET' && path === '/v1/settings/effective') {
+    const key = url.searchParams.get('game') || browserGameKey();
+    const override = settings.games?.[key] ?? null;
+    return browserSettingsMerge(settings.common || {}, override || {});
+  }
+
+  if (path === '/v1/saves' && upper === 'GET') {
+    return {
+      game: { key: browserGameKey(), save: gameRoot, title: localGame?.folder || '', cartridge: Boolean(localGame?.rom) },
+      backups: Object.keys(backupStore).sort().reverse().map(browserBackupInfo),
+      can_restore: !gameStarted,
+      running: gameStarted,
+    };
+  }
+  if (path === '/v1/saves/backup' && upper === 'POST') {
+    const name = createSaveBackup(payload.name);
+    if (!name) controlError(409, 'no save files to back up');
+    return browserBackupInfo(name);
+  }
+  if (path === '/v1/saves/restore' && upper === 'POST') {
+    if (gameStarted) controlError(409, 'reload the page before restoring a save snapshot');
+    const name = String(payload.backup || '');
+    const backup = backupStore[name];
+    if (!backup?.files) controlError(404, `unknown backup: ${name}`);
+    saveStore = { ...backup.files };
+    writeSaveStore();
+    status(`Restored save backup ${name}. Reload the page to load it.`);
+    return { restored: browserBackupInfo(name), saved: true };
+  }
+  if (path.startsWith('/v1/saves/backups/') && upper === 'DELETE') {
+    const name = decodeURIComponent(path.slice('/v1/saves/backups/'.length));
+    if (!backupStore[name]) controlError(404, `unknown backup: ${name}`);
+    delete backupStore[name];
+    writeBackupStore();
+    return { deleted: name };
+  }
+
+  if (path === '/v1/launcher/status' && upper === 'GET') {
+    const status = JSON.parse(engine.web_control_discovery()).status;
+    return { ...status, title: localGame?.folder || '', source: browserGameKey() };
+  }
+  if (path === '/v1/launcher/library' && upper === 'GET') {
+    return { games: localGame ? [{ title: localGame.folder || '', key: browserGameKey(), installed: true, platform: localGame.rom ? 'gba' : 'rpg-maker' }] : [], count: localGame ? 1 : 0 };
+  }
+  if (path === '/v1/launcher/pause' && upper === 'POST') {
+    const paused = Boolean(payload.paused);
+    engine.web_eframe_set_paused(paused);
+    return { paused };
+  }
+  if (path === '/v1/launcher/live' && upper === 'GET') {
+    return {
+      ...JSON.parse(engine.web_runtime_settings()),
+      paused: engine.web_eframe_game_paused(),
+      game: localGame?.folder || '',
+      source: browserGameKey(),
+    };
+  }
+  if (path === '/v1/launcher/live.update' && (upper === 'PATCH' || upper === 'POST')) {
+    if (payload.paused !== undefined) engine.web_eframe_set_paused(Boolean(payload.paused));
+    if (payload.fast_forward !== undefined) engine.web_runtime_fast_forward(Boolean(payload.fast_forward));
+    if (payload.fps !== undefined) engine.web_runtime_set_rate(Number(payload.fps) || 0);
+    return {
+      ...JSON.parse(engine.web_runtime_settings()),
+      paused: engine.web_eframe_game_paused(),
+    };
+  }
+  if (path.startsWith('/v1/catalogs')) {
+    return { catalogs: [], count: 0 };
+  }
+  if (path.startsWith('/v1/launcher/') || path.startsWith('/v1/settings')) {
+    controlError(409, 'this launcher operation is not available in a browser; use the desktop launcher');
+  }
+
+  if (upper === 'OPTIONS') return {};
+  // Game operations: append body fields to the query string understood by the
+  // generic Rhai route matcher, then poll the shared bridge.
+  const query = new URLSearchParams(url.search);
+  for (const [key, value] of Object.entries(payload)) {
+    if (query.has(key)) continue;
+    query.set(key, value !== null && typeof value === 'object' ? JSON.stringify(value) : String(value));
+  }
+  const forward = `${path}${query.toString() ? `?${query}` : ''}`;
+  const id = engine.web_control_request(upper, forward);
+  for (;;) {
+    const state = JSON.parse(engine.web_control_take_response(id));
+    if (state.ready) {
+      if (state.status >= 400) controlError(state.status, state.body?.error || 'game request failed');
+      return state.body;
+    }
+    await new Promise(resolve => setTimeout(resolve, 16));
+  }
+}
+globalThis.RSXP.control = {
+  discovery: async () => JSON.parse(engine.web_control_discovery()),
+  openapi: async () => JSON.parse(engine.web_control_openapi()),
+  request: controlRequest,
+  fetch: async (target, init = {}) => {
+    const method = String(init.method || 'GET').toUpperCase();
+    const body = init.body || '';
+    try {
+      const value = await controlRequest(method, target, body);
+      return new Response(JSON.stringify(value), { status: 200, headers: { 'content-type': 'application/json' } });
+    } catch (error) {
+      return new Response(JSON.stringify({ error: String(error.message || error) }), { status: error.status || 500, headers: { 'content-type': 'application/json' } });
+    }
+  },
+  backupName: () => createSaveBackup(),
+  restoreLatest: () => restoreLatestSaveBackup(),
+};
+
 
 // On-demand asset loading. The engine decodes images/audio while it runs and
 // cannot await, so this uses a synchronous request and caches the result.
@@ -568,9 +835,10 @@ async function mainCartridge() {
     try {
       const messages = JSON.parse(engine.web_core_take_messages());
       for (const message of messages) status(message);
-      engine.web_core_step();
+      if (!engine.web_eframe_game_paused()) engine.web_core_step();
       engine.web_core_present();
       pumpPluginHttp();
+      pumpPlayerActions();
       if (engine.web_eframe_take_reset()) {
         running = false;
         engine.web_core_stop();
@@ -626,7 +894,16 @@ async function main() {
     for (const archive of localGame.archives) engine.web_add_archive(await localGame.read(archive));
   }
   if (!player?.eframeInitialized) await engine.web_init_eframe(canvas);
-  engine.web_init(width, height, version, version === 1 ? 40 : 60, null);
+  const browserConfig = effectiveBrowserSettings();
+  const configuredRate = Number(browserConfig.fps) || 0;
+  engine.web_init(
+    width,
+    height,
+    version,
+    configuredRate > 0 ? configuredRate : (version === 1 ? 40 : 60),
+    null,
+  );
+  if (browserConfig.fast_forward) engine.web_runtime_fast_forward(true);
   startControllerLoop();
 
   // eframe owns browser presentation and canvas input; game frames are submitted
@@ -665,6 +942,7 @@ async function main() {
   const loadingFrame = () => {
     engine.web_eframe_present();
     pumpPluginHttp();
+    pumpPlayerActions();
     if (preloading) requestAnimationFrame(loadingFrame);
   };
   requestAnimationFrame(loadingFrame);
@@ -750,9 +1028,11 @@ async function main() {
     present: () => {
       engine.web_eframe_present();
       pumpPluginHttp();
+      pumpPlayerActions();
       if (!gameRunning && engine.web_eframe_take_reset()) location.reload();
     },
     requestFrame: requestAnimationFrame,
+    shouldRun: () => !engine.web_eframe_game_paused(),
   });
 
   setStatus('Starting game scripts…');

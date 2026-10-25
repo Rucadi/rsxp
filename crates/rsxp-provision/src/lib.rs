@@ -1,4 +1,8 @@
 //! Versioned software repositories and transactional, hash-verified installation.
+pub mod backup;
+pub mod catalog;
+pub mod config;
+pub mod folders;
 pub mod ips;
 pub mod settings;
 use serde::{Deserialize, Serialize};
@@ -55,7 +59,17 @@ pub fn root(game: Option<&Path>) -> PathBuf {
         .join("RSXP")
 }
 pub fn initialize(root: &Path) -> Result<()> {
-    for dir in ["games", "roms", "saves", "repositories", "cache", "config"] {
+    for dir in [
+        "games",
+        "roms",
+        "saves",
+        "repositories",
+        "repositories/cache",
+        "cache",
+        "config",
+        "config/games",
+        "backups",
+    ] {
         fs::create_dir_all(root.join(dir))?;
     }
     Ok(())
@@ -145,19 +159,39 @@ pub struct Game {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Artwork { pub url: String, pub sha256: String }
+pub struct Artwork {
+    pub url: String,
+    pub sha256: String,
+}
 /// Content-addressed artwork cache, independently verified from game downloads.
 pub fn cache_artwork(root: &Path, art: &Artwork) -> Result<PathBuf> {
-    if !valid_hash(&art.sha256) { return Err("Invalid artwork SHA-256".into()); }
-    let path = root.join("cache/artwork").join(art.sha256.to_ascii_lowercase());
-    if fs::read(&path).is_ok_and(|bytes| verify(&bytes, &art.sha256).is_ok()) { return Ok(path); }
-    let bytes = fetch(&art.url, 16 * 1024 * 1024)?; verify(&bytes, &art.sha256)?;
+    if !valid_hash(&art.sha256) {
+        return Err("Invalid artwork SHA-256".into());
+    }
+    let path = root
+        .join("cache/artwork")
+        .join(art.sha256.to_ascii_lowercase());
+    if fs::read(&path).is_ok_and(|bytes| verify(&bytes, &art.sha256).is_ok()) {
+        return Ok(path);
+    }
+    let bytes = fetch(&art.url, 16 * 1024 * 1024)?;
+    verify(&bytes, &art.sha256)?;
     fs::create_dir_all(path.parent().unwrap())?;
-    let tmp = path.with_extension("tmp"); fs::write(&tmp, bytes)?; fs::rename(tmp, &path)?; Ok(path)
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, bytes)?;
+    fs::rename(tmp, &path)?;
+    Ok(path)
 }
 pub fn import_artwork(root: &Path, file: &Path) -> Result<String> {
     let bytes = fetch(&file.to_string_lossy(), 16 * 1024 * 1024)?;
-    let digest = hash(&bytes); cache_artwork(root, &Artwork { url: file.to_string_lossy().into_owned(), sha256: digest.clone() })?;
+    let digest = hash(&bytes);
+    cache_artwork(
+        root,
+        &Artwork {
+            url: file.to_string_lossy().into_owned(),
+            sha256: digest.clone(),
+        },
+    )?;
     Ok(digest)
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -195,7 +229,9 @@ impl Repository {
         let mut ids = std::collections::HashSet::new();
         for g in &self.games {
             g.config.validate()?;
-            if g.image.as_ref().is_some_and(|a| !valid_hash(&a.sha256)) { return Err("Invalid artwork SHA-256".into()); }
+            if g.image.as_ref().is_some_and(|a| !valid_hash(&a.sha256)) {
+                return Err("Invalid artwork SHA-256".into());
+            }
             if !identifier(&g.id)
                 || !ids.insert(&g.id)
                 || g.title.trim().is_empty()
@@ -293,27 +329,27 @@ pub fn load_repository(source: &str) -> Result<Repository> {
     repo.validate()?;
     for game in &mut repo.games {
         let mut urls = vec![&mut game.download.url];
-        if let Some(art) = &mut game.image { urls.push(&mut art.url); }
-        for url in urls {
-        if !url.contains("://") {
-            if source.starts_with("https://") {
-                if !relative(url) {
-                    return Err("Remote repositories require relative or HTTPS downloads".into());
-                }
-                *url = format!(
-                    "{}/{}",
-                    source.rsplit_once('/').unwrap().0,
-                    url
-                );
-            } else {
-                *url = Path::new(source)
-                    .parent()
-                    .unwrap_or(Path::new("."))
-                    .join(&*url)
-                    .to_string_lossy()
-                    .into_owned();
-            }
+        if let Some(art) = &mut game.image {
+            urls.push(&mut art.url);
         }
+        for url in urls {
+            if !url.contains("://") {
+                if source.starts_with("https://") {
+                    if !relative(url) {
+                        return Err(
+                            "Remote repositories require relative or HTTPS downloads".into()
+                        );
+                    }
+                    *url = format!("{}/{}", source.rsplit_once('/').unwrap().0, url);
+                } else {
+                    *url = Path::new(source)
+                        .parent()
+                        .unwrap_or(Path::new("."))
+                        .join(&*url)
+                        .to_string_lossy()
+                        .into_owned();
+                }
+            }
         }
     }
     Ok(repo)

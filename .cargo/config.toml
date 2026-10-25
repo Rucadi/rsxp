@@ -1,5 +1,6 @@
 [alias]
-api-openapi = "run --quiet --no-default-features --features api-docs --bin rsxp-mcp -- --openapi"
+# Regenerate the checked-in OpenAPI document from the shared control catalog.
+api-openapi = "run --quiet -p rsxp --no-default-features --features api-docs --bin rsxp-mcp -- --openapi"
 xtask = "run --quiet --manifest-path platforms/web/xtask/Cargo.toml --"
 
 # Statically link the MinGW C runtime and libgcc so the portable Windows build

@@ -21,6 +21,8 @@
 //! to 10 seconds for the reply and cancelling the request on timeout. Responses
 //! are JSON with `Connection: close`.
 use super::*;
+use rsxp_control::{Catalog, Endpoint, Parameter, ParameterType, Scope};
+use serde_json::{json, Value};
 use std::{
     io::{BufRead, BufReader, Write},
     net::{TcpListener, TcpStream},
@@ -92,6 +94,54 @@ pub fn listening_port() -> Option<u16> {
     }
 }
 
+fn control_status(port: u16) -> Value {
+    json!({
+        "server": "rsxp-control",
+        "api_version": rsxp_control::API_VERSION,
+        "mode": "game",
+        "pid": std::process::id(),
+        "port": port,
+        "base_url": format!("http://127.0.0.1:{port}"),
+        "game_running": true,
+        "game_available": true,
+        "launcher_available": false,
+        "notes": "Headless game process. Launcher, catalog, save and settings endpoints are not available here; use the desktop launcher or its control API for those.",
+    })
+}
+
+fn control_catalog() -> Catalog {
+    let mut catalog = Catalog::standard();
+    catalog.merge_dynamic(super::extension_route_list().into_iter().map(|route| {
+        let mut endpoint = Endpoint::new(
+            &route.operation,
+            &route.method,
+            &route.path,
+            format!("Game operation {}", route.operation),
+            "Route supplied by a loaded Rhai plugin and executed by the game bridge.",
+            Scope::Extensions,
+        );
+        for argument in &route.arguments {
+            let in_path = route.path.contains(&format!("{{{argument}}}"));
+            endpoint = endpoint.parameter(if in_path {
+                Parameter::path(
+                    argument.as_str(),
+                    ParameterType::String,
+                    "Plugin route argument",
+                )
+            } else {
+                Parameter::query(
+                    argument.as_str(),
+                    ParameterType::String,
+                    false,
+                    "Plugin route argument",
+                )
+            });
+        }
+        endpoint
+    }));
+    catalog
+}
+
 fn serve(stream: TcpStream) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
     let mut reader = BufReader::new(stream);
@@ -132,13 +182,19 @@ fn write_http_response(stream: &mut TcpStream, status: u16, body: &str) {
         200 => "OK",
         400 => "Bad Request",
         404 => "Not Found",
+        409 => "Conflict",
         431 => "Request Header Fields Too Large",
         500 => "Internal Server Error",
         _ => "Error",
     };
+    let cors = if std::env::var("RSXP_API_CORS").as_deref() == Ok("1") {
+        "Access-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\n"
+    } else {
+        ""
+    };
     let _ = write!(
         stream,
-        "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json; charset=utf-8\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json; charset=utf-8\r\n{cors}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
 }
@@ -150,8 +206,54 @@ fn handle_http_request(line: &str) -> Result<String, (u16, String)> {
     if method == "OPTIONS" {
         return Ok("{}".into());
     }
+    let path = target.split('?').next().unwrap_or(target);
+    if method == "GET" {
+        let port = listening_port().unwrap_or(0);
+        match path {
+            "/v1" => {
+                return Ok(json!({
+                    "server": "rsxp-control",
+                    "api_version": rsxp_control::API_VERSION,
+                    "discovery": format!("/v1/discovery"),
+                    "openapi": "/v1/openapi.json",
+                    "status": "/v1/status",
+                })
+                .to_string());
+            }
+            "/v1/discovery" => {
+                return Ok(control_catalog()
+                    .discovery(control_status(port))
+                    .to_string());
+            }
+            "/v1/openapi.json" => {
+                return Ok(control_catalog().openapi(control_status(port)).to_string());
+            }
+            "/v1/status" => return Ok(control_status(port).to_string()),
+            _ => {}
+        }
+    }
     if method == "GET" && target == "/v1/extensions/routes" {
         return Ok(extension_routes_json());
+    }
+    if path == "/v1/game/settings" {
+        return Err((
+            409,
+            "game settings require the desktop launcher control API".into(),
+        ));
+    }
+    if method == "POST" && path == "/v1/game/reset" {
+        crate::runtime_settings::request_reset();
+        return Ok("{\"reset\":true}".into());
+    }
+    if path.starts_with("/v1/launcher")
+        || path.starts_with("/v1/catalogs")
+        || path.starts_with("/v1/settings")
+        || path.starts_with("/v1/saves")
+    {
+        return Err((
+            409,
+            "this operation requires the desktop launcher control API".into(),
+        ));
     }
     let (operation, args) = route_http(method, target)?;
     request(&operation, args).map_err(|message| (400, message))

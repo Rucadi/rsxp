@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Stop resuming a dead Ruby VM, but keep presenting and processing workspace UI.
-export function createGamePump({ isAlive, resume, present, stopped, requestFrame }) {
+export function createGamePump({ isAlive, resume, present, stopped, requestFrame, shouldRun = () => true }) {
   let running = true;
   let result;
   return function pump() {
     if (running) {
+      if (!shouldRun()) {
+        present();
+        requestFrame(pump);
+        return;
+      }
       try {
         if (isAlive()) result = resume();
         else { running = false; stopped({ result }); }

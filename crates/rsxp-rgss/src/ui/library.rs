@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Responsive, keyboard-accessible launcher. No filesystem work occurs while drawing.
+//!
+//! The library is the product's front door, so it gets the full ArcadeNeon
+//! treatment: platform-filtered chips, illustrated cover cards with neon
+//! selection glows, a featured "ready to play" banner, and a compact import
+//! shelf. Everything here is presentation only; the returned
+//! [`SessionActions`] are executed by the platform adapter.
 use super::session::{RubyJit, SessionActions, SessionPanel};
-
-const MINT: egui::Color32 = egui::Color32::from_rgb(127, 231, 200);
-const MUTED: egui::Color32 = egui::Color32::from_rgb(151, 174, 183);
+use super::theme::{self, ButtonKind, ButtonSize, Tone};
 
 fn title(path: &str) -> &str {
     path.trim_end_matches(['/', '\\'])
@@ -12,58 +16,86 @@ fn title(path: &str) -> &str {
         .unwrap_or(path)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Platform {
+    RpgMaker,
+    Gba,
+    Nds,
+}
+
+impl Platform {
+    fn of(path: &str) -> Self {
+        let extension = path
+            .rsplit_once('.')
+            .map(|(_, extension)| extension.to_ascii_lowercase());
+        match extension.as_deref() {
+            Some("gba") => Self::Gba,
+            Some("nds") => Self::Nds,
+            _ => Self::RpgMaker,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::RpgMaker => "RPG Maker",
+            Self::Gba => "GBA",
+            Self::Nds => "NDS",
+        }
+    }
+
+    fn tone(self) -> Tone {
+        match self {
+            Self::RpgMaker => Tone::Lime,
+            Self::Gba => Tone::Cyan,
+            Self::Nds => Tone::Pink,
+        }
+    }
+
+    fn accent(self) -> egui::Color32 {
+        self.tone().color()
+    }
+
+    fn cover(self) -> (egui::Color32, egui::Color32) {
+        match self {
+            Self::RpgMaker => (
+                egui::Color32::from_rgb(12, 40, 30),
+                egui::Color32::from_rgb(32, 92, 66),
+            ),
+            Self::Gba => (
+                egui::Color32::from_rgb(8, 35, 46),
+                egui::Color32::from_rgb(20, 78, 96),
+            ),
+            Self::Nds => (
+                egui::Color32::from_rgb(38, 14, 44),
+                egui::Color32::from_rgb(88, 32, 92),
+            ),
+        }
+    }
+
+    fn matches(self, filter: &str) -> bool {
+        filter == "All" || filter == self.label()
+    }
+}
+
+fn format_count(count: usize) -> String {
+    match count {
+        1 => "1 game".into(),
+        _ => format!("{count} games"),
+    }
+}
+
 impl SessionPanel {
     pub(super) fn draw_library(&mut self, ui: &mut egui::Ui, actions: &mut SessionActions) {
-        ui.horizontal_wrapped(|ui| {
-            ui.label(egui::RichText::new("Library").size(30.0).strong());
-            ui.label(egui::RichText::new(format!("{} games", self.recent.len())).color(MUTED));
-            if ui
-                .add_enabled(
-                    !self.busy,
-                    egui::Button::new("+ Add game").min_size(egui::vec2(110.0, 36.0)),
-                )
-                .clicked()
-            {
-                actions.browse = true;
-            }
-            if self.busy {
-                ui.spinner();
-                ui.label("Preparing game…");
-                if (self.capabilities.zip_import || self.capabilities.torrent_import)
-                    && ui.button("Cancel").clicked()
-                {
-                    actions.cancel = true;
-                }
-            }
-        });
-        ui.add_space(12.0);
-        ui.horizontal_wrapped(|ui| {
-            ui.add(
-                egui::TextEdit::singleline(&mut self.library_query)
-                    .hint_text("Search your games…")
-                    .desired_width((ui.available_width() * 0.45).clamp(100.0, 340.0)),
-            );
-            if !self.library_query.is_empty() && ui.button("Clear").clicked() {
-                self.library_query.clear();
-            }
-            egui::ComboBox::from_id_salt("library-sort")
-                .selected_text(if self.library_sort_title {
-                    "Title A–Z"
-                } else {
-                    "Recently opened"
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.library_sort_title, false, "Recently opened");
-                    ui.selectable_value(&mut self.library_sort_title, true, "Title A–Z");
-                });
-            ui.toggle_value(&mut self.library_compact, "Compact tiles");
-        });
-        ui.add_space(16.0);
+        self.draw_library_heading(ui, actions);
+        ui.add_space(theme::MD);
+        self.draw_library_filters(ui);
+        ui.add_space(theme::LG);
 
         let query = self.library_query.trim().to_lowercase();
         let mut games: Vec<String> = self
             .recent
             .iter()
+            .filter(|path| Platform::of(path).matches(&self.library_platform))
             .filter(|path| title(path).to_lowercase().contains(&query))
             .cloned()
             .collect();
@@ -77,13 +109,12 @@ impl SessionPanel {
             self.library_selected = games.first().cloned();
         }
 
-        let gap = 16.0;
-        let preferred = if self.library_compact { 132.0 } else { 180.0 };
-        let columns = ((ui.available_width() + gap) / (preferred + gap))
-            .floor()
-            .max(1.0) as usize;
-        let tile_width =
-            ((ui.available_width() - gap * (columns - 1) as f32) / columns as f32).min(240.0);
+        let (columns, tile_width) = theme::grid_cell(
+            ui,
+            if self.library_compact { 132.0 } else { 168.0 },
+            230.0,
+            16.0,
+        );
         // Do not steal arrows or Enter from search, menus, or another focused widget.
         if !ui.ctx().egui_wants_keyboard_input() && !games.is_empty() {
             let mut index = games
@@ -118,73 +149,32 @@ impl SessionPanel {
         }
 
         if let Some(path) = self.library_selected.clone() {
-            egui::Frame::new()
-                .fill(egui::Color32::from_rgb(24, 45, 50))
-                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(48, 78, 80)))
-                .corner_radius(18)
-                .inner_margin(20.0)
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    ui.label(
-                        egui::RichText::new("READY TO PLAY")
-                            .size(10.0)
-                            .strong()
-                            .color(MINT),
-                    );
-                    ui.add_space(6.0);
-                    ui.label(egui::RichText::new(title(&path)).size(26.0).strong());
-                    ui.add(
-                        egui::Label::new(egui::RichText::new(&path).small().color(MUTED))
-                            .truncate(),
-                    )
-                    .on_hover_text(&path);
-                    ui.add_space(12.0);
-                    if ui
-                        .add_enabled(
-                            !self.busy,
-                            egui::Button::new(
-                                egui::RichText::new("Play game")
-                                    .strong()
-                                    .color(egui::Color32::from_rgb(13, 36, 31)),
-                            )
-                            .fill(MINT)
-                            .min_size(egui::vec2(150.0, 42.0)),
-                        )
-                        .clicked()
-                    {
-                        actions.open = Some(path);
-                        self.open = false;
-                    }
-                    if self.active {
-                        ui.small("Starting a game replaces your current session. Save first.");
-                    }
-                });
-            ui.add_space(20.0);
+            self.draw_featured(ui, &path, actions);
+            ui.add_space(theme::LG);
         }
 
         if games.is_empty() {
-            ui.add_space(24.0);
-            ui.label(
-                egui::RichText::new(if self.recent.is_empty() {
-                    "Your next adventure starts here"
-                } else {
-                    "No matching games"
-                })
-                .size(22.0)
-                .strong(),
-            );
-            ui.label(if self.recent.is_empty() {
-                "Add a game folder or drop one into this window. Your games will appear here."
+            if self.recent.is_empty() {
+                theme::empty_state(
+                    ui,
+                    "✦",
+                    "Your next adventure starts here",
+                    "Add a game folder, ZIP, GBA, or NDS ROM below. Your library stays on this device.",
+                );
             } else {
-                "Try a different title or clear your search."
-            });
-            ui.add_space(24.0);
+                theme::empty_state(
+                    ui,
+                    "⌕",
+                    "No matching games",
+                    "Try a different title, clear the search, or switch platform.",
+                );
+            }
         } else {
             ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(gap, 20.0);
+                ui.spacing_mut().item_spacing = egui::vec2(16.0, 20.0);
                 for path in &games {
                     ui.allocate_ui_with_layout(
-                        egui::vec2(tile_width, tile_width * 1.4 + 32.0),
+                        egui::vec2(tile_width, tile_width * 1.4 + 44.0),
                         egui::Layout::top_down(egui::Align::Min),
                         |ui| {
                             let selected = self.library_selected.as_ref() == Some(path);
@@ -214,173 +204,434 @@ impl SessionPanel {
                                 path
                             ));
                             ui.add(
-                                egui::Label::new(egui::RichText::new(title(path)).strong().color(
-                                    if selected {
-                                        MINT
-                                    } else {
-                                        egui::Color32::from_rgb(224, 233, 237)
-                                    },
-                                ))
+                                egui::Label::new(
+                                    egui::RichText::new(title(path))
+                                        .font(theme::body_font(14.0))
+                                        .color(if selected {
+                                            Platform::of(path).accent()
+                                        } else {
+                                            theme::TEXT
+                                        }),
+                                )
                                 .truncate(),
                             );
+                            ui.horizontal(|ui| {
+                                theme::tag(
+                                    ui,
+                                    Platform::of(path).label(),
+                                    Platform::of(path).tone(),
+                                );
+                                ui.label(
+                                    egui::RichText::new(if selected {
+                                        "SELECTED"
+                                    } else {
+                                        "READY"
+                                    })
+                                    .font(theme::mono_font(9.0))
+                                    .color(if selected {
+                                        Platform::of(path).accent()
+                                    } else {
+                                        theme::TEXT_FAINT
+                                    }),
+                                );
+                            });
                         },
                     );
                 }
             });
-            ui.add_space(16.0);
+            ui.add_space(theme::MD);
+            theme::shortcut_hint(
+                ui,
+                &[
+                    ("← → ↑ ↓", "Navigate"),
+                    ("Enter", "Play"),
+                    ("Double-click", "Launch"),
+                ],
+            );
+        }
+
+        ui.add_space(theme::XL);
+        self.draw_import_shelf(ui, actions);
+        ui.add_space(theme::XXL);
+    }
+
+    fn draw_library_heading(&mut self, ui: &mut egui::Ui, actions: &mut SessionActions) {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(theme::display("Library", 32.0));
+            ui.add_space(theme::SM);
+            theme::tag(ui, &format_count(self.recent.len()), Tone::Neutral);
+            ui.add_space(theme::SM);
+            if theme::button(ui, "+ Add game", ButtonKind::Primary).clicked() {
+                actions.browse = true;
+            }
+        });
+    }
+
+    fn draw_library_filters(&mut self, ui: &mut egui::Ui) {
+        egui::Frame::new()
+            .fill(theme::SURFACE)
+            .stroke(egui::Stroke::new(1.0, theme::BORDER))
+            .corner_radius(egui::CornerRadius::same(10))
+            .inner_margin(egui::Margin::symmetric(12, 10))
+            .show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.library_query)
+                            .hint_text("Search your games…")
+                            .desired_width((ui.available_width() * 0.42).clamp(140.0, 360.0)),
+                    );
+                    if !self.library_query.is_empty()
+                        && theme::button_sized(ui, "Clear", ButtonKind::Ghost, ButtonSize::Sm)
+                            .clicked()
+                    {
+                        self.library_query.clear();
+                    }
+                    ui.separator();
+                    for platform in ["All", "RPG Maker", "GBA", "NDS"] {
+                        let tone = match platform {
+                            "GBA" => Tone::Cyan,
+                            "NDS" => Tone::Pink,
+                            "RPG Maker" => Tone::Lime,
+                            _ => Tone::Pink,
+                        };
+                        if theme::chip(ui, platform, tone, self.library_platform == platform)
+                            .clicked()
+                        {
+                            self.library_platform = platform.into();
+                        }
+                    }
+                    ui.separator();
+                    egui::ComboBox::from_id_salt("library-sort")
+                        .selected_text(if self.library_sort_title {
+                            "Title A–Z"
+                        } else {
+                            "Recently opened"
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.library_sort_title,
+                                false,
+                                "Recently opened",
+                            );
+                            ui.selectable_value(&mut self.library_sort_title, true, "Title A–Z");
+                        });
+                    let compact = if self.library_compact {
+                        "Compact · on"
+                    } else {
+                        "Compact"
+                    };
+                    if theme::chip(ui, compact, Tone::Cyan, self.library_compact).clicked() {
+                        self.library_compact = !self.library_compact;
+                    }
+                });
+            });
+    }
+
+    fn draw_featured(&mut self, ui: &mut egui::Ui, path: &str, actions: &mut SessionActions) {
+        let platform = Platform::of(path);
+        let accent = platform.accent();
+        egui::Frame::new()
+            .fill(theme::SURFACE_RAISED)
+            .stroke(egui::Stroke::new(1.0, accent.gamma_multiply(0.55)))
+            .corner_radius(egui::CornerRadius::same(12))
+            .inner_margin(egui::Margin::same(22))
+            .shadow(egui::epaint::Shadow {
+                offset: [0, 0],
+                blur: 22,
+                spread: 0,
+                color: accent.gamma_multiply(0.16),
+            })
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal_wrapped(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(
+                            egui::RichText::new("READY TO PLAY")
+                                .font(theme::mono_font(10.0))
+                                .color(accent),
+                        );
+                        ui.add_space(2.0);
+                        ui.label(theme::display(title(path), 28.0));
+                        ui.add_space(2.0);
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(path)
+                                    .font(theme::mono_font(12.0))
+                                    .color(theme::TEXT_MUTED),
+                            )
+                            .truncate(),
+                        )
+                        .on_hover_text(path);
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            theme::tag(ui, platform.label(), platform.tone());
+                            theme::tag(ui, "Local", Tone::Neutral);
+                            if self.active {
+                                theme::tag(ui, "Replaces current session", Tone::Warning);
+                            }
+                        });
+                    });
+                    if theme::button_sized(ui, "Play game", ButtonKind::Primary, ButtonSize::Lg)
+                        .clicked()
+                    {
+                        actions.open = Some(path.to_owned());
+                        self.open = false;
+                    }
+                });
+            });
+        if self.active {
+            ui.add_space(6.0);
             ui.label(
-                egui::RichText::new(
-                    "Arrow keys  Navigate     Enter  Play     Double-click  Launch",
-                )
-                .small()
-                .color(MUTED),
+                egui::RichText::new("Starting a game replaces your current session. Save first.")
+                    .font(theme::body_font(12.0))
+                    .color(theme::WARNING),
             );
         }
-        ui.add_space(16.0);
-        ui.separator();
-        if self.capabilities.zip_import {
-            ui.label(
-                "Choose a game folder with Game.ini and Data, open a ZIP archive, or load a GBA/DS ROM.",
-            );
-            if ui
-                .add_enabled(!self.busy, egui::Button::new("Open ZIP archive…"))
-                .clicked()
-            {
-                actions.import_zip = true;
-            }
-            ui.weak("Folder and ZIP files are read locally on your device.");
-        }
-        if self.capabilities.rom_import {
-            ui.add_space(12.0);
-            ui.label("Game Boy Advance or Nintendo DS ROM");
-            if ui
-                .add_enabled(!self.busy, egui::Button::new("Open GBA/NDS ROM…"))
-                .clicked()
-            {
-                actions.browse_game_file = true;
-            }
-            ui.weak("The ROM is read locally on your device.");
-        }
-        if self.capabilities.torrent_import {
-            ui.add_space(12.0);
-            ui.label("WebTorrent magnet link or torrent URL");
-            ui.add(
-                egui::TextEdit::singleline(&mut self.source)
-                    .desired_width(f32::INFINITY)
-                    .hint_text("magnet:?xt=urn:btih:…"),
-            );
-            if ui
-                .add_enabled(
-                    !self.busy && !self.source.trim().is_empty(),
-                    egui::Button::new("Download game"),
-                )
-                .clicked()
-            {
-                actions.download = Some(self.source.trim().into());
-            }
-            ui.weak("Torrents need WebRTC-compatible seeders. Your browser may share pieces while downloading.");
-        }
-        if self.capabilities.paths {
-            egui::CollapsingHeader::new("Open from path, Game.ini, or GBA/DS ROM")
-                .default_open(self.recent.is_empty())
-                .show(ui, |ui| {
+    }
+
+    fn draw_import_shelf(&mut self, ui: &mut egui::Ui, actions: &mut SessionActions) {
+        theme::section_label(ui, "Add to your library", theme::CYAN);
+        ui.add_space(theme::SM);
+        egui::Frame::new()
+            .fill(theme::SURFACE)
+            .stroke(egui::Stroke::new(1.0, theme::BORDER))
+            .corner_radius(egui::CornerRadius::same(10))
+            .inner_margin(egui::Margin::same(18))
+            .show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    if theme::button(ui, "+ Add game folder", ButtonKind::Secondary).clicked() {
+                        actions.browse = true;
+                    }
+                    if self.capabilities.zip_import
+                        && theme::button(ui, "Open ZIP archive", ButtonKind::Ghost).clicked()
+                    {
+                        actions.import_zip = true;
+                    }
+                    if self.capabilities.rom_import
+                        && theme::button(ui, "Open GBA / NDS ROM", ButtonKind::Ghost).clicked()
+                    {
+                        actions.browse_game_file = true;
+                    }
+                });
+                if self.capabilities.zip_import {
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new(
+                            "Choose a folder containing Game.ini and Data, or open a ZIP archive.",
+                        )
+                        .font(theme::body_font(12.0))
+                        .color(theme::TEXT_MUTED),
+                    );
+                    ui.label(
+                        egui::RichText::new("Folders and archives are read locally on this device.")
+                            .font(theme::body_font(11.0))
+                            .color(theme::TEXT_FAINT),
+                    );
+                }
+                if self.capabilities.rom_import {
+                    ui.label(
+                        egui::RichText::new("GBA and NDS ROMs are read locally on this device.")
+                            .font(theme::body_font(11.0))
+                            .color(theme::TEXT_FAINT),
+                    );
+                }
+                if self.capabilities.torrent_import {
+                    ui.add_space(theme::SM);
+                    theme::divider(ui);
+                    theme::section_label(ui, "WebTorrent", theme::PINK);
+                    ui.add_space(4.0);
                     ui.horizontal_wrapped(|ui| {
                         ui.add(
                             egui::TextEdit::singleline(&mut self.source)
-                                .desired_width((ui.available_width() - 170.0).max(100.0))
-                                .hint_text("Paste a game folder, Game.ini, or .gba/.nds path…"),
+                                .desired_width((ui.available_width() - 170.0).max(140.0))
+                                .hint_text("magnet:?xt=urn:btih:…"),
                         );
-                        if ui
-                            .add_enabled(
-                                !self.busy && !self.source.trim().is_empty(),
-                                egui::Button::new("Open"),
-                            )
-                            .clicked()
+                        if theme::button_sized(
+                            ui,
+                            "Download game",
+                            ButtonKind::Primary,
+                            ButtonSize::Sm,
+                        )
+                        .clicked()
                         {
-                            actions.open = Some(self.source.trim().into());
-                            self.open = false;
-                        }
-                        if ui
-                            .add_enabled(!self.busy, egui::Button::new("Browse game file…"))
-                            .clicked()
-                        {
-                            actions.browse_game_file = true;
+                            actions.download = Some(self.source.trim().into());
                         }
                     });
-                });
-        }
-        if self.capabilities.ruby_jit {
-            egui::CollapsingHeader::new("Runtime options").show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.label("Ruby JIT");
-                    egui::ComboBox::from_id_salt("ruby-jit")
-                        .selected_text(self.ruby_jit.label())
-                        .show_ui(ui, |ui| {
-                            for mode in [RubyJit::Yjit, RubyJit::Zjit, RubyJit::Disabled] {
-                                ui.selectable_value(&mut self.ruby_jit, mode, mode.label());
-                            }
+                    ui.label(
+                        egui::RichText::new(
+                            "Torrents need WebRTC-compatible seeders. Your browser may share pieces while downloading.",
+                        )
+                        .font(theme::body_font(11.0))
+                        .color(theme::TEXT_FAINT),
+                    );
+                }
+                if self.capabilities.paths {
+                    ui.add_space(theme::SM);
+                    egui::CollapsingHeader::new("Open from a path")
+                        .id_salt("library-open-path")
+                        .default_open(self.recent.is_empty())
+                        .show(ui, |ui| {
+                            ui.horizontal_wrapped(|ui| {
+                                ui.add(
+                                    egui::TextEdit::singleline(&mut self.source)
+                                        .desired_width((ui.available_width() - 170.0).max(140.0))
+                                        .hint_text("Paste a game folder, Game.ini, or .gba/.nds path…"),
+                                );
+                                if theme::button_sized(
+                                    ui,
+                                    "Open",
+                                    ButtonKind::Secondary,
+                                    ButtonSize::Sm,
+                                )
+                                .clicked()
+                                {
+                                    actions.open = Some(self.source.trim().into());
+                                    self.open = false;
+                                }
+                                if theme::button_sized(
+                                    ui,
+                                    "Browse…",
+                                    ButtonKind::Ghost,
+                                    ButtonSize::Sm,
+                                )
+                                .clicked()
+                                {
+                                    actions.browse_game_file = true;
+                                }
+                            });
                         });
-                    ui.weak("Applies when starting or restarting a game.");
-                });
+                }
+                if self.capabilities.ruby_jit {
+                    egui::CollapsingHeader::new("Runtime options")
+                        .id_salt("library-runtime-options")
+                        .show(ui, |ui| {
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label(theme::eyebrow("Ruby JIT"));
+                                egui::ComboBox::from_id_salt("ruby-jit")
+                                    .selected_text(self.ruby_jit.label())
+                                    .show_ui(ui, |ui| {
+                                        for mode in
+                                            [RubyJit::Yjit, RubyJit::Zjit, RubyJit::Disabled]
+                                        {
+                                            ui.selectable_value(
+                                                &mut self.ruby_jit,
+                                                mode,
+                                                mode.label(),
+                                            );
+                                        }
+                                    });
+                                ui.label(
+                                    egui::RichText::new("Applies when starting or restarting a game.")
+                                        .font(theme::body_font(11.0))
+                                        .color(theme::TEXT_FAINT),
+                                );
+                            });
+                        });
+                }
             });
-        }
     }
 }
 
 /// Stable, typographic placeholder art until a platform supplies real game covers.
 fn cover(ui: &mut egui::Ui, path: &str, width: f32, selected: bool) -> egui::Response {
-    let (rect, response) =
-        ui.allocate_exact_size(egui::vec2(width, width * 1.4), egui::Sense::click());
-    let hash = path
-        .bytes()
-        .fold(0u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32));
-    let palettes = [
-        (38, 77, 88),
-        (66, 56, 100),
-        (90, 61, 61),
-        (37, 83, 73),
-        (69, 75, 111),
-    ];
-    let (r, g, b) = palettes[hash as usize % palettes.len()];
+    let height = width * 1.4;
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
+    let platform = Platform::of(path);
+    let accent = platform.accent();
+    let (base, ridge) = platform.cover();
+    let hovered = response.hovered() || response.has_focus();
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 12, egui::Color32::from_rgb(r, g, b));
-    let center = rect.center_top() + egui::vec2(width * 0.2, width * 0.45);
-    for i in (1..=4).rev() {
-        painter.circle_stroke(
-            center,
-            width * (0.12 + i as f32 * 0.10),
-            egui::Stroke::new(1.0, egui::Color32::from_white_alpha(18 + i * 5)),
+
+    if selected || hovered {
+        theme::glow(
+            &painter,
+            rect,
+            12,
+            accent,
+            if selected { 1.4 } else { 0.65 },
         );
     }
-    painter.circle_filled(center, width * 0.14, egui::Color32::from_white_alpha(25));
+    painter.rect_filled(rect, 12, base);
+    painter.rect_stroke(
+        rect,
+        egui::CornerRadius::same(12),
+        egui::Stroke::new(
+            if selected {
+                3.0
+            } else if hovered {
+                1.5
+            } else {
+                1.0
+            },
+            if selected || hovered {
+                accent
+            } else {
+                theme::BORDER
+            },
+        ),
+        egui::StrokeKind::Inside,
+    );
+
+    // Retro horizon rings, tinted by platform.
+    let center = rect.center_top() + egui::vec2(width * 0.18, height * 0.40);
+    for index in (1..=4).rev() {
+        painter.circle_stroke(
+            center,
+            width * (0.14 + index as f32 * 0.10),
+            egui::Stroke::new(1.0, ridge.gamma_multiply(0.9)),
+        );
+    }
+    painter.circle_filled(center, width * 0.075, accent.gamma_multiply(0.35));
+    painter.circle_filled(center, width * 0.025, accent);
+
+    // Scanlines.
+    let mut y = rect.top() + 8.0;
+    while y < rect.bottom() {
+        painter.line_segment(
+            [
+                egui::pos2(rect.left() + 1.0, y),
+                egui::pos2(rect.right() - 1.0, y),
+            ],
+            egui::Stroke::new(1.0, egui::Color32::from_white_alpha(6)),
+        );
+        y += 4.0;
+    }
+
     painter.text(
         rect.left_top() + egui::vec2(14.0, 14.0),
         egui::Align2::LEFT_TOP,
-        "RSXP  /  GAME",
-        egui::FontId::proportional(10.0),
-        egui::Color32::from_white_alpha(170),
+        platform.label().to_uppercase(),
+        theme::mono_font(10.0),
+        accent,
     );
+    painter.text(
+        rect.right_top() + egui::vec2(-14.0, 14.0),
+        egui::Align2::RIGHT_TOP,
+        if selected { "SELECTED" } else { "RSXP" },
+        theme::mono_font(9.0),
+        if selected { accent } else { theme::TEXT_FAINT },
+    );
+
     let galley = painter.layout(
         title(path).to_owned(),
-        egui::FontId::proportional((width * 0.12).clamp(15.0, 26.0)),
-        egui::Color32::WHITE,
+        theme::display_font((width * 0.11).clamp(15.0, 24.0)),
+        theme::TEXT,
         width - 28.0,
     );
     painter.galley(
         egui::pos2(
             rect.left() + 14.0,
-            (rect.bottom() - galley.size().y - 24.0).max(rect.top() + 45.0),
+            (rect.bottom() - galley.size().y - 18.0).max(rect.top() + 44.0),
         ),
         galley,
-        egui::Color32::WHITE,
+        theme::TEXT,
     );
-    if selected || response.hovered() || response.has_focus() {
-        painter.rect_stroke(
-            rect.shrink(1.5),
-            12,
-            egui::Stroke::new(if selected { 3.0 } else { 1.5 }, MINT),
-            egui::StrokeKind::Inside,
+    if selected {
+        let bar = egui::Rect::from_min_size(
+            rect.left_bottom() + egui::vec2(14.0, -6.0),
+            egui::vec2(width - 28.0, 2.0),
         );
+        painter.rect_filled(bar, egui::CornerRadius::same(1), accent);
     }
     response.widget_info(|| {
         egui::WidgetInfo::selected(egui::Role::Button, true, selected, title(path))
@@ -411,10 +662,10 @@ mod tests {
                             ..Default::default()
                         },
                         |ui| {
-                            super::super::theme::apply(ui.ctx());
+                            theme::apply(ui.ctx());
                             panel.draw_library(ui, &mut actions);
                             assert!(
-                                ui.min_rect().width() <= width,
+                                ui.min_rect().width() <= width + 0.5,
                                 "library overflow at {width}"
                             );
                         },
@@ -434,9 +685,103 @@ mod tests {
     }
 
     #[test]
+    fn featured_play_button_returns_the_selected_game() {
+        for width in [360.0, 720.0, 1100.0] {
+            let context = egui::Context::default();
+            let mut panel = SessionPanel::default();
+            panel.recent = vec!["/games/Alpha".into()];
+            let mut actions = SessionActions::default();
+            let mut frame = |events: Vec<egui::Event>| {
+                let mut output = context.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(width, 900.0),
+                        )),
+                        events,
+                        ..Default::default()
+                    },
+                    |ui| actions = panel.draw(ui),
+                );
+                output.textures_delta.clear();
+                output
+            };
+            frame(vec![]);
+            let output = frame(vec![]);
+            let mut position = None;
+            fn find(shape: &egui::epaint::Shape, position: &mut Option<egui::Pos2>) {
+                match shape {
+                    egui::epaint::Shape::Text(text) if text.galley.text() == "Play game" => {
+                        *position = Some(text.pos + text.galley.size() * 0.5);
+                    }
+                    egui::epaint::Shape::Vec(shapes) => {
+                        for shape in shapes {
+                            find(shape, position);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            for shape in &output.shapes {
+                find(&shape.shape, &mut position);
+            }
+            let position = position.unwrap_or_else(|| panic!("featured play button at {width}"));
+            frame(vec![
+                egui::Event::PointerMoved(position),
+                egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ]);
+            frame(vec![egui::Event::PointerButton {
+                pos: position,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            }]);
+            assert_eq!(
+                actions.open.as_deref(),
+                Some("/games/Alpha"),
+                "play button at {width}"
+            );
+        }
+    }
+
+    #[test]
     fn game_titles_support_both_platform_path_separators() {
         assert_eq!(title("/games/Alpha/"), "Alpha");
         assert_eq!(title("C:\\Games\\Beta\\"), "Beta");
+    }
+
+    #[test]
+    fn platform_filter_limits_visible_games() {
+        let context = egui::Context::default();
+        let mut panel = SessionPanel::default();
+        panel.recent = vec![
+            "/games/Alpha".into(),
+            "/roms/Beta.gba".into(),
+            "/roms/Gamma.nds".into(),
+        ];
+        panel.library_platform = "GBA".into();
+        let mut actions = SessionActions::default();
+        context
+            .run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(900.0, 900.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    theme::apply(ui.ctx());
+                    panel.draw_library(ui, &mut actions);
+                },
+            )
+            .drop_without_applying_deltas();
+        assert_eq!(panel.library_selected.as_deref(), Some("/roms/Beta.gba"));
     }
 
     #[test]
@@ -450,6 +795,10 @@ mod tests {
             context
                 .run_ui(
                     egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(1000.0, 900.0),
+                        )),
                         events: [egui::Key::ArrowRight, egui::Key::Enter]
                             .into_iter()
                             .map(|key| egui::Event::Key {

@@ -3158,6 +3158,7 @@ dependencies = [
  "gif",
  "image",
  "ogg",
+ "rsxp-control",
  "serde_json",
  "theora-rs",
  "web-time",
@@ -3168,6 +3169,14 @@ name = "rsxp-api"
 version = "0.1.0"
 dependencies = [
  "rsxp-extension-api",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "rsxp-control"
+version = "0.1.0"
+dependencies = [
  "serde",
  "serde_json",
 ]
@@ -3274,6 +3283,7 @@ dependencies = [
  "image",
  "js-sys",
  "rsxp",
+ "rsxp-control",
  "rsxp-core",
  "rsxp-cores",
  "rsxp-extension-api",

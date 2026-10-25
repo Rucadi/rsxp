@@ -25,6 +25,13 @@ and `crates/rsxp-rgss/api/game_bridge/` adapter. Press **F1** to reveal the work
 **F2** for Tools. Map previews decode tileset/autotile images from the browser's
 virtual game files. No HTTP listener is needed for these tools.
 
+The page also exposes the unified control catalog as `window.RSXP.control`.
+Browsers cannot bind a loopback port, so `control.discovery()` returns the same
+typed operation list and `control.request(method, path, body)` executes game
+operations through the shared bridge. Save snapshots and common/per-game
+settings use browser local storage under the same operation names as the desktop
+API. See [unified control API](../../docs/control-api.md).
+
 Presentation and the workspace UI use **eframe** (the same app and widget set
 as native). The page contributes only a `<canvas>`; there is no HTML chrome and
 no 2D `putImageData` presenter. The engine uploads the finished frame to a
@@ -103,8 +110,10 @@ images/audio are kept out of Ruby's directory mirror to avoid duplicating them.
 
 Saves use the existing browser storage/export/import flow, partitioned by selected
 folder name. Browser storage for files opened directly from disk varies; keep a
-backup with **Export save**. Reload/Reset asks you to select the folder again.
-Folders with the same name share a save namespace inside a given player origin.
+backup with **Export save**. **Save files → Create backup** stores a named
+snapshot in browser storage, and **Restore latest backup** restores it before a
+reload. Reload/Reset asks you to select the folder again. Folders with the same
+name share a save namespace inside a given player origin.
 
 To export a copy after building:
 

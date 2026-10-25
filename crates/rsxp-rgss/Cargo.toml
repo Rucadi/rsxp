@@ -14,8 +14,8 @@ bytemuck = { version = "1", features = ["derive"], optional = true }
 egui = { version = "0.37.0", features = ["default_fonts"], optional = true }
 fontdue = { version = "0.9", optional = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp"], optional = true }
-utoipa = { version = "6.0.0", features = ["macros"], optional = true }
 serde_json = { version = "1", optional = true }
+rsxp-control = { path = "../rsxp-control", optional = true }
 # Animated GIF decoding for Bitmap animation, shared by every frontend.
 gif = "0.14"
 # Pure-Rust Theora/Ogg movie decoding for Graphics.play_movie on every frontend.
@@ -31,9 +31,9 @@ gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
 # The shared egui workspace, used by the native and browser frontends.
 ui = ["dep:egui", "dep:web-time"]
 # Shared local game-command queue, Ruby adapter and egui inspector controls.
-game-api = ["dep:serde_json", "dep:image"]
+game-api = ["dep:serde_json", "dep:image", "dep:rsxp-control"]
 # Compile-time, code-first OpenAPI generation for the MCP/HTTP API binary.
-api-docs = ["dep:utoipa"]
+api-docs = ["dep:serde_json", "dep:rsxp-control"]
 
 [lib]
 path = "src/lib.rs"

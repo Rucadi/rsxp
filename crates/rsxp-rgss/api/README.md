@@ -1,37 +1,66 @@
-# Live game MCP API
+# Live game and launcher control API
 
-This API exposes generic game inspection and bounded input controls for a
-running desktop `rsxp` game. The loopback HTTP transport is Rust-owned, but
-extension route aliases are discovered from the running session and their
-responses are produced by the extension dispatcher on the game thread. The
-bundled Essentials package supplies its Ruby implementation through Rhai.
+This API exposes one typed control contract for the desktop launcher and the
+active game. The loopback HTTP transport is Rust-owned and served by the
+dashboard process for its whole lifetime, so starting, stopping or restarting a
+game does not move the endpoint or replace its discovery document. Extension
+route aliases are discovered from the running session and their responses are
+produced by the extension dispatcher on the game thread. The bundled Essentials
+package supplies its Ruby implementation through Rhai.
 
-Start the game normally. In the egui workspace's left panel, enter a port under
-**Game API** and choose **Start HTTP API**. The server listens on `127.0.0.1` and
-remains available for the active session. The interactive dashboard starts its
-runner with `RSXP_API=0`; use the workspace control to start HTTP for an
-interactive session. For headless runs, the environment
-variable can still start it automatically:
+The canonical discovery document is `GET /v1/discovery`. It lists every
+operation with its stable id, method, path, description, parameter names and
+locations, JSON types, required flags, defaults, enums, request/response
+schemas, and a ready-to-run `curl` example. `GET /v1/openapi.json` renders the
+same catalog as OpenAPI 3.1. See [the unified control API](../../../docs/control-api.md)
+for the architecture and the save/settings/catalog model.
 
-```sh
-RSXP_API=1 RSXP_API_PORT=47821 cargo run --release -p rsxp-desktop --bin rsxp -- run --game /path/to/game --headless
-```
+The listener is loopback-only. Cross-origin browser access is disabled unless
+`RSXP_API_CORS=1` is set, because a wildcard CORS policy would let any website
+control the local launcher. CLI and MCP clients are unaffected.
+
+Start the launcher normally. The API starts with it by default on
+`127.0.0.1:47821`. Open the **Control API** section in the workspace header to
+change the port, stop or restart it, and copy the discovery URL. `RSXP_API=0`
+disables it for one process; `RSXP_API=1` forces it on. The port is also stored
+in `<RSXP_HOME>/config/config.json` under `api`.
+
+Headless runs keep the same discovery shape and route names. If an RSXP
+configuration exists and `api.enabled` is true, a headless run starts the
+listener automatically; `RSXP_API=0` disables it for one process and
+`RSXP_API=1` forces it on. Launcher-only operations return `409` from a headless
+game process.
 
 The egui inspector sends requests through the in-process game-thread queue and
-works without starting the HTTP listener. Use **Start HTTP API** when an MCP
-client or another external tool needs to connect, or when testing the endpoint.
+works without the HTTP listener. Use the HTTP endpoint when an MCP client or
+another external tool needs to connect, or when testing the endpoint.
+
+```sh
+curl -s http://127.0.0.1:47821/v1/discovery | jq '.endpoints[] | {id, method, path}'
+curl -s -X POST 'http://127.0.0.1:47821/v1/launcher/pause' \
+  -H 'content-type: application/json' -d '{"paused":true}'
+```
+
+The browser player cannot bind a TCP listener. It exposes the same catalog
+through `window.RSXP.control`:
+
+```js
+await window.RSXP.control.discovery();
+await window.RSXP.control.request('POST', '/v1/launcher/pause', { paused: true });
+```
+
+Browser save snapshots and settings use local storage but keep the same
+operation names and response shapes.
 
 Build and register the Rust MCP executable:
 
 ```sh
-cargo build --release --no-default-features --features api-docs --bin rsxp-mcp
-cargo api-openapi > api/openapi.json
+cargo build --release -p rsxp --no-default-features --features api-docs --bin rsxp-mcp
+cargo api-openapi > crates/rsxp-rgss/api/openapi.json
 ```
 
-`cargo api-openapi` regenerates the checked-in compatibility document from Rust
-endpoint and schema declarations. At runtime, `tools/list` additionally
-discovers route aliases from `/v1/extensions/routes`; extension MCP calls use
-the same HTTP routes as the GUI and external clients.
+`cargo api-openapi` regenerates the checked-in OpenAPI document from the shared
+Rust control catalog. It is the same document served by `/v1/openapi.json`.
 
 ```json
 {

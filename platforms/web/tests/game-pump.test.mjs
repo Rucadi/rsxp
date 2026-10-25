@@ -29,6 +29,26 @@ for (const mode of ['exception', 'exit']) {
   });
 }
 
+test('pause presents frames without resuming Ruby', () => {
+  let resumes = 0, presentations = 0, next;
+  let paused = true;
+  const pump = createGamePump({
+    isAlive: () => true,
+    resume: () => { resumes += 1; return 0; },
+    present: () => presentations += 1,
+    stopped: () => {},
+    requestFrame: callback => next = callback,
+    shouldRun: () => !paused,
+  });
+  pump();
+  next();
+  assert.equal(resumes, 0);
+  assert.equal(presentations, 2);
+  paused = false;
+  next();
+  assert.equal(resumes, 1);
+});
+
 test('VM output capture restores the page console even when initialization fails', async () => {
   const original = console.warn;
   let printer;

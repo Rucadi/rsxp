@@ -2,11 +2,14 @@
 
 The desktop launcher opens a searchable game library with platform filters, local
 file/folder launch, repository management, and a storage page. Connect multiple
-local JSON files or HTTPS catalog URLs under **Repositories**. Select **Download &
-play** to install and launch through the existing RPG Maker, GBA, or NDS runtime.
-Downloads and hashing run in a background worker. Errors remain visible and can be
-retried; cached catalogs work offline. Remote downloads require `curl` on PATH.
-TLS verification is enabled and redirects are restricted to HTTPS.
+local JSON files or HTTPS catalog URLs under **Repositories**. Catalogs are
+stored permanently in `config/config.json`, can be selected or deselected for
+the library, and retain their last verified cache when a refresh fails. Select
+**Download & play** to install and launch through the existing RPG Maker, GBA,
+or NDS runtime. Downloads and hashing run in a background worker. Errors remain
+visible and can be retried; cached catalogs work offline. Remote downloads
+require `curl` on PATH. TLS verification is enabled and redirects are restricted
+to HTTPS.
 
 ## The RSXP folder
 
@@ -24,9 +27,11 @@ that game's runtime; the launcher catalog remains in the launcher's own root.
 
 ```
 RSXP/
+  config/config.json                # common/per-game settings, catalogs, API
   config/library.json
-  repositories/sources.json
-  repositories/catalog.json
+  config/games/<hash>.json          # legacy overrides, migrated on save
+  repositories/sources.json         # legacy source list, migrated once
+  repositories/cache/<catalog>.json
   games/<repository-id>/<game-id>/
   roms/<sha256>.gba                 # or .nds
   saves/gba/<content-id>/save/
@@ -34,8 +39,15 @@ RSXP/
   saves/nds/<content-id>/save/
   saves/nds/<content-id>/states/
   saves/rgss/<game-title>/
+  backups/<game-key>/<snapshot>/
   cache/
 ```
+
+`config/config.json` is the installation-wide document. It is validated on load;
+a corrupt file is moved aside as `config.json.corrupt-<pid>` and a fresh default
+is used so the launcher still starts. The loopback control API defaults to
+`127.0.0.1:47821`; change it in `config/config.json`, the API panel, or with
+`RSXP_API_PORT`. See [unified control API](control-api.md).
 
 Old library preferences and saves are read/copied from their previous locations
 without deleting the originals. RPG Maker games that write relative save files

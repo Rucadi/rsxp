@@ -132,6 +132,7 @@ impl Default for SharedApp {
         Self::new(
             Workspace::new(),
             WorkspaceInfo {
+                core_id: "rgss",
                 logical_size: (640, 480),
                 fps: 0.0,
                 frames: 0,
@@ -244,6 +245,12 @@ impl SharedApp {
 
     pub fn set_info(&mut self, info: WorkspaceInfo) {
         self.info = info;
+    }
+
+    /// Enables the toolbar's save export/import and snapshot actions for hosts
+    /// that provide their own save adapter (the browser page does).
+    pub fn set_save_buttons(&mut self, enabled: bool) {
+        self.info.show_save_buttons = enabled;
     }
 
     /// Updates the live performance figures shown by the workspace.
@@ -516,6 +523,35 @@ impl SharedApp {
 
     pub fn take_output(&mut self) -> WorkspaceOutput {
         std::mem::take(&mut self.output)
+    }
+
+    /// Consumes only the save-related intents from the last workspace frame,
+    /// leaving `game_rect` intact for the browser's pointer mapping.
+    pub fn take_save_actions(&mut self) -> (bool, bool, bool, bool) {
+        let actions = (
+            self.output.export_saves,
+            self.output.import_saves,
+            self.output.create_backup,
+            self.output.restore_latest_backup,
+        );
+        self.output.export_saves = false;
+        self.output.import_saves = false;
+        self.output.create_backup = false;
+        self.output.restore_latest_backup = false;
+        actions
+    }
+
+    /// Consumes folder-open intents from the last workspace frame.
+    pub fn take_folder_actions(&mut self) -> (bool, bool, bool) {
+        let actions = (
+            self.output.open_game_folder,
+            self.output.open_save_folder,
+            self.output.open_patches_folder,
+        );
+        self.output.open_game_folder = false;
+        self.output.open_save_folder = false;
+        self.output.open_patches_folder = false;
+        actions
     }
 }
 

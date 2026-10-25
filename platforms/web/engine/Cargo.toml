@@ -16,6 +16,7 @@ rsxp-core = { path = "../../../crates/rsxp-core" }
 rsxp-extension-api = { path = "../../../crates/rsxp-extension-api" }
 rsxp-extensions = { path = "../../../crates/rsxp-extensions" }
 rsxp-frontend = { path = "../../../crates/rsxp-frontend" }
+rsxp-control = { path = "../../../crates/rsxp-control" }
 rsxp-cores = { path = "../../../crates/rsxp-cores", default-features = false, features = ["gba", "nds"] }
 rsxp-ui = { path = "../../../crates/rsxp-ui" }
 eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "default_fonts"] }

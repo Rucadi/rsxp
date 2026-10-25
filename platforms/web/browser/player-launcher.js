@@ -21,6 +21,17 @@ function resize() {
 }
 resize();
 await engine.web_init_eframe(canvas);
+globalThis.RSXP = globalThis.RSXP || {};
+globalThis.RSXP.control = {
+  discovery: async () => JSON.parse(engine.web_control_discovery()),
+  openapi: async () => JSON.parse(engine.web_control_openapi()),
+  request: async () => {
+    throw Object.assign(new Error('Start a game first; the browser game bridge becomes active after Play.'), { status: 409 });
+  },
+  fetch: async () => new Response(JSON.stringify({ error: 'Start a game first; the browser game bridge becomes active after Play.' }), {
+    status: 409, headers: { 'content-type': 'application/json' },
+  }),
+};
 status.hidden = true;
 const launcher = createLauncher({
   bundle, supplied: globalThis.RSXP_GAME, document, location, fetch,

@@ -71,7 +71,18 @@ pub fn run(args: &[String]) -> Result<u8, Box<dyn Error>> {
     } = options::RunOptions::parse(args)?;
     if version.is_none() { version = settings.rgss; }
     let data_root = rsxp_provision::root(game.as_deref());
-    set_startup_env("RSXP_HOME", data_root);
+    set_startup_env("RSXP_HOME", data_root.clone());
+    if headless
+        && std::env::var_os("RSXP_API").is_none()
+        && rsxp_provision::config::path(&data_root).exists()
+    {
+        if let Ok(config) = rsxp_provision::config::load(&data_root)
+            && config.api.enabled
+        {
+            set_startup_env("RSXP_API", "1");
+            set_startup_env("RSXP_API_PORT", config.api.port.to_string());
+        }
+    }
     #[cfg(not(feature = "rgss"))]
     let _ = (&renderer, version);
     if let Some(path) = game.as_ref().or(script.as_ref())

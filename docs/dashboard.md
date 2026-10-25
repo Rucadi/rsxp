@@ -65,6 +65,11 @@ toolbar, panels and inspector windows; hidden controls leave no restore button
 or floating-window chrome over the game. Entering desktop fullscreen also hides
 the workspace; F1 can reveal it again while fullscreen remains active.
 
+Frames are never stretched. While the workspace is hidden, the native desktop
+window snaps to the game's native aspect ratio (4:3 RPG Maker, 3:2 GBA, 2:3 DS)
+within the current monitor, and restores its previous size when the UI returns.
+Browsers and fullscreen cannot resize the host, so the game is letterboxed there.
+
 | Shortcut | Action |
 | --- | --- |
 | F1 | Show/hide the entire workspace UI |
@@ -91,6 +96,11 @@ terminal forwarding preserves the original bytes.
 ## Ownership and portability
 
 - The main thread owns winit, the surface, presentation, and egui.
+- One loopback control API is owned by the dashboard process for its whole
+  lifetime. The **Control API** header section starts/stops it, changes the
+  port, and copies the discovery URL. Starting a game never opens a second
+  server; game operations are proxied to the active runner. See
+  [unified control API](control-api.md).
 - Each native launch starts the same executable as an isolated runner. MRI is
   initialized once in that process and is never reinitialized. Working directory,
   environment, Ruby globals, and media belong to the runner.
@@ -119,12 +129,17 @@ GPU path for CPU frame transfer during this migration.
 
 ## Save files
 
-The Saves view copies an explicitly selected save directory to an empty backup
-directory. For games using `System.data_directory`, an existing conventional
-save directory is suggested. Custom game save locations can be entered manually.
-The whole selected directory is copied; do not select the game installation.
-Cartridge saves are content-scoped (`<data>/rsxp/saves/<core>/<hash>`) and are
-not managed by this RGSS directory picker.
+The Saves view has two layers. **Snapshots** create a named, timestamped copy
+under `<RSXP_HOME>/backups/<game-key>/`, list file count and size, and restore
+the latest snapshot (the API can restore any named snapshot). The same actions
+are available from the in-game **Save files** menu and from
+`POST /v1/saves/backup` and `POST /v1/saves/restore`. Advanced users can still copy an explicitly selected
+save directory to an empty backup directory. For games using
+`System.data_directory`, an existing conventional save directory is suggested.
+Custom game save locations can be entered manually. The whole selected directory
+is copied; do not select the game installation. Cartridge saves are content-scoped
+(`<data>/rsxp/saves/<core>/<hash>`) and are not managed by this RGSS directory
+picker.
 
 Restore stages incoming files, preserves originals under `before-restore-*`,
 and atomically replaces individual matching files. Extra files remain. Symlinks,
@@ -133,6 +148,28 @@ The game must be stopped, and copying runs off the UI thread. This manages game
 save files, not VM snapshots or arbitrary save-format editing. A restore can be
 partly committed if a filesystem error occurs; the original files remain in its
 safety backup.
+
+In the browser player, snapshots are stored in browser local storage and the
+**Export saves** / **Import saves** actions move the bundle as JSON. Snapshot
+names and metadata have the same shape as desktop backups, so tools using
+`/v1/saves` can treat both hosts consistently. The control bridge is described
+in [unified control API](control-api.md).
+
+## Common and per-game settings
+
+The launcher's **Settings** page edits options shared by every game. Each game
+card's **Settings** window edits a per-game override. The effective value is
+`repository defaults → common settings → per-game override`; patches and input
+bindings accumulate, scalar options from the later layer win. Common settings
+and per-game overrides are stored in `<RSXP_HOME>/config/config.json`; the older
+`config/games/<hash>.json` files are still read as a fallback and migrate into
+the main document on the next save. Launch-time options require a restart; the
+in-game API can change fast-forward, frame-rate cap and pause live.
+
+Each settings window and the in-game **Folders** menu can open the game
+installation, save directory, and patches directory. The same operations are
+available from `/v1/launcher/games/{key}/folders` and `/v1/launcher/games/{key}/open-folder`.
+
 
 ## Future Android work (no implementation)
 

@@ -119,6 +119,9 @@ pub async fn web_init_eframe(canvas: web_sys::HtmlCanvasElement) -> Result<(), J
         let mut app = rsxp_ui::SharedApp::default();
         let mut panel = rsxp::ui::session::SessionPanel::default();
         panel.capabilities = rsxp::ui::session::SessionCapabilities::BROWSER;
+        panel.api_bridge = true;
+        panel.api_status = "Browser bridge · no TCP listener".into();
+        app.set_save_buttons(true);
         app.workspace.session = Some(panel);
         Ok(Box::new(app))
     });
@@ -435,15 +438,258 @@ pub fn web_eframe_launcher_actions() -> String {
         let actions = std::mem::take(&mut app.workspace.session_actions);
         serde_json::json!({"open": actions.open, "browse": actions.browse,
             "browse_game_file": actions.browse_game_file,
-            "zip": actions.import_zip, "download": actions.download, "cancel": actions.cancel})
+            "zip": actions.import_zip, "download": actions.download, "cancel": actions.cancel,
+            "create_backup": actions.create_backup, "restore_latest": actions.restore_latest,
+            "export_saves": actions.export_saves, "import_saves": actions.import_saves})
         .to_string()
     })
     .unwrap_or_else(|| "{}".into())
 }
 
+/// Returns save and API intents emitted by the shared workspace while a game
+/// is running. The page handles export/import and local-storage snapshots; the
+/// browser control bridge is always available, so start/stop are informational.
 #[wasm_bindgen]
-pub fn web_eframe_finish_launcher() {
-    let _ = with_eframe_app(|app| {
+pub fn web_eframe_player_actions() -> String {
+    with_eframe_app(|app| {
+        let (export_saves, import_saves, create_backup, restore_latest) =
+            app.take_save_actions();
+        let (open_game_folder, open_save_folder, open_patches_folder) = app.take_folder_actions();
+        let actions = std::mem::take(&mut app.workspace.session_actions);
+        serde_json::json!({
+            "export_saves": export_saves,
+            "import_saves": import_saves,
+            "create_backup": create_backup,
+            "restore_latest": restore_latest,
+            "open_game_folder": open_game_folder,
+            "open_save_folder": open_save_folder,
+            "open_patches_folder": open_patches_folder,
+            "start_api": actions.start_api,
+            "stop_api": actions.stop_api,
+        })
+        .to_string()
+    })
+    .unwrap_or_else(|| "{}".into())
+}
+
+/// The same typed operation catalog as the desktop server, exposed through an
+/// in-page bridge because a browser cannot bind a TCP listener.
+#[wasm_bindgen]
+pub fn web_control_discovery() -> String {
+    browser_control_catalog()
+        .discovery(browser_control_status())
+        .to_string()
+}
+
+#[wasm_bindgen]
+pub fn web_control_openapi() -> String {
+    browser_control_catalog()
+        .openapi(browser_control_status())
+        .to_string()
+}
+
+#[wasm_bindgen]
+pub fn web_control_routes() -> String {
+    rsxp::api_bridge::extension_routes_json()
+}
+
+/// Queues a game operation through the shared bridge. The page appends body
+/// fields to the query string for the generic Rhai route matcher.
+#[wasm_bindgen]
+pub fn web_control_request(method: &str, target: &str) -> Result<u32, JsValue> {
+    let method = method.to_ascii_uppercase();
+    let (operation, arguments) =
+        rsxp::api_bridge::route_http(&method, target).map_err(|(_, error)| JsValue::from_str(&error))?;
+    rsxp::api_bridge::send_from_ui(&operation, arguments)
+        .map(|id| id as u32)
+        .map_err(|error| JsValue::from_str(&error))
+}
+
+#[wasm_bindgen]
+pub fn web_control_take_response(id: u32) -> String {
+    match rsxp::api_bridge::take_ui_response(u64::from(id)) {
+        None => serde_json::json!({"ready": false}).to_string(),
+        Some(Ok(body)) => {
+            let value = serde_json::from_str::<serde_json::Value>(&body)
+                .unwrap_or_else(|_| serde_json::json!(body));
+            serde_json::json!({"ready": true, "status": 200, "body": value}).to_string()
+        }
+        Some(Err(error)) => {
+            serde_json::json!({"ready": true, "status": 503, "body": {"error": error}}).to_string()
+        }
+    }
+}
+
+fn browser_control_status() -> serde_json::Value {
+    let (active, paused, title, source) = with_eframe_app(|app| {
+        let panel = app.workspace.session.as_ref();
+        (
+            app.workspace.session.as_ref().is_some_and(|panel| panel.active),
+            panel.is_some_and(|panel| panel.paused),
+            panel.map(|panel| panel.title.clone()).unwrap_or_default(),
+            panel.map(|panel| panel.source.clone()).unwrap_or_default(),
+        )
+    })
+    .unwrap_or_default();
+    serde_json::json!({
+        "server": "rsxp-control",
+        "mode": "browser",
+        "base_url": "browser://rsxp",
+        "game_running": active,
+        "game_available": active,
+        "launcher_available": false,
+        "paused": paused,
+        "game": { "title": title, "source": source },
+        "notes": "Browsers cannot bind a loopback TCP listener. Use window.RSXP.control.request() for the same catalog. Save snapshots and settings are stored in browser local storage."
+    })
+}
+
+fn browser_control_catalog() -> rsxp_control::Catalog {
+    let mut catalog = rsxp_control::Catalog::standard();
+    // The browser cannot launch external files or open native folders, but the
+    // launcher pause/live endpoints remain meaningful and the rest are reported
+    // as unavailable by the request handler.
+    catalog.remove_scope(rsxp_control::Scope::Saves);
+    catalog.remove_scope(rsxp_control::Scope::Settings);
+    // Keep the browser-specific save and settings operations documented so an
+    // external caller still sees the same shape.
+    catalog.extend(browser_save_endpoints());
+    catalog.extend(browser_settings_endpoints());
+    let routes = serde_json::from_str::<serde_json::Value>(
+        &rsxp::api_bridge::extension_routes_json(),
+    )
+    .ok();
+    if let Some(routes) = routes
+        && let Some(routes) = routes.get("routes").and_then(serde_json::Value::as_array)
+    {
+        catalog.merge_dynamic(routes.iter().filter_map(|route| {
+            let method = route.get("method")?.as_str()?;
+            let path = route.get("path")?.as_str()?;
+            let operation = route.get("operation")?.as_str()?;
+            let mut endpoint = rsxp_control::Endpoint::new(
+                operation,
+                method,
+                path,
+                format!("Game operation {operation}"),
+                "Route supplied by a loaded Rhai plugin and executed by the browser game bridge.",
+                rsxp_control::Scope::Extensions,
+            );
+            for argument in route
+                .get("arguments")
+                .and_then(serde_json::Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(serde_json::Value::as_str)
+            {
+                let location = if path.contains(&format!("{{{argument}}}")) {
+                    rsxp_control::ParameterLocation::Path
+                } else {
+                    rsxp_control::ParameterLocation::Query
+                };
+                endpoint = endpoint.parameter(rsxp_control::Parameter::new(
+                    argument,
+                    location,
+                    rsxp_control::ParameterType::String,
+                    location == rsxp_control::ParameterLocation::Path,
+                    "Plugin route argument",
+                ));
+            }
+            Some(endpoint)
+        }));
+    }
+    catalog
+}
+
+fn browser_save_endpoints() -> Vec<rsxp_control::Endpoint> {
+    use rsxp_control::{Endpoint, Parameter, ParameterType, Scope};
+    vec![
+        Endpoint::new(
+            "saves.info",
+            "GET",
+            "/v1/saves",
+            "Browser save bundle",
+            "Returns the current game's save files and named snapshots from browser local storage.",
+            Scope::Saves,
+        ),
+        Endpoint::new(
+            "saves.backup",
+            "POST",
+            "/v1/saves/backup",
+            "Create a browser save snapshot",
+            "Snapshots the current save bundle in browser local storage under a timestamp name.",
+            Scope::Saves,
+        )
+        .mutates()
+        .parameter(Parameter::body("name", ParameterType::String, false, "Optional snapshot name")),
+        Endpoint::new(
+            "saves.restore",
+            "POST",
+            "/v1/saves/restore",
+            "Restore a browser save snapshot",
+            "Restores a named snapshot. The page should be reloaded afterwards so Ruby loads the files.",
+            Scope::Saves,
+        )
+        .mutates()
+        .parameter(Parameter::body("backup", ParameterType::String, true, "Snapshot name")),
+        Endpoint::new(
+            "saves.delete",
+            "DELETE",
+            "/v1/saves/backups/{name}",
+            "Delete a browser save snapshot",
+            "Deletes one named browser snapshot without touching live save files.",
+            Scope::Saves,
+        )
+        .mutates()
+        .parameter(Parameter::path("name", ParameterType::String, "Snapshot name")),
+    ]
+}
+
+fn browser_settings_endpoints() -> Vec<rsxp_control::Endpoint> {
+    use rsxp_control::{Endpoint, Parameter, ParameterType, Scope};
+    vec![
+        Endpoint::new(
+            "settings.common.get",
+            "GET",
+            "/v1/settings/common",
+            "Read browser common settings",
+            "Returns settings shared by every browser game.",
+            Scope::Settings,
+        ),
+        Endpoint::new(
+            "settings.common.update",
+            "PUT",
+            "/v1/settings/common",
+            "Replace browser common settings",
+            "Stores common settings in browser local storage.",
+            Scope::Settings,
+        )
+        .mutates()
+        .request(serde_json::json!({"type": "object"})),
+        Endpoint::new(
+            "settings.game.get",
+            "GET",
+            "/v1/settings/games/{key}",
+            "Read browser game settings",
+            "Returns the per-game override and effective settings.",
+            Scope::Settings,
+        )
+        .parameter(Parameter::path("key", ParameterType::String, "Game key")),
+        Endpoint::new(
+            "settings.game.update",
+            "PUT",
+            "/v1/settings/games/{key}",
+            "Replace browser game settings",
+            "Stores a per-game override in browser local storage.",
+            Scope::Settings,
+        )
+        .mutates()
+        .parameter(Parameter::path("key", ParameterType::String, "Game key"))
+        .parameter(Parameter::body("settings", ParameterType::Object, false, "Settings or null")),
+    ]
+}
+
+#[wasm_bindgen]
+pub fn web_eframe_finish_launcher() {    let _ = with_eframe_app(|app| {
         app.workspace.session = None;
         app.workspace.session_actions = Default::default();
         app.request_repaint();
@@ -507,9 +753,53 @@ pub fn web_eframe_take_reset() -> bool {
     requested
 }
 
+/// Applies common/per-game fast-forward before the browser session starts.
 #[wasm_bindgen]
-pub fn web_eframe_copy_runtime_output() {
+pub fn web_runtime_fast_forward(enabled: bool) {
+    rsxp::runtime_settings::set_fast_forward(enabled);
+}
+
+#[wasm_bindgen]
+pub fn web_runtime_settings() -> String {
+    serde_json::json!({
+        "fast_forward": rsxp::runtime_settings::fast_forward(),
+        "fps": rsxp::runtime_settings::rate_override(),
+    })
+    .to_string()
+}
+
+#[wasm_bindgen]
+pub fn web_runtime_set_rate(fps: u32) {
+    if fps == 0 {
+        rsxp::runtime_settings::clear_rate_override();
+    } else {
+        rsxp::runtime_settings::set_rate_override(fps);
+    }
+}
+
+#[wasm_bindgen]
+pub fn web_eframe_game_paused() -> bool {
+    with_eframe_app(|app| {
+        app.workspace
+            .session
+            .as_ref()
+            .is_some_and(|panel| panel.paused)
+    })
+    .unwrap_or(false)
+}
+
+#[wasm_bindgen]
+pub fn web_eframe_set_paused(paused: bool) {
     let _ = with_eframe_app(|app| {
+        if let Some(panel) = app.workspace.session.as_mut() {
+            panel.paused = paused;
+        }
+        app.request_repaint();
+    });
+}
+
+#[wasm_bindgen]
+pub fn web_eframe_copy_runtime_output() {    let _ = with_eframe_app(|app| {
         web_sys::window().and_then(|window| {
             let text = app.workspace.logs.join("\n");
             window

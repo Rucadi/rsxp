@@ -5,36 +5,15 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-pub fn preferences_path() -> Option<PathBuf> {
-    Some(rsxp_provision::root(None).join("config/library.json"))
-}
 pub fn load() -> Vec<String> {
-    preferences_path()
-        .and_then(|p| fs::read(p).ok())
-        .or_else(|| {
-            let base = std::env::var_os("XDG_CONFIG_HOME")
-                .map(PathBuf::from)
-                .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
-            fs::read(base.join("rsxp/library.json")).ok()
-        })
-        .and_then(|b| serde_json::from_slice::<Vec<String>>(&b).ok())
-        .unwrap_or_default()
-        .into_iter()
-        .take(10000)
-        .collect()
+    rsxp_provision::config::library(&rsxp_provision::root(None))
 }
 pub fn remember(recent: &mut Vec<String>, path: &Path) -> std::io::Result<()> {
     let path = path.to_string_lossy().into_owned();
     recent.retain(|p| p != &path);
     recent.insert(0, path);
-
-    if let Some(file) = preferences_path() {
-        fs::create_dir_all(file.parent().unwrap())?;
-        let temp = file.with_extension(format!("{}.tmp", std::process::id()));
-        fs::write(&temp, serde_json::to_vec_pretty(recent)?)?;
-        fs::rename(temp, file)?;
-    }
-    Ok(())
+    rsxp_provision::config::save_library(&rsxp_provision::root(None), recent)
+        .map_err(std::io::Error::other)
 }
 pub fn discover(path: &str) -> Result<GameSource, String> {
     let path = PathBuf::from(path);

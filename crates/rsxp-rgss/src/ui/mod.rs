@@ -20,7 +20,8 @@
 //!   FPS/frame count, global fullscreen, and which
 //!   controls the frontend supports).
 //! * [`WorkspaceOutput`] — the frame's results: the `game_rect`, an optional
-//!   `fullscreen_request`, and `export_saves` / `import_saves` intents.
+//!   `fullscreen_request`, an optional `fit_aspect` window-fit hint, and
+//!   `export_saves` / `import_saves` intents.
 //! * [`ViewMode`] — how the game view is placed (docked, workspace-fullscreen,
 //!   or floating).
 //! * `Tool` (private) — the active native tool tab (runtime or online play);
@@ -49,7 +50,7 @@ mod patches;
 mod performance;
 mod saves;
 pub mod session;
-mod theme;
+pub mod theme;
 mod toolbar;
 
 #[cfg(feature = "game-api")]
@@ -90,6 +91,29 @@ pub enum ViewMode {
     Floating,
 }
 
+/// Presentation presets for the two Nintendo DS LCDs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DsLayout {
+    #[default]
+    Vertical,
+    Horizontal,
+    TopLarge,
+    TouchLarge,
+    TopOnly,
+    TouchOnly,
+}
+
+impl DsLayout {
+    pub const fn aspect(self) -> f32 {
+        match self {
+            Self::Vertical => 256.0 / 384.0,
+            Self::Horizontal => 512.0 / 192.0,
+            Self::TopLarge | Self::TouchLarge => 768.0 / 384.0,
+            Self::TopOnly | Self::TouchOnly => 256.0 / 192.0,
+        }
+    }
+}
+
 impl ViewMode {
     pub fn label(self) -> &'static str {
         match self {
@@ -102,6 +126,9 @@ impl ViewMode {
 
 /// What the frontend tells the workspace for the current frame.
 pub struct WorkspaceInfo {
+    /// Explicit core identity used to gate core-specific UI (for example DS
+    /// screen layouts). Frame dimensions alone are not a safe discriminator.
+    pub core_id: &'static str,
     pub logical_size: (u32, u32),
     pub fps: f64,
     pub frames: u64,
@@ -115,18 +142,35 @@ pub struct WorkspaceInfo {
 /// What the workspace asked the frontend to do, plus the game view rect.
 pub struct WorkspaceOutput {
     pub game_rect: egui::Rect,
+    pub touch_rect: egui::Rect,
     pub fullscreen_request: Option<bool>,
+    /// The native aspect ratio to enforce on the host window while the game is
+    /// shown without panels. `None` when the UI is visible, fullscreen, or no
+    /// game is running. Browsers ignore this; native hosts resize the window.
+    pub fit_aspect: Option<f32>,
     pub export_saves: bool,
     pub import_saves: bool,
+    pub create_backup: bool,
+    pub restore_latest_backup: bool,
+    pub open_game_folder: bool,
+    pub open_save_folder: bool,
+    pub open_patches_folder: bool,
 }
 
 impl Default for WorkspaceOutput {
     fn default() -> Self {
         Self {
             game_rect: egui::Rect::ZERO,
+            touch_rect: egui::Rect::ZERO,
             fullscreen_request: None,
+            fit_aspect: None,
             export_saves: false,
             import_saves: false,
+            create_backup: false,
+            restore_latest_backup: false,
+            open_game_folder: false,
+            open_save_folder: false,
+            open_patches_folder: false,
         }
     }
 }
@@ -150,7 +194,12 @@ pub struct Workspace {
     panels_left: bool,
     panels_performance: bool,
     panels_output: bool,
+    logs_filter: String,
+    logs_follow: bool,
+    shortcuts_open: bool,
+    fps_history: std::collections::VecDeque<f32>,
     view_mode: ViewMode,
+    ds_layout: DsLayout,
     controls_visible: bool,
     controller_settings_open: bool,
     was_global_fullscreen: bool,
@@ -174,7 +223,12 @@ impl Default for Workspace {
             panels_left: true,
             panels_performance: false,
             panels_output: false,
+            logs_filter: String::new(),
+            logs_follow: true,
+            shortcuts_open: false,
+            fps_history: std::collections::VecDeque::new(),
             view_mode: ViewMode::default(),
+            ds_layout: DsLayout::default(),
             controls_visible: false,
             controller_settings_open: false,
             was_global_fullscreen: false,
@@ -240,6 +294,12 @@ impl Workspace {
     ) -> WorkspaceOutput {
         let context = ui.ctx().clone();
         theme::apply(&context);
+        if info.fps > 0.0 {
+            self.fps_history.push_back(info.fps as f32);
+            while self.fps_history.len() > 120 {
+                self.fps_history.pop_front();
+            }
+        }
         let mut output = WorkspaceOutput::default();
         let key_pressed = |wanted: egui::Key| {
             context.input(|input| {
@@ -277,6 +337,10 @@ impl Workspace {
                 self.controls_visible = false;
             }
         }
+        if key_pressed(egui::Key::F11) {
+            let fast_forward = self.backend.fast_forward();
+            self.backend.set_fast_forward(!fast_forward);
+        }
 
         // Stopped sessions retain diagnostics even when controls were hidden.
         // Allocate output before the session's central library panel.
@@ -297,7 +361,14 @@ impl Workspace {
         }
 
         if !self.controls_visible {
-            self.draw_game_view(ui, &mut output, info.logical_size);
+            if !info.global_fullscreen && output.fullscreen_request != Some(true) {
+                output.fit_aspect = if info.core_id == "nds" {
+                    Some(self.ds_layout.aspect())
+                } else {
+                    native_aspect(info.logical_size)
+                };
+            }
+            self.draw_game_view(ui, &mut output, info.core_id, info.logical_size);
             return output;
         }
         self.draw_toolbar(ui, info, &mut output);
@@ -306,32 +377,70 @@ impl Workspace {
         if !fullscreen && self.panels_top {
             egui::Panel::top("workspace-top-panel")
                 .resizable(false)
+                .frame(
+                    egui::Frame::new()
+                        .fill(theme::SURFACE)
+                        .inner_margin(egui::Margin::symmetric(18, 12)),
+                )
                 .show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        theme::section_label(ui, "Session overview", theme::PINK);
+                        let title = self
+                            .session
+                            .as_ref()
+                            .filter(|session| session.active && !session.title.is_empty())
+                            .map(|session| session.title.as_str())
+                            .unwrap_or("Workspace");
+                        ui.label(theme::display(title, 24.0));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            theme::tag(
+                                ui,
+                                &format!("{} × {}", info.logical_size.0, info.logical_size.1),
+                                theme::Tone::Neutral,
+                            );
+                            if info.fps > 0.0 {
+                                theme::tag(ui, &format!("{:.0} fps", info.fps), theme::Tone::Cyan);
+                            }
+                            theme::tag(
+                                ui,
+                                &format!("{} frames", info.frames),
+                                theme::Tone::Neutral,
+                            );
+                        });
+                    });
                     ui.add_space(8.0);
                     ui.horizontal_wrapped(|ui| {
-                        ui.label(egui::RichText::new("Dashboard").size(24.0).strong());
-                        ui.separator();
-                        ui.weak(format!(
-                            "{} × {} native resolution",
-                            info.logical_size.0, info.logical_size.1
-                        ));
-                        if info.fps > 0.0 {
-                            ui.label(
-                                egui::RichText::new(format!("{:.0} FPS", info.fps))
-                                    .color(egui::Color32::from_rgb(127, 231, 200)),
-                            );
+                        if theme::chip(ui, "Game tools · F2", theme::Tone::Cyan, self.panels_left)
+                            .clicked()
+                        {
+                            self.panels_left = !self.panels_left;
                         }
-                    });
-                    ui.add_space(6.0);
-                    ui.horizontal_wrapped(|ui| {
-                        ui.toggle_value(&mut self.panels_left, "Game tools · F2");
-                        ui.toggle_value(&mut self.panels_output, "Activity · F3");
-                        ui.toggle_value(&mut self.panels_performance, "Performance · F10");
-                        if ui.button("Controller settings").clicked() {
+                        if theme::chip(ui, "Activity · F3", theme::Tone::Pink, self.panels_output)
+                            .clicked()
+                        {
+                            self.panels_output = !self.panels_output;
+                        }
+                        if theme::chip(
+                            ui,
+                            "Performance · F10",
+                            theme::Tone::Lime,
+                            self.panels_performance,
+                        )
+                        .clicked()
+                        {
+                            self.panels_performance = !self.panels_performance;
+                        }
+                        if theme::button_sized(
+                            ui,
+                            "Controller settings",
+                            theme::ButtonKind::Ghost,
+                            theme::ButtonSize::Sm,
+                        )
+                        .clicked()
+                        {
                             self.controller_settings_open = true;
                         }
                     });
-                    ui.add_space(8.0);
                 });
         }
         if !fullscreen && self.panels_output {
@@ -343,8 +452,9 @@ impl Workspace {
         if !fullscreen && self.panels_performance {
             self.draw_performance_panel(ui, info);
         }
-        self.draw_game_view(ui, &mut output, info.logical_size);
+        self.draw_game_view(ui, &mut output, info.core_id, info.logical_size);
         self.draw_controller_settings(&context);
+        self.draw_shortcuts(&context);
 
         if self.reset_confirm {
             egui::Window::new("Reset game?")
@@ -352,13 +462,26 @@ impl Workspace {
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
                 .show(&context, |ui| {
-                    ui.label("Restart the game from the beginning? Unsaved progress is lost.");
                     ui.horizontal(|ui| {
-                        if ui.button("Reset").clicked() {
+                        theme::status_dot(ui, theme::WARNING, 1.0);
+                        ui.label(theme::display("Restart from the beginning?", 20.0));
+                    });
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new(
+                            "Unsaved progress is lost. This applies to the running session.",
+                        )
+                        .font(theme::body_font(13.0))
+                        .color(theme::TEXT_MUTED),
+                    );
+                    ui.add_space(10.0);
+                    ui.horizontal(|ui| {
+                        if theme::button(ui, "Reset game", theme::ButtonKind::Destructive).clicked()
+                        {
                             self.backend.request_reset();
                             self.reset_confirm = false;
                         }
-                        if ui.button("Cancel").clicked() {
+                        if theme::button(ui, "Cancel", theme::ButtonKind::Secondary).clicked() {
                             self.reset_confirm = false;
                         }
                     });
@@ -367,25 +490,100 @@ impl Workspace {
 
         output
     }
+
+    fn draw_shortcuts(&mut self, context: &egui::Context) {
+        if !self.shortcuts_open {
+            return;
+        }
+        let mut open = self.shortcuts_open;
+        egui::Window::new("Shortcuts")
+            .id(egui::Id::unique("workspace-shortcuts"))
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .default_width(440.0)
+            .show(context, |ui| {
+                theme::section_label(ui, "Keyboard", theme::PINK);
+                egui::Grid::new("shortcut-grid")
+                    .num_columns(2)
+                    .spacing([18.0, 8.0])
+                    .show(ui, |ui| {
+                        for (key, action) in [
+                            ("F1", "Show or hide the interface"),
+                            ("F2", "Game tools and runtime patches"),
+                            ("F3", "Runtime output / activity"),
+                            ("F4", "Toggle fullscreen"),
+                            ("F10", "Performance panel"),
+                            ("F11", "Toggle uncapped execution"),
+                            ("Enter", "Play the selected library game"),
+                            ("Arrows", "Move through the library"),
+                        ] {
+                            theme::keycap(ui, key);
+                            ui.label(
+                                egui::RichText::new(action)
+                                    .font(theme::body_font(13.0))
+                                    .color(theme::TEXT_MUTED),
+                            );
+                            ui.end_row();
+                        }
+                    });
+                ui.add_space(12.0);
+                theme::divider(ui);
+                theme::section_label(ui, "Controller", theme::CYAN);
+                ui.label(
+                    egui::RichText::new(
+                        "D-pad or left stick moves · South confirms · East cancels. Remap every button under Controls.",
+                    )
+                    .font(theme::body_font(13.0))
+                    .color(theme::TEXT_MUTED),
+                );
+            });
+        self.shortcuts_open = open;
+    }
+}
+
+fn native_aspect(size: (u32, u32)) -> Option<f32> {
+    let (width, height) = size;
+    (width > 0 && height > 0).then(|| width as f32 / height as f32)
 }
 
 fn draw_loading(ui: &mut egui::Ui, done: u32, total: u32) {
     egui::CentralPanel::default()
-        .frame(egui::Frame::NONE)
+        .frame(egui::Frame::new().fill(theme::BG))
         .show(ui, |ui| {
             ui.vertical_centered(|ui| {
-                ui.add_space(ui.available_height() * 0.35);
-                ui.heading("Loading game…");
+                ui.add_space(ui.available_height() * 0.30);
+                ui.label(
+                    egui::RichText::new("NOW LOADING")
+                        .font(theme::mono_font(11.0))
+                        .color(theme::PINK),
+                );
                 ui.add_space(8.0);
+                ui.label(theme::display_color("RSXP", 48.0, theme::PINK));
+                ui.add_space(6.0);
+                ui.label(
+                    egui::RichText::new("Preparing your game")
+                        .font(theme::body_font(16.0))
+                        .color(theme::TEXT_MUTED),
+                );
+                ui.add_space(22.0);
                 let fraction = if total == 0 {
                     0.0
                 } else {
                     done as f32 / total as f32
                 };
-                ui.add(
-                    egui::ProgressBar::new(fraction)
-                        .desired_width(360.0)
-                        .text(format!("{done} / {total}")),
+                let progress_width = ui.available_width().clamp(160.0, 380.0);
+                theme::neon_progress(ui, fraction, progress_width);
+                ui.add_space(10.0);
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{} / {}  ·  {:.0}%",
+                        done,
+                        total,
+                        fraction * 100.0
+                    ))
+                    .font(theme::mono_font(13.0))
+                    .color(theme::CYAN),
                 );
             });
         });
@@ -434,6 +632,15 @@ mod workspace_tests {
         key: Option<egui::Key>,
         fullscreen: bool,
     ) -> WorkspaceOutput {
+        draw_frame_sized(workspace, key, fullscreen, (640, 480))
+    }
+
+    fn draw_frame_sized(
+        workspace: &mut Workspace,
+        key: Option<egui::Key>,
+        fullscreen: bool,
+        logical_size: (u32, u32),
+    ) -> WorkspaceOutput {
         let context = egui::Context::default();
         let mut input = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
@@ -452,7 +659,8 @@ mod workspace_tests {
             });
         }
         let info = WorkspaceInfo {
-            logical_size: (640, 480),
+            core_id: "rgss",
+            logical_size,
             fps: 0.0,
             frames: 0,
             global_fullscreen: fullscreen,
@@ -486,17 +694,34 @@ mod workspace_tests {
         let mut session = session::SessionPanel::default();
         session.active = true;
         workspace.session = Some(session);
-        let game_only = draw_frame(&mut workspace, None, false).game_rect;
-        assert_eq!(game_only.min, egui::Pos2::ZERO);
-        assert_eq!(game_only.size(), egui::vec2(1100.0, 740.0));
-        let with_controls = draw_frame(&mut workspace, Some(egui::Key::F1), false).game_rect;
-        assert!(workspace.controls_visible);
-        assert!(with_controls.height() < game_only.height());
-        assert_eq!(
-            draw_frame(&mut workspace, Some(egui::Key::F1), false).game_rect,
-            game_only
+        let game_only = draw_frame(&mut workspace, None, false);
+        assert!(
+            (game_only.game_rect.width() / game_only.game_rect.height() - 4.0 / 3.0).abs() < 0.01
         );
+        assert!((game_only.game_rect.height() - 740.0).abs() < 0.5);
+        assert_eq!(game_only.fit_aspect, Some(4.0 / 3.0));
+        let with_controls = draw_frame(&mut workspace, Some(egui::Key::F1), false);
+        assert!(workspace.controls_visible);
+        assert_eq!(with_controls.fit_aspect, None);
+        assert!(with_controls.game_rect.height() < game_only.game_rect.height());
+        let hidden = draw_frame(&mut workspace, Some(egui::Key::F1), false);
+        assert_eq!(hidden.game_rect, game_only.game_rect);
+        assert_eq!(hidden.fit_aspect, Some(4.0 / 3.0));
         assert!(!workspace.controls_visible);
+    }
+
+    #[test]
+    fn ds_aspect_is_preserved_and_reported_for_window_fitting() {
+        let mut workspace = Workspace::new();
+        let mut session = session::SessionPanel::default();
+        session.active = true;
+        workspace.session = Some(session);
+        let output = draw_frame_sized(&mut workspace, None, false, (256, 384));
+        assert!(
+            (output.game_rect.width() / output.game_rect.height() - 256.0 / 384.0).abs() < 0.01
+        );
+        assert!((output.game_rect.height() - 740.0).abs() < 0.5);
+        assert!((output.fit_aspect.unwrap() - 2.0 / 3.0).abs() < 0.001);
     }
 
     #[test]
@@ -506,6 +731,7 @@ mod workspace_tests {
         assert!(workspace.controls_visible);
         let request = draw_frame(&mut workspace, Some(egui::Key::F4), false);
         assert_eq!(request.fullscreen_request, Some(true));
+        assert_eq!(request.fit_aspect, None);
         assert!(!workspace.controls_visible);
         workspace.controls_visible = true;
         draw_frame(&mut workspace, None, true);
@@ -522,10 +748,9 @@ mod workspace_tests {
     fn panel_shortcuts_reveal_ui_and_hidden_floating_view_has_no_chrome() {
         let mut workspace = Workspace::new();
         workspace.view_mode = ViewMode::Floating;
-        assert_eq!(
-            draw_frame(&mut workspace, None, false).game_rect.size(),
-            egui::vec2(1100.0, 740.0)
-        );
+        let hidden = draw_frame(&mut workspace, None, false);
+        assert!((hidden.game_rect.width() / hidden.game_rect.height() - 4.0 / 3.0).abs() < 0.01);
+        assert_eq!(hidden.fit_aspect, Some(4.0 / 3.0));
         for key in [egui::Key::F2, egui::Key::F3, egui::Key::F10] {
             workspace.controls_visible = false;
             draw_frame(&mut workspace, Some(key), false);
@@ -561,6 +786,7 @@ mod workspace_tests {
         workspace.logs = vec!["script.rb:7: crash marker (RuntimeError)".into()];
         let context = egui::Context::default();
         let info = WorkspaceInfo {
+            core_id: "rgss",
             logical_size: (640, 480),
             fps: 0.0,
             frames: 0,
@@ -594,6 +820,7 @@ mod workspace_tests {
         workspace.session = Some(session);
         let context = egui::Context::default();
         let info = WorkspaceInfo {
+            core_id: "rgss",
             logical_size: (640, 480),
             fps: 0.0,
             frames: 0,

@@ -97,6 +97,10 @@ export function createLauncher({ bundle, supplied, document, location, fetch, up
     action(action) {
       if (action.cancel) controller?.abort();
       if (controller || starting) return;
+      if (action.create_backup || action.restore_latest || action.export_saves || action.import_saves) {
+        report('Start a game first; save snapshots belong to the running game.', false);
+        return;
+      }
       if (action.browse) pickFolder();
       if (action.zip) pickZip();
       if (action.browse_game_file) pickRom();

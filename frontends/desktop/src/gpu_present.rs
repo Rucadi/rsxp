@@ -303,6 +303,7 @@ impl GpuDisplay {
             self.fps_start = Instant::now();
         }
         let workspace_info = rsxp::ui::WorkspaceInfo {
+            core_id: "rgss",
             logical_size,
             fps: self.game_metrics.map_or(self.fps, |m| m.0),
             frames: self.game_metrics.map_or(self.frames, |m| m.1),
@@ -311,14 +312,16 @@ impl GpuDisplay {
             show_save_buttons: false,
         };
         let mut game_rect = egui::Rect::ZERO;
+        let mut touch_rect = egui::Rect::ZERO;
         let mut fullscreen_request = None;
         let mut output = context.run_ui(input, |ui| {
             let result = self.workspace.draw(ui, &workspace_info);
             game_rect = result.game_rect;
+            touch_rect = result.touch_rect;
             fullscreen_request = result.fullscreen_request;
         });
         self.global_fullscreen_request = fullscreen_request;
-        self.game_pointer_rect = game_rect;
+        self.game_pointer_rect = if touch_rect != egui::Rect::ZERO { touch_rect } else { game_rect };
         let pixels_per_point = output.pixels_per_point;
         let x = (game_rect.min.x * pixels_per_point).clamp(0.0, size.0 as f32);
         let y = (game_rect.min.y * pixels_per_point).clamp(0.0, size.1 as f32);

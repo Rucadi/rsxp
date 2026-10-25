@@ -33,6 +33,8 @@ mod audio;
 #[cfg(feature = "rgss")]
 mod bundled_runtime;
 mod cartridge;
+#[cfg(all(feature = "gpu", feature = "rgss"))]
+mod control;
 #[cfg(feature = "rgss")]
 mod controller;
 #[cfg(all(feature = "gpu", feature = "rgss"))]

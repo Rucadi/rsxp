@@ -133,15 +133,20 @@ where
     }
 }
 
+/// Snapshot of the route aliases currently supplied by loaded extensions.
+pub fn extension_route_list() -> Vec<ExtensionRoute> {
+    EXTENSION_ROUTES
+        .get()
+        .and_then(|routes| routes.lock().ok())
+        .map(|routes| routes.clone())
+        .unwrap_or_default()
+}
+
 /// Serializes the route aliases currently supplied by loaded extensions.
 /// External adapters use this discovery endpoint to build their own tool
 /// lists; the bridge intentionally exposes no game-specific schemas here.
 pub fn extension_routes_json() -> String {
-    let routes = EXTENSION_ROUTES
-        .get()
-        .and_then(|routes| routes.lock().ok())
-        .map(|routes| routes.clone())
-        .unwrap_or_default();
+    let routes = extension_route_list();
     let mut output = String::from("{\"routes\":[");
     for (index, route) in routes.iter().enumerate() {
         if index > 0 {

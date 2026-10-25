@@ -2,11 +2,18 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <title>rsxp player</title>
 <style>
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#0b1011;color:#eee;font:15px system-ui}
-#screen{display:block;width:100%;height:100%;touch-action:none}
-#launch-status{position:fixed;inset:24px;pointer-events:none;white-space:pre-wrap}
+:root{color-scheme:dark;--bg:#0A0A14;--surface:#12121F;--border:#2A2A3E;--text:#EEEEF0;--muted:#9999AA;--pink:#FF006E;--cyan:#00F0FF}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font:15px/1.6 "Work Sans",system-ui,sans-serif}
+#screen{display:block;width:100%;height:100%;touch-action:none;background:var(--bg)}
+#launch-status{position:fixed;inset:24px;margin:auto;width:min(520px,calc(100vw - 48px));height:max-content;
+  padding:24px 28px;pointer-events:none;white-space:pre-wrap;text-align:center;background:var(--surface);
+  border:1px solid rgba(255,0,110,.55);border-radius:12px;color:var(--text);
+  box-shadow:0 0 24px rgba(255,0,110,.28);font:14px/1.6 "Space Mono",ui-monospace,monospace}
+#launch-status::before{content:"RSXP  /  PLAYER";display:block;margin-bottom:10px;color:var(--pink);
+  font:11px/1.4 "Space Mono",ui-monospace,monospace;letter-spacing:.12em}
 [hidden]{display:none!important}
 </style>
 <canvas id="screen" width="640" height="480" aria-label="Game library and workspace. F1 opens controls; F2 opens tools."></canvas>

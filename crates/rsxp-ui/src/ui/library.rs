@@ -38,8 +38,8 @@ impl Platform {
     fn label(self) -> &'static str {
         match self {
             Self::RpgMaker => "RPG Maker",
-            Self::Gba => "GBA",
-            Self::Nds => "NDS",
+            Self::Gba => rsxp_gba::ui::LABEL,
+            Self::Nds => rsxp_nds::ui::LABEL,
         }
     }
 
@@ -61,14 +61,8 @@ impl Platform {
                 egui::Color32::from_rgb(12, 40, 30),
                 egui::Color32::from_rgb(32, 92, 66),
             ),
-            Self::Gba => (
-                egui::Color32::from_rgb(8, 35, 46),
-                egui::Color32::from_rgb(20, 78, 96),
-            ),
-            Self::Nds => (
-                egui::Color32::from_rgb(38, 14, 44),
-                egui::Color32::from_rgb(88, 32, 92),
-            ),
+            Self::Gba => rsxp_gba::ui::cover_colors(),
+            Self::Nds => rsxp_nds::ui::cover_colors(),
         }
     }
 

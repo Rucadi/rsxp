@@ -10,8 +10,18 @@ publish = false
 [lib]
 crate-type = ["rlib", "cdylib"]
 
+[features]
+default = ["game-api"]
+game-api = ["rsxp/game-api"]
+
 [dependencies]
-rsxp = { path = "../rsxp-rgss", default-features = false, features = ["ui", "game-api", "portable-media"] }
+rsxp-gba = { path = "../rsxp-gba" }
+rsxp-nds = { path = "../rsxp-nds", default-features = false, features = ["ui"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+web-time = "1.1"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp"] }
+rsxp = { path = "../rsxp-rgss", default-features = false, features = ["game-api", "portable-media"] }
 rsxp-extension-api = { path = "../rsxp-extension-api" }
 rsxp-extensions = { path = "../rsxp-extensions" }
 rsxp-extension-ui = { path = "../rsxp-extension-ui" }

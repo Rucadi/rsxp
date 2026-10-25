@@ -12,7 +12,7 @@
 //! [`decode`] persist a mapping as `deadzone;b0,b1,…,b19`; `decode` rejects a
 //! non-finite or out-of-range deadzone and any malformed button list, leaving
 //! the existing value unchanged. The active mapping lives in a thread-local.
-use std::{cell::RefCell, collections::HashSet};
+use std::{cell::RefCell, collections::{BTreeMap, HashSet}};
 pub const ACTIONS: [&str; 13] = [
     "Unbound",
     "Down",
@@ -68,11 +68,24 @@ impl Default for Mapping {
     }
 }
 thread_local! { static MAPPING: RefCell<Mapping> = RefCell::new(Mapping::default()); }
+thread_local! { static KEYBOARD: RefCell<BTreeMap<i32, i32>> = RefCell::new(BTreeMap::new()); }
 pub fn get() -> Mapping {
     MAPPING.with(|m| m.borrow().clone())
 }
 pub fn set(mapping: Mapping) {
     MAPPING.with(|m| *m.borrow_mut() = mapping);
+}
+pub fn keyboard_binding(action: i32) -> i32 {
+    KEYBOARD.with(|mapping| mapping.borrow().get(&action).copied().unwrap_or(action))
+}
+pub fn set_keyboard_binding(action: i32, physical: i32) {
+    KEYBOARD.with(|mapping| {
+        if action == physical { mapping.borrow_mut().remove(&action); }
+        else { mapping.borrow_mut().insert(action, physical); }
+    });
+}
+pub fn load_keyboard(bindings: &BTreeMap<i32, i32>) {
+    KEYBOARD.with(|mapping| *mapping.borrow_mut() = bindings.clone());
 }
 pub fn keys(buttons: &[bool]) -> HashSet<i32> {
     let mapping = get();

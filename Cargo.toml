@@ -11,6 +11,8 @@ members = [
     "crates/rsxp-frontend",
     "crates/rsxp-ui",
     "crates/rsxp-rgss",
+    "crates/rsxp-gba",
+    "crates/rsxp-nds",
     "cores/gba/core",
     "cores/nds/core",
     "cores/rgss/core",

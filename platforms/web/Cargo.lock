@@ -3153,15 +3153,14 @@ dependencies = [
 name = "rsxp"
 version = "0.1.0"
 dependencies = [
- "egui",
  "fontdue",
  "gif",
  "image",
  "ogg",
  "rsxp-control",
+ "serde",
  "serde_json",
  "theora-rs",
- "web-time",
 ]
 
 [[package]]
@@ -3256,16 +3255,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsxp-gba"
+version = "0.1.0"
+dependencies = [
+ "egui",
+]
+
+[[package]]
+name = "rsxp-nds"
+version = "0.1.0"
+dependencies = [
+ "egui",
+]
+
+[[package]]
 name = "rsxp-ui"
 version = "0.1.0"
 dependencies = [
  "base64",
  "eframe",
  "egui",
+ "image",
  "rsxp",
  "rsxp-extension-api",
  "rsxp-extension-ui",
  "rsxp-extensions",
+ "rsxp-gba",
+ "rsxp-nds",
+ "serde",
+ "serde_json",
+ "web-time",
  "winit",
 ]
 

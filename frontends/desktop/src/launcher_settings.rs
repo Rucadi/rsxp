@@ -3,7 +3,7 @@
 //! The editor is deliberately a single resizable window so it works the same
 //! from the library and the running workspace. Controls follow the ArcadeNeon
 //! design system and the window itself is safe to open before a game starts.
-use rsxp::ui::theme::{self, ButtonKind, ButtonSize};
+use rsxp_ui::theme::{self, ButtonKind, ButtonSize};
 use rsxp_provision::settings::{Preferences, Settings};
 use std::path::PathBuf;
 pub struct Editor {
@@ -18,6 +18,7 @@ pub struct Editor {
     pub settings: Settings,
     pub patches: String,
     pub error: Option<String>,
+    pub capturing_key: Option<i32>,
 }
 pub enum Action {
     Save,
@@ -29,6 +30,21 @@ impl Editor {
     pub fn draw(&mut self, ctx: &egui::Context, open: &mut bool) -> Option<Action> {
         theme::apply(ctx);
         let mut action = None;
+        if let Some(target) = self.capturing_key {
+            if ctx.input(|input| input.modifiers.shift) {
+                self.settings.keyboard.insert(target, 225);
+                self.capturing_key = None;
+            }
+            let captured = ctx.input(|input| input.events.iter().find_map(|event| {
+                let egui::Event::Key { key, physical_key, pressed: true, repeat: false, .. } = event else { return None; };
+                egui_scancode(physical_key.unwrap_or(*key)).map(|code| (target, code))
+            }));
+            if let Some((target, code)) = captured {
+                if code == 41 || code == target { self.settings.keyboard.remove(&target); }
+                else { self.settings.keyboard.insert(target, code); }
+                self.capturing_key = None;
+            }
+        }
         egui::Window::new(if self.common {
             "Common settings".to_string()
         } else {
@@ -216,23 +232,6 @@ impl Editor {
                                 .font(theme::body_font(11.0))
                                 .color(theme::TEXT_FAINT),
                             );
-                            let keys: Vec<(i32, String)> = (4..=29)
-                                .map(|n| (n, ((b'A' + (n - 4) as u8) as char).to_string()))
-                                .chain(
-                                    [
-                                        (40, "Enter"),
-                                        (42, "Backspace"),
-                                        (43, "Tab"),
-                                        (44, "Space"),
-                                        (79, "Right"),
-                                        (80, "Left"),
-                                        (81, "Down"),
-                                        (82, "Up"),
-                                    ]
-                                    .into_iter()
-                                    .map(|(n, s)| (n, s.into())),
-                                )
-                                .collect();
                             for (target, label) in [
                                 (82, "Up"),
                                 (81, "Down"),
@@ -247,32 +246,19 @@ impl Editor {
                                 (20, "Q / L"),
                                 (26, "W / R"),
                                 (44, "Space"),
+                                (68, "Fast-forward"),
                             ] {
-                                let mut key = *self.settings.keyboard.get(&target).unwrap_or(&target);
                                 ui.horizontal(|ui| {
+                                    let key = *self.settings.keyboard.get(&target).unwrap_or(&target);
                                     ui.label(
                                         egui::RichText::new(label)
                                             .font(theme::body_font(12.0))
                                             .color(theme::TEXT_MUTED),
                                     );
-                                    egui::ComboBox::from_id_salt(("key", target))
-                                        .selected_text(
-                                            keys.iter()
-                                                .find(|(n, _)| *n == key)
-                                                .map(|key| key.1.clone())
-                                                .unwrap_or(key.to_string()),
-                                        )
-                                        .show_ui(ui, |ui| {
-                                            for (n, name) in &keys {
-                                                ui.selectable_value(&mut key, *n, name);
-                                            }
-                                        });
+                                    let capturing = self.capturing_key == Some(target);
+                                    let label = if capturing { "Press a key…".to_string() } else { key_name(key) };
+                                    if ui.button(label).clicked() { self.capturing_key = Some(target); }
                                 });
-                                if key == target {
-                                    self.settings.keyboard.remove(&target);
-                                } else {
-                                    self.settings.keyboard.insert(target, key);
-                                }
                             }
                         });
                     ui.add_space(6.0);
@@ -522,4 +508,39 @@ fn choice(ui: &mut egui::Ui, label: &str, value: &mut Option<String>, values: &[
                 }
             });
     });
+}
+
+fn key_name(code: i32) -> String {
+    match code {
+        4..=29 => ((b'A' + (code - 4) as u8) as char).to_string(),
+        40 => "Enter".into(),
+        41 => "Escape".into(),
+        42 => "Backspace".into(),
+        43 => "Tab".into(),
+        44 => "Space".into(),
+        58..=69 => format!("F{}", code - 57),
+        79 => "Right".into(),
+        80 => "Left".into(),
+        81 => "Down".into(),
+        82 => "Up".into(),
+        225 | 229 => "Shift".into(),
+        224 | 228 => "Ctrl".into(),
+        226 | 230 => "Alt".into(),
+        _ => format!("Key {code}"),
+    }
+}
+
+fn egui_scancode(key: egui::Key) -> Option<i32> {
+    use egui::Key::*;
+    Some(match key {
+        A => 4, B => 5, C => 6, D => 7, E => 8, F => 9, G => 10, H => 11,
+        I => 12, J => 13, K => 14, L => 15, M => 16, N => 17, O => 18,
+        P => 19, Q => 20, R => 21, S => 22, T => 23, U => 24, V => 25,
+        W => 26, X => 27, Y => 28, Z => 29,
+        Enter => 40, Escape => 41, Backspace => 42, Tab => 43, Space => 44,
+        F1 => 58, F2 => 59, F3 => 60, F4 => 61, F5 => 62, F6 => 63,
+        F7 => 64, F8 => 65, F9 => 66, F10 => 67, F11 => 68, F12 => 69,
+        ArrowRight => 79, ArrowLeft => 80, ArrowDown => 81, ArrowUp => 82,
+        _ => return None,
+    })
 }

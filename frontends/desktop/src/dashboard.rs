@@ -435,7 +435,7 @@ type PlatformTransport = TcpTransport;
 impl Session {
     fn start(
         args: &[String],
-        jit: rsxp::ui::session::RubyJit,
+        jit: rsxp_ui::session::RubyJit,
         gpu_available: bool,
     ) -> Result<Self, String> {
         let transport = Arc::new(PlatformTransport::new()?);
@@ -659,6 +659,7 @@ struct DesktopApp {
     pending_webview_assets: Vec<(u64, String, String, u8)>,
     plugin_webview: Option<(String, String, crate::webview::PluginWebView)>,
     pending_webview_commands: Vec<PluginWebViewCommand>,
+    shift_forwarded: bool,
 }
 
 /// The size a game-only window is being driven toward. Keeping the computed
@@ -683,16 +684,16 @@ enum PluginWebViewCommand {
 
 impl DesktopApp {
     fn new(initial: Option<Vec<String>>) -> Self {
-        let mut panel = rsxp::ui::session::SessionPanel::default();
-        panel.capabilities = rsxp::ui::session::SessionCapabilities::DESKTOP;
+        let mut panel = rsxp_ui::session::SessionPanel::default();
+        panel.capabilities = rsxp_ui::session::SessionCapabilities::DESKTOP;
         panel.ruby_jit = match std::env::var("RSXP_JIT").ok().as_deref() {
-            Some("zjit") => rsxp::ui::session::RubyJit::Zjit,
-            Some("off") => rsxp::ui::session::RubyJit::Disabled,
-            Some("yjit") => rsxp::ui::session::RubyJit::Yjit,
+            Some("zjit") => rsxp_ui::session::RubyJit::Zjit,
+            Some("off") => rsxp_ui::session::RubyJit::Disabled,
+            Some("yjit") => rsxp_ui::session::RubyJit::Yjit,
             _ if std::env::var("RSXP_YJIT").as_deref() == Ok("0") => {
-                rsxp::ui::session::RubyJit::Disabled
+                rsxp_ui::session::RubyJit::Disabled
             }
-            _ => rsxp::ui::session::RubyJit::Yjit,
+            _ => rsxp_ui::session::RubyJit::Yjit,
         };
         panel.recent = super::library::load();
         let mut shared = rsxp_ui::SharedApp::default();
@@ -743,11 +744,16 @@ impl DesktopApp {
             pending_webview_assets: Vec::new(),
             plugin_webview: None,
             pending_webview_commands: Vec::new(),
+            shift_forwarded: false,
         }
     }
 
     fn stop_session(&mut self) {
         self.session.take();
+        if self.shift_forwarded {
+            self.input.key_up(rsxp_ui::controls::keyboard_binding(225));
+            self.shift_forwarded = false;
+        }
         rsxp::api_bridge::end_session();
         self.shared.reset_plugins();
         self.extension_bridge.clear();
@@ -991,6 +997,7 @@ impl DesktopApp {
             rsxp::runtime_settings::set_rate_override(fps);
         }
         rsxp::runtime_patch::reset();
+        rsxp_ui::controls::load_keyboard(&self.active_settings.keyboard);
         rsxp::api_bridge::end_session();
         self.shared.reset_plugins();
         self.extension_bridge.clear();
@@ -999,7 +1006,7 @@ impl DesktopApp {
         self.plugin_webview = None;
         self.pending_webview_commands.clear();
         let panel = self.shared.workspace.session.take();
-        self.shared.workspace = rsxp::ui::Workspace::new();
+        self.shared.workspace = rsxp_ui::Workspace::new();
         self.shared.workspace.session = panel;
         self.frame = Bitmap::new(640, 480).expect("640×480 bitmap allocation");
         self.logical_size = (640, 480);
@@ -1031,7 +1038,7 @@ impl DesktopApp {
             rsxp::runtime_patch::set_value(patch, *value);
         }
         self.shared.workspace.backend =
-            Box::new(rsxp::workspace_services::LocalServices::new(root.clone()));
+            Box::new(rsxp_ui::workspace_services::LocalServices::new(root.clone()));
         let jit = self.shared.workspace.session.as_ref().unwrap().ruby_jit;
         // Cartridge cores currently produce CPU bitmaps. Keep those frames on
         // the shared eframe texture path instead of starting an unused RGSS
@@ -1104,6 +1111,14 @@ impl DesktopApp {
 
     fn collect_input(&mut self, ctx: &egui::Context) {
         self.input.begin_frame();
+        let shift = ctx.input(|input| input.modifiers.shift);
+        if self.session.is_some() && shift && !self.shift_forwarded {
+            self.input.key_down(rsxp_ui::controls::keyboard_binding(225));
+            self.shift_forwarded = true;
+        } else if (!shift || self.session.is_none()) && self.shift_forwarded {
+            self.input.key_up(rsxp_ui::controls::keyboard_binding(225));
+            self.shift_forwarded = false;
+        }
         if ctx.egui_wants_keyboard_input() {
             self.input.release_all();
             return;
@@ -1119,7 +1134,7 @@ impl DesktopApp {
                     ..
                 } => {
                     if let Some(code) = egui_scancode(physical_key.unwrap_or(key))
-                        .and_then(|code| self.active_settings.translate_key(code))
+                        .map(rsxp_ui::controls::keyboard_binding)
                     {
                         if pressed {
                             if code == 68 {
@@ -1609,7 +1624,7 @@ impl eframe::App for DesktopApp {
             }
             return;
         }
-        let info = rsxp::ui::WorkspaceInfo {
+        let info = rsxp_ui::WorkspaceInfo {
             core_id: self.session.as_ref().map_or("rgss", |session| session.core_id),
             logical_size: self.logical_size,
             fps: self.fps,

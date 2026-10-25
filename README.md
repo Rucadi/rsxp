@@ -14,6 +14,11 @@ separate WebAssembly modules. The shared engine owns graphics resources, input
 state, archive decoding and frame execution. Game logic remains Ruby. See
 [multi-core architecture](docs/multi-core-architecture.md).
 
+Emulator implementations stay in `cores/gba` and `cores/nds`. GBA- and
+DS-specific interface, GUI, and connectivity integration belongs in
+`crates/rsxp-gba` and `crates/rsxp-nds`; these crates do not depend on the
+emulators. Shared workspace UI lives in `crates/rsxp-ui`.
+
 Compatibility is incomplete. Selecting RGSS 1, 2 or 3 loads the corresponding
 RPG data definitions and compatibility behavior; it does not guarantee that a
 game or its plugins will run. See [runtime behavior and compatibility](docs/rust-port.md).

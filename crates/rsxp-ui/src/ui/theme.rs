@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! ArcadeNeon — the shared visual language for every RSXP frontend.
+//! Adventure Journal — the shared visual language for every RSXP frontend.
 //!
 //! One call to [`apply`] installs the full design system: the deep navy stage,
 //! hot-pink / electric-cyan / lime accents, neon glow shadows, and the three
@@ -16,38 +16,107 @@ use egui::{
     Align, Color32, CornerRadius, FontFamily, FontId, Frame, Layout, Response, RichText, Sense,
     Stroke, StrokeKind, Ui, Vec2,
 };
+use serde::{Deserialize, Serialize};
+use std::{fs, path::Path, sync::{Mutex, OnceLock}};
+static ACTIVE_THEME: OnceLock<Mutex<ThemeDefinition>> = OnceLock::new();
 
 // ---------------------------------------------------------------------------
 // Palette
 // ---------------------------------------------------------------------------
 
-/// Primary action / key accent.
-pub const PINK: Color32 = Color32::from_rgb(0xFF, 0x00, 0x6E);
-/// Links, highlights, P2 accents.
-pub const CYAN: Color32 = Color32::from_rgb(0x00, 0xF0, 0xFF);
-/// Success, scores, XP.
-pub const LIME: Color32 = Color32::from_rgb(0x39, 0xFF, 0x14);
-/// Low lives, time running out.
-pub const WARNING: Color32 = Color32::from_rgb(0xFF, 0xD6, 0x00);
-/// Game over, critical failure.
-pub const ERROR: Color32 = PINK;
-/// Tutorials, hints, power-ups.
+pub const PINK: Color32 = Color32::from_rgb(0x28, 0x65, 0x4D); // primary forest
+pub const CYAN: Color32 = Color32::from_rgb(0xB5, 0x6A, 0x3A); // warm terracotta accent
+pub const LIME: Color32 = Color32::from_rgb(0x8B, 0xCD, 0xAB); // success
+pub const WARNING: Color32 = Color32::from_rgb(0x81, 0x56, 0x00);
+pub const ERROR: Color32 = Color32::from_rgb(0xA9, 0x36, 0x3E);
 pub const INFO: Color32 = CYAN;
 
-/// Page background — the stage for every neon element.
-pub const BG: Color32 = Color32::from_rgb(0x0A, 0x0A, 0x14);
-/// Card background.
-pub const SURFACE: Color32 = Color32::from_rgb(0x12, 0x12, 0x1F);
-/// Elevated card / popup background.
-pub const SURFACE_RAISED: Color32 = Color32::from_rgb(0x1A, 0x1A, 0x2E);
-/// Hairline borders and dividers.
-pub const BORDER: Color32 = Color32::from_rgb(0x2A, 0x2A, 0x3E);
-/// Primary text.
-pub const TEXT: Color32 = Color32::from_rgb(0xEE, 0xEE, 0xF0);
-/// Secondary text and descriptions.
-pub const TEXT_MUTED: Color32 = Color32::from_rgb(0x99, 0x99, 0xAA);
-/// Disabled text / very quiet metadata.
-pub const TEXT_FAINT: Color32 = Color32::from_rgb(0x5E, 0x5E, 0x76);
+pub const BG: Color32 = Color32::from_rgb(0xEA, 0xE6, 0xD8);
+pub const SURFACE: Color32 = Color32::from_rgb(0xFF, 0xF9, 0xEC);
+pub const SURFACE_RAISED: Color32 = Color32::from_rgb(0xF3, 0xEF, 0xE2);
+pub const BORDER: Color32 = Color32::from_rgb(0xA6, 0xB5, 0xA3);
+pub const TEXT: Color32 = Color32::from_rgb(0x26, 0x3C, 0x36);
+pub const TEXT_MUTED: Color32 = Color32::from_rgb(0x52, 0x64, 0x5C);
+pub const TEXT_FAINT: Color32 = Color32::from_rgb(0x7A, 0x88, 0x7D);
+
+/// User-editable theme metadata. Save these definitions in
+/// `<RSXP_HOME>/config/themes.json`; unknown themes fall back safely.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ThemeDefinition {
+    pub name: String,
+    pub background: String,
+    pub surface: String,
+    pub surface_inset: String,
+    pub text: String,
+    pub text_muted: String,
+    pub primary: String,
+    pub secondary: String,
+    pub accent: String,
+    pub error: String,
+}
+
+impl Default for ThemeDefinition {
+    fn default() -> Self {
+        Self { name: "Adventure Journal".into(), background: "#EAE6D8".into(), surface: "#FFF9EC".into(), surface_inset: "#F3EFE2".into(), text: "#263C36".into(), text_muted: "#52645C".into(), primary: "#28654D".into(), secondary: "#B56A3A".into(), accent: "#D4A43B".into(), error: "#A9363E".into() }
+    }
+}
+
+pub fn builtin_themes() -> Vec<ThemeDefinition> {
+    vec![
+        ThemeDefinition::default(),
+        ThemeDefinition { name: "Arcade Neon".into(), background: "#0A0A14".into(), surface: "#12121F".into(), surface_inset: "#1A1A2E".into(), text: "#EEEEF0".into(), text_muted: "#9999AA".into(), primary: "#FF006E".into(), secondary: "#00F0FF".into(), accent: "#39FF14".into(), error: "#FF006E".into() },
+        ThemeDefinition { name: "Moonlit Grove".into(), background: "#172722".into(), surface: "#22382F".into(), surface_inset: "#1C3028".into(), text: "#F4F0E3".into(), text_muted: "#B5C5B7".into(), primary: "#8BCDAB".into(), secondary: "#95C9ED".into(), accent: "#E7BE65".into(), error: "#F39A9A".into() },
+        ThemeDefinition { name: "Field Guide".into(), background: "#F2EBDD".into(), surface: "#FFFDF5".into(), surface_inset: "#E5EEF3".into(), text: "#263746".into(), text_muted: "#60717D".into(), primary: "#D83A3A".into(), secondary: "#2D6FA3".into(), accent: "#D9A62E".into(), error: "#B32635".into() },
+    ]
+}
+
+pub fn load_themes(path: &Path) -> Vec<ThemeDefinition> {
+    let mut themes = builtin_themes();
+    if let Ok(bytes) = fs::read(path)
+        && let Ok(custom) = serde_json::from_slice::<Vec<ThemeDefinition>>(&bytes)
+    {
+        for theme in custom {
+            if !theme.name.trim().is_empty() {
+                themes.retain(|existing| existing.name != theme.name);
+                themes.push(theme);
+            }
+        }
+    }
+    themes
+}
+
+pub fn save_themes(path: &Path, themes: &[ThemeDefinition]) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() { fs::create_dir_all(parent)?; }
+    fs::write(path, serde_json::to_vec_pretty(themes).expect("theme serialization"))
+}
+
+pub fn set_active_theme(theme: ThemeDefinition) {
+    let slot = ACTIVE_THEME.get_or_init(|| Mutex::new(ThemeDefinition::default()));
+    *slot.lock().expect("theme lock") = theme;
+}
+
+fn active_theme() -> ThemeDefinition {
+    ACTIVE_THEME.get_or_init(|| Mutex::new(ThemeDefinition::default())).lock().expect("theme lock").clone()
+}
+
+pub fn background() -> Color32 { hex(&active_theme().background, BG) }
+pub fn surface() -> Color32 { hex(&active_theme().surface, SURFACE) }
+pub fn surface_inset() -> Color32 { hex(&active_theme().surface_inset, SURFACE_RAISED) }
+pub fn text() -> Color32 { hex(&active_theme().text, TEXT) }
+pub fn text_muted() -> Color32 { hex(&active_theme().text_muted, TEXT_MUTED) }
+pub fn primary() -> Color32 { hex(&active_theme().primary, PINK) }
+pub fn secondary() -> Color32 { hex(&active_theme().secondary, CYAN) }
+pub fn accent() -> Color32 { hex(&active_theme().accent, LIME) }
+pub fn error() -> Color32 { hex(&active_theme().error, ERROR) }
+
+fn hex(value: &str, fallback: Color32) -> Color32 {
+    let value = value.trim_start_matches('#');
+    if value.len() == 6 && let Ok(rgb) = u32::from_str_radix(value, 16) {
+        return Color32::from_rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8);
+    }
+    fallback
+}
 
 /// Standard 8px spacing scale.
 pub const XS: f32 = 4.0;
@@ -57,11 +126,11 @@ pub const LG: f32 = 24.0;
 pub const XL: f32 = 32.0;
 pub const XXL: f32 = 48.0;
 
-const BUNGEE_FAMILY: &str = "bungee";
+const BUNGEE_FAMILY: &str = "heading";
 
 // Embedding the OFL typefaces keeps every frontend (native, web, Android)
 // identical without system font dependencies.
-const BUNGEE: &[u8] = include_bytes!("../../assets/fonts/Bungee-Regular.ttf");
+const BUNGEE: &[u8] = include_bytes!("../../assets/fonts/WorkSans.ttf");
 const WORK_SANS: &[u8] = include_bytes!("../../assets/fonts/WorkSans.ttf");
 const SPACE_MONO: &[u8] = include_bytes!("../../assets/fonts/SpaceMono-Regular.ttf");
 
@@ -69,7 +138,7 @@ const SPACE_MONO: &[u8] = include_bytes!("../../assets/fonts/SpaceMono-Regular.t
 // Typography
 // ---------------------------------------------------------------------------
 
-/// Bungee — exclusively for headings and display copy.
+/// Friendly bold heading face; kept as a named family for existing callers.
 pub fn display_font(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name(BUNGEE_FAMILY.into()))
 }
@@ -156,40 +225,34 @@ fn install_fonts(context: &egui::Context) {
 // Style
 // ---------------------------------------------------------------------------
 
-/// Installs the ArcadeNeon style. Safe to call every frame.
+/// Installs the Adventure Journal style. Safe to call every frame.
 pub fn apply(context: &egui::Context) {
-    context.set_theme(egui::Theme::Dark);
+    let theme = active_theme();
+    let dark = theme.background.starts_with("#0A") || theme.name == "Arcade Neon";
+    context.set_theme(if dark { egui::Theme::Dark } else { egui::Theme::Light });
     install_fonts(context);
 
-    let mut visuals = egui::Visuals::dark();
-    visuals.panel_fill = BG;
-    visuals.window_fill = SURFACE_RAISED;
-    visuals.extreme_bg_color = BG;
-    visuals.text_edit_bg_color = Some(SURFACE);
-    visuals.faint_bg_color = SURFACE_RAISED;
-    visuals.code_bg_color = BG;
-    visuals.hyperlink_color = CYAN;
+    let bg = hex(&theme.background, BG); let surface = hex(&theme.surface, SURFACE); let inset = hex(&theme.surface_inset, SURFACE_RAISED); let text = hex(&theme.text, TEXT); let muted = hex(&theme.text_muted, TEXT_MUTED); let primary = hex(&theme.primary, PINK); let secondary = hex(&theme.secondary, CYAN); let error = hex(&theme.error, ERROR);
+    let mut visuals = if dark { egui::Visuals::dark() } else { egui::Visuals::light() };
+    visuals.panel_fill = bg;
+    visuals.window_fill = inset;
+    visuals.extreme_bg_color = bg;
+    visuals.text_edit_bg_color = Some(surface);
+    visuals.faint_bg_color = inset;
+    visuals.code_bg_color = bg;
+    visuals.hyperlink_color = secondary;
     visuals.warn_fg_color = WARNING;
-    visuals.error_fg_color = PINK;
-    visuals.weak_text_color = Some(TEXT_MUTED);
-    visuals.selection.bg_fill = PINK.gamma_multiply(0.75);
-    visuals.selection.stroke = Stroke::new(1.0, Color32::WHITE);
+    visuals.error_fg_color = error;
+    visuals.weak_text_color = Some(muted);
+    visuals.selection.bg_fill = primary.gamma_multiply(0.22);
+    visuals.selection.stroke = Stroke::new(1.0, primary);
+    visuals.override_text_color = Some(text);
     visuals.window_stroke = Stroke::new(1.0, BORDER);
     visuals.window_corner_radius = CornerRadius::same(12);
     visuals.menu_corner_radius = CornerRadius::same(12);
-    visuals.window_shadow = egui::epaint::Shadow {
-        offset: [0, 0],
-        blur: 28,
-        spread: 0,
-        color: PINK.gamma_multiply(0.18),
-    };
-    visuals.popup_shadow = egui::epaint::Shadow {
-        offset: [0, 0],
-        blur: 18,
-        spread: 0,
-        color: PINK.gamma_multiply(0.12),
-    };
-    visuals.text_cursor.stroke = Stroke::new(2.0, PINK);
+    visuals.window_shadow = egui::epaint::Shadow { offset: [0, 2], blur: 8, spread: 0, color: Color32::BLACK.gamma_multiply(0.12) };
+    visuals.popup_shadow = egui::epaint::Shadow { offset: [0, 2], blur: 6, spread: 0, color: Color32::BLACK.gamma_multiply(0.10) };
+    visuals.text_cursor.stroke = Stroke::new(2.0, CYAN);
     visuals.button_frame = true;
     visuals.striped = true;
     visuals.indent_has_left_vline = false;
@@ -205,16 +268,16 @@ pub fn apply(context: &egui::Context) {
         expansion: 0.0,
     };
     visuals.widgets.inactive = egui::style::WidgetVisuals {
-        bg_fill: SURFACE_RAISED,
-        weak_bg_fill: SURFACE_RAISED,
+        bg_fill: SURFACE,
+        weak_bg_fill: SURFACE,
         bg_stroke: Stroke::new(1.0, BORDER),
         corner_radius: radius,
         fg_stroke: Stroke::new(1.0, TEXT),
         expansion: 0.0,
     };
     visuals.widgets.hovered = egui::style::WidgetVisuals {
-        bg_fill: Color32::from_rgb(0x22, 0x22, 0x38),
-        weak_bg_fill: Color32::from_rgb(0x22, 0x22, 0x38),
+        bg_fill: SURFACE_RAISED,
+        weak_bg_fill: SURFACE_RAISED,
         bg_stroke: Stroke::new(1.0, PINK),
         corner_radius: radius,
         fg_stroke: Stroke::new(1.0, Color32::WHITE),
@@ -239,7 +302,7 @@ pub fn apply(context: &egui::Context) {
         style.spacing.window_margin = egui::Margin::same(16);
         style.spacing.menu_margin = egui::Margin::same(8);
         style.spacing.indent = 18.0;
-        style.spacing.interact_size = Vec2::new(40.0, 36.0);
+        style.spacing.interact_size = Vec2::new(44.0, 40.0);
         style.spacing.slider_width = 180.0;
         style.spacing.slider_rail_height = 6.0;
         style.spacing.combo_height = 280.0;
@@ -292,14 +355,8 @@ pub fn pulse(context: &egui::Context) -> f32 {
 /// Paints a soft neon halo behind `rect`. Call this before painting the
 /// element itself so the glow reads as light rather than an outline.
 pub fn glow(painter: &egui::Painter, rect: egui::Rect, radius: u8, color: Color32, strength: f32) {
-    for (index, alpha) in [0.10, 0.07, 0.045].iter().enumerate() {
-        let grow = 2.0 + index as f32 * 2.5;
-        painter.rect_filled(
-            rect.expand(grow),
-            CornerRadius::same(radius.saturating_add(grow as u8)),
-            color.gamma_multiply(alpha * strength),
-        );
-    }
+    let _ = strength;
+    painter.rect_stroke(rect, CornerRadius::same(radius), Stroke::new(1.0, color.gamma_multiply(0.35)), StrokeKind::Inside);
 }
 
 /// A thin neon rule with a soft fade at both ends.
@@ -328,7 +385,7 @@ pub fn section_label(ui: &mut Ui, text: &str, color: Color32) {
 /// A small keyboard cap, e.g. `F1` or `Enter`.
 pub fn keycap(ui: &mut Ui, label: &str) {
     Frame::new()
-        .fill(SURFACE_RAISED)
+        .fill(surface_inset())
         .stroke(Stroke::new(1.0, BORDER))
         .corner_radius(CornerRadius::same(4))
         .inner_margin(egui::Margin::symmetric(6, 2))
@@ -355,11 +412,11 @@ impl ButtonKind {
     fn colors(self) -> (Color32, Color32, Color32) {
         // (fill, text, glow)
         match self {
-            Self::Primary => (PINK, Color32::WHITE, PINK),
-            Self::Secondary => (Color32::TRANSPARENT, CYAN, CYAN),
-            Self::Ghost => (Color32::TRANSPARENT, TEXT_MUTED, Color32::TRANSPARENT),
-            Self::Destructive => (Color32::from_rgb(0xCC, 0x00, 0x58), Color32::WHITE, PINK),
-            Self::Success => (LIME, Color32::from_rgb(0x06, 0x14, 0x06), LIME),
+            Self::Primary => (primary(), Color32::WHITE, primary()),
+            Self::Secondary => (Color32::TRANSPARENT, secondary(), secondary()),
+            Self::Ghost => (Color32::TRANSPARENT, text_muted(), Color32::TRANSPARENT),
+            Self::Destructive => (error(), Color32::from_rgb(0xFF, 0xF9, 0xEC), error()),
+            Self::Success => (accent(), text(), accent()),
         }
     }
 }
@@ -442,15 +499,15 @@ fn button_impl(
         fill.gamma_multiply(0.3)
     } else if hovered {
         match kind {
-            ButtonKind::Ghost => SURFACE_RAISED,
-            ButtonKind::Secondary => CYAN.gamma_multiply(0.10),
+            ButtonKind::Ghost => surface_inset(),
+            ButtonKind::Secondary => secondary().gamma_multiply(0.10),
             _ => brighten(fill, 0.16),
         }
     } else {
         fill
     };
     let border = match kind {
-        ButtonKind::Secondary => Stroke::new(1.0, CYAN),
+        ButtonKind::Secondary => Stroke::new(1.0, secondary()),
         ButtonKind::Ghost => Stroke::NONE,
         _ => Stroke::NONE,
     };
@@ -508,9 +565,9 @@ pub enum Tone {
 impl Tone {
     pub fn color(self) -> Color32 {
         match self {
-            Self::Pink => PINK,
-            Self::Cyan => CYAN,
-            Self::Lime => LIME,
+            Self::Pink => primary(),
+            Self::Cyan => secondary(),
+            Self::Lime => accent(),
             Self::Warning => WARNING,
             Self::Error => ERROR,
             Self::Neutral => TEXT_MUTED,
@@ -548,12 +605,12 @@ pub fn chip(ui: &mut Ui, label: &str, tone: Tone, selected: bool) -> Response {
         )
     } else if hovered {
         (
-            SURFACE_RAISED,
+            surface_inset(),
             color,
             Stroke::new(1.0, color.gamma_multiply(0.65)),
         )
     } else {
-        (SURFACE, TEXT_MUTED, Stroke::new(1.0, BORDER))
+        (surface(), text_muted(), Stroke::new(1.0, BORDER))
     };
     let (fill, text_color) = if enabled {
         (fill, text_color)
@@ -581,14 +638,14 @@ pub fn chip(ui: &mut Ui, label: &str, tone: Tone, selected: bool) -> Response {
 /// A non-interactive status tag with a tinted fill.
 pub fn tag(ui: &mut Ui, label: &str, tone: Tone) {
     let color = tone.color();
-    let text = label.to_uppercase();
+    let label_text = label.to_uppercase();
     Frame::new()
-        .fill(color.gamma_multiply(0.16))
-        .stroke(Stroke::NONE)
+        .fill(color.gamma_multiply(0.22))
+        .stroke(Stroke::new(1.0, color.gamma_multiply(0.38)))
         .corner_radius(CornerRadius::same(4))
         .inner_margin(egui::Margin::symmetric(8, 2))
         .show(ui, |ui| {
-            ui.label(RichText::new(text).font(mono_font(10.0)).color(color));
+            ui.label(RichText::new(label_text).font(mono_font(10.0)).color(text()));
         });
 }
 
@@ -608,9 +665,9 @@ pub fn status_dot(ui: &mut Ui, color: Color32, activity: f32) {
 /// The standard card frame. `elevated` adds the raised fill, accent border,
 /// and coloured glow reserved for featured or interactive content.
 pub fn card(elevated: bool, accent: Option<Color32>) -> Frame {
-    let accent = accent.unwrap_or(PINK);
+    let accent = accent.unwrap_or(primary());
     let mut frame = Frame::new()
-        .fill(if elevated { SURFACE_RAISED } else { SURFACE })
+        .fill(if elevated { surface_inset() } else { surface() })
         .stroke(Stroke::new(
             1.0,
             if elevated {
@@ -758,7 +815,7 @@ mod tests {
     }
 
     #[test]
-    fn theme_is_idempotent_and_keeps_the_arcade_palette() {
+    fn theme_is_idempotent_and_keeps_the_palette() {
         let context = egui::Context::default();
         for _ in 0..3 {
             context
@@ -769,7 +826,7 @@ mod tests {
             .run_ui(egui::RawInput::default(), |ui| {
                 assert_eq!(ui.visuals().panel_fill, super::BG);
                 assert_eq!(ui.visuals().hyperlink_color, super::CYAN);
-                assert_eq!(ui.visuals().error_fg_color, super::PINK);
+                assert_eq!(ui.visuals().error_fg_color, super::ERROR);
             })
             .drop_without_applying_deltas();
     }

@@ -1,0 +1,10 @@
+[package]
+name = "rsxp-gba"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-2.0-or-later"
+description = "Game Boy Advance interface presentation for RSXP"
+publish = false
+
+[dependencies]
+egui = { version = "0.37.0" }

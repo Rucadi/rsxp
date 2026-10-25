@@ -3,8 +3,8 @@
 //! cooperative browser presentation.
 //!
 //! [`LocalServices`] is what the egui workspace talks to. Runtime settings and
-//! patches delegate straight to the thread-local state in `crate::runtime_settings`
-//! / `crate::runtime_patch`; the desktop settings are additionally relayed to
+//! patches delegate straight to the thread-local state in `rsxp::runtime_settings`
+//! / `rsxp::runtime_patch`; the desktop settings are additionally relayed to
 //! the runner by its session transport.
 //!
 //! Behind `game-api` it exposes the async command bridge (`send_request` /
@@ -42,32 +42,38 @@ impl LocalServices {
 }
 
 impl crate::ui::backend::Backend for LocalServices {
+    fn keyboard_binding(&self, action: i32) -> i32 {
+        crate::controls::keyboard_binding(action)
+    }
+    fn set_keyboard_binding(&self, action: i32, physical: i32) {
+        crate::controls::set_keyboard_binding(action, physical)
+    }
     fn fast_forward(&self) -> bool {
-        crate::runtime_settings::fast_forward()
+        rsxp::runtime_settings::fast_forward()
     }
     fn set_fast_forward(&self, v: bool) {
-        crate::runtime_settings::set_fast_forward(v)
+        rsxp::runtime_settings::set_fast_forward(v)
     }
     fn current_rate(&self) -> u32 {
-        crate::runtime_settings::current_rate()
+        rsxp::runtime_settings::current_rate()
     }
     fn set_rate_override(&self, v: u32) {
-        crate::runtime_settings::set_rate_override(v)
+        rsxp::runtime_settings::set_rate_override(v)
     }
     fn request_reset(&self) {
-        crate::runtime_settings::request_reset()
+        rsxp::runtime_settings::request_reset()
     }
     fn patch_enabled(&self, id: &str) -> bool {
-        crate::runtime_patch::is_enabled(id)
+        rsxp::runtime_patch::is_enabled(id)
     }
     fn set_patch_enabled(&self, id: &str, v: bool) -> bool {
-        crate::runtime_patch::set_enabled(id, v)
+        rsxp::runtime_patch::set_enabled(id, v)
     }
     fn patch_value(&self, id: &str) -> Option<f64> {
-        crate::runtime_patch::value(id)
+        rsxp::runtime_patch::value(id)
     }
     fn set_patch_value(&self, id: &str, v: f64) -> bool {
-        crate::runtime_patch::set_value(id, v)
+        rsxp::runtime_patch::set_value(id, v)
     }
     #[cfg(feature = "game-api")]
     fn asset_image(&self, category: &str, name: &str) -> Option<std::sync::Arc<image::RgbaImage>> {
@@ -110,7 +116,7 @@ impl crate::ui::backend::Backend for LocalServices {
         #[cfg(target_arch = "wasm32")]
         {
             let key = format!("Graphics/{category}/{name}");
-            let bytes = crate::engine::with_runtime(|runtime| {
+            let bytes = rsxp::engine::with_runtime(|runtime| {
                 [key.clone(), format!("{key}.png"), format!("{key}.bmp")]
                     .into_iter()
                     .find_map(|path| runtime.asset(&path).ok())
@@ -127,7 +133,7 @@ impl crate::ui::backend::Backend for LocalServices {
         operation: &str,
         arguments: &serde_json::Value,
     ) -> Option<Result<serde_json::Value, String>> {
-        crate::cable_club::handle_plugin_operation(operation, arguments, self.game_root.as_deref())
+        rsxp::cable_club::handle_plugin_operation(operation, arguments, self.game_root.as_deref())
     }
 }
 

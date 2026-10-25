@@ -1,10 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Shared eframe application and egui frontend for native and browser runners.
+//! Shared eframe application, egui workspace, themes, and input controls for
+//! native, browser, and mobile runners. Frontends should use this crate as the
+//! public UI boundary; RGSS remains an implementation dependency underneath.
 use base64::Engine as _;
-use rsxp::{
-    graphics::Bitmap,
-    ui::{Workspace, WorkspaceInfo, WorkspaceOutput},
-};
+use rsxp::graphics::Bitmap;
+
+/// Shared workspace surface. Frontends should depend on `rsxp-ui` instead of
+/// reaching into the RGSS crate for generic UI, themes, or controller state.
+pub use rsxp::controls;
+pub mod workspace_services;
+pub mod ui;
+pub use ui::{DsLayout, ViewMode, Workspace, WorkspaceInfo, WorkspaceOutput};
+pub use ui::session;
+pub use ui::theme;
 use rsxp_extension_api::{OperationRequest, OperationResponse, UiDescription};
 use rsxp_extensions::{ExtensionError, ExtensionHost, ExtensionPackage};
 #[cfg(not(target_arch = "wasm32"))]
@@ -464,9 +472,9 @@ impl SharedApp {
     pub fn plugin_asset_data_url(&self, category: &str, name: &str) -> Option<String> {
         let image = self.workspace.backend.asset_image(category, name)?;
         let bytes = if matches!(category, "Tilesets" | "Autotiles") {
-            rsxp::ui::png_bytes(image.as_ref())?
+            ui::png_bytes(image.as_ref())?
         } else {
-            rsxp::ui::first_pokemon_sprite_png(image.as_ref())?
+            ui::first_pokemon_sprite_png(image.as_ref())?
         };
         Some(format!(
             "data:image/png;base64,{}",
@@ -578,8 +586,8 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
         options,
         Box::new(|_| {
             let mut app = SharedApp::default();
-            let mut panel = rsxp::ui::session::SessionPanel::default();
-            panel.capabilities = rsxp::ui::session::SessionCapabilities::MOBILE;
+            let mut panel = ui::session::SessionPanel::default();
+            panel.capabilities = ui::session::SessionCapabilities::MOBILE;
             app.workspace.session = Some(panel);
             Ok(Box::new(app))
         }),

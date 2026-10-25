@@ -94,12 +94,7 @@ impl Workspace {
                         if info.core_id == "nds" && info.logical_size == (256, 384) {
                             ui.separator();
                             ui.label(theme::eyebrow("Nintendo DS screens"));
-                            ui.selectable_value(&mut self.ds_layout, DsLayout::Vertical, "Vertical (natural)");
-                            ui.selectable_value(&mut self.ds_layout, DsLayout::Horizontal, "Horizontal");
-                            ui.selectable_value(&mut self.ds_layout, DsLayout::TopLarge, "Top large · touch small");
-                            ui.selectable_value(&mut self.ds_layout, DsLayout::TouchLarge, "Touch large · top small");
-                            ui.selectable_value(&mut self.ds_layout, DsLayout::TopOnly, "Top screen only");
-                            ui.selectable_value(&mut self.ds_layout, DsLayout::TouchOnly, "Touch screen only");
+                            self.ds_layout.selector(ui);
                         }
                     });
                     if theme::button_sized(ui, "Controls", ButtonKind::Ghost, ButtonSize::Sm)
@@ -214,6 +209,8 @@ impl Workspace {
     }
 
     pub(super) fn draw_controller_settings(&mut self, context: &egui::Context) {
+        return self.draw_controller_settings_horizontal(context);
+        #[allow(unreachable_code)]
         if !self.controller_settings_open {
             return;
         }
@@ -320,6 +317,131 @@ impl Workspace {
             });
         self.controller_settings_open = open;
     }
+
+    fn draw_controller_settings_horizontal(&mut self, context: &egui::Context) {
+        if !self.controller_settings_open { return; }
+        let mut open = true;
+        let mut mapping = crate::controls::get();
+        let keyboard_actions = [
+            (82, "Up"), (81, "Down"), (80, "Left"), (79, "Right"),
+            (4, "A / Confirm"), (5, "B / Cancel"), (6, "C / Confirm"),
+            (27, "X"), (28, "Y"), (29, "Z"), (15, "L"), (21, "R"),
+            (40, "Enter / Start"), (41, "Escape"), (225, "Shift / Run"),
+            (224, "Ctrl"), (226, "Alt"), (44, "Space"), (68, "Fast-forward"),
+        ];
+        if let Some(target) = self.keyboard_capture {
+            if context.input(|input| input.modifiers.shift) {
+                self.backend.set_keyboard_binding(target, 225);
+                self.keyboard_capture = None;
+            }
+            if let Some((code, cancel)) = context.input(|input| input.events.iter().find_map(|event| {
+                let egui::Event::Key { key, physical_key, pressed: true, repeat: false, .. } = event else { return None; };
+                if *key == egui::Key::Escape { return Some((target, true)); }
+                Some((toolbar_scancode(physical_key.unwrap_or(*key))?, false))
+            })) {
+                if !cancel { self.backend.set_keyboard_binding(target, code); }
+                self.keyboard_capture = None;
+            }
+        }
+        egui::Window::new("Controls")
+            .id(egui::Id::unique("controller-settings-horizontal"))
+            .open(&mut open)
+            .collapsible(false)
+            .default_width(980.0)
+            .min_width(760.0)
+            .show(context, |ui| {
+                ui.horizontal(|ui| {
+                    theme::section_label(ui, "Controller", theme::PINK);
+                    ui.add_space(12.0);
+                    ui.label(format!("{} connected", mapping.connected));
+                    ui.add_space(20.0);
+                    ui.add(egui::Slider::new(&mut mapping.deadzone, 0.1..=0.9).text("Stick dead zone"));
+                });
+                ui.label("Choose actions for physical controls. Keyboard bindings can be changed from the same screen.");
+                ui.add_space(10.0);
+                ui.columns(2, |columns| {
+                    columns[0].vertical(|ui| {
+                        theme::section_label(ui, "Gamepad layout", theme::CYAN);
+                        ui.add_space(6.0);
+                        egui::Frame::new().fill(theme::surface()).stroke(egui::Stroke::new(1.0, theme::BORDER)).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
+                            egui::Grid::new("controller-horizontal-grid").num_columns(4).spacing([10.0, 8.0]).striped(true).show(ui, |ui| {
+                                for index in 0..20 {
+                                    ui.label(egui::RichText::new(crate::controls::BUTTONS[index]).font(theme::body_font(12.0)).color(theme::TEXT_MUTED));
+                                    egui::ComboBox::from_id_salt(("controller-horizontal", index)).selected_text(crate::controls::ACTIONS[mapping.buttons[index]]).show_ui(ui, |ui| {
+                                        for (action, label) in crate::controls::ACTIONS.iter().enumerate() { ui.selectable_value(&mut mapping.buttons[index], action, *label); }
+                                    });
+                                    if index % 2 == 1 { ui.end_row(); }
+                                }
+                            });
+                        });
+                    });
+                    columns[1].vertical(|ui| {
+                        theme::section_label(ui, "Keyboard layout", theme::PINK);
+                        ui.label("Click a binding, then press a key. Escape cancels.");
+                        ui.add_space(6.0);
+                        egui::Frame::new().fill(theme::surface()).stroke(egui::Stroke::new(1.0, theme::BORDER)).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
+                            egui::Grid::new("keyboard-horizontal-grid").num_columns(2).spacing([18.0, 10.0]).striped(true).show(ui, |ui| {
+                                for (action, label) in keyboard_actions {
+                                    ui.label(egui::RichText::new(label).font(theme::body_font(13.0)).color(theme::TEXT_MUTED));
+                                    let physical = self.backend.keyboard_binding(action);
+                                    let button = if self.keyboard_capture == Some(action) { "Press a key…".into() } else { toolbar_key_name(physical) };
+                                    if ui.button(button).clicked() { self.keyboard_capture = Some(action); }
+                                    ui.end_row();
+                                }
+                            });
+                            ui.add_space(12.0);
+                            ui.horizontal(|ui| {
+                                ui.label("Add game action");
+                                egui::ComboBox::from_id_salt("keyboard-add-action")
+                                    .selected_text(if self.keyboard_add_action == 0 { "Choose…".into() } else { toolbar_action_name(self.keyboard_add_action) })
+                                    .show_ui(ui, |ui| {
+                                        for (action, label) in keyboard_actions {
+                                            ui.selectable_value(&mut self.keyboard_add_action, action, label);
+                                        }
+                                    });
+                                if theme::button_sized(ui, "Add binding", ButtonKind::Secondary, ButtonSize::Sm).clicked() && self.keyboard_add_action != 0 {
+                                    self.keyboard_capture = Some(self.keyboard_add_action);
+                                }
+                            });
+                            ui.label("Add another RPG Maker action, then click its binding and press a key.");
+                        });
+                    });
+                });
+                ui.add_space(12.0);
+                ui.horizontal(|ui| {
+                    if theme::button(ui, "Restore controller defaults", ButtonKind::Secondary).clicked() {
+                        let connected = mapping.connected;
+                        mapping = crate::controls::Mapping::default();
+                        mapping.connected = connected;
+                    }
+                    if theme::button(ui, "Restore keyboard defaults", ButtonKind::Ghost).clicked() {
+                        for (action, _) in keyboard_actions { self.backend.set_keyboard_binding(action, action); }
+                        self.keyboard_add_action = 0;
+                    }
+                });
+            });
+        crate::controls::set(mapping);
+        self.controller_settings_open = open;
+    }
+}
+
+fn toolbar_key_name(code: i32) -> String {
+    match code { 4..=29 => ((b'A' + (code - 4) as u8) as char).to_string(), 40 => "Enter".into(), 41 => "Escape".into(), 42 => "Backspace".into(), 44 => "Space".into(), 58..=69 => format!("F{}", code - 57), 79 => "Right".into(), 80 => "Left".into(), 81 => "Down".into(), 82 => "Up".into(), 225 | 229 => "Shift".into(), _ => format!("Key {code}") }
+}
+
+fn toolbar_action_name(code: i32) -> &'static str {
+    match code {
+        4 => "A / Confirm", 5 => "B / Cancel", 6 => "C / Confirm", 15 => "L",
+        21 => "R", 27 => "X", 28 => "Y", 29 => "Z", 40 => "Enter / Start",
+        41 => "Escape", 44 => "Space", 68 => "Fast-forward", 79 => "Right",
+        80 => "Left", 81 => "Down", 82 => "Up", 224 => "Ctrl", 225 => "Shift / Run",
+        226 => "Alt", _ => "Other action",
+    }
+}
+
+fn toolbar_scancode(key: egui::Key) -> Option<i32> {
+    use egui::Key::*;
+    Some(match key { A => 4, B => 5, C => 6, D => 7, E => 8, F => 9, G => 10, H => 11, I => 12, J => 13, K => 14, L => 15, M => 16, N => 17, O => 18, P => 19, Q => 20, R => 21, S => 22, T => 23, U => 24, V => 25, W => 26, X => 27, Y => 28, Z => 29, Enter => 40, Escape => 41, Backspace => 42, Space => 44, F1 => 58, F2 => 59, F3 => 60, F4 => 61, F5 => 62, F6 => 63, F7 => 64, F8 => 65, F9 => 66, F10 => 67, F11 => 68, F12 => 69, ArrowRight => 79, ArrowLeft => 80, ArrowDown => 81, ArrowUp => 82, _ => return None })
 }
 
 #[cfg(test)]

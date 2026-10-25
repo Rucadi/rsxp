@@ -6,7 +6,7 @@
 //! dispatches to the matching body:
 //!
 //! * `draw_patch_catalog(ui, user_patches)` lists patches from
-//!   `crate::runtime_patch::patches()`, split into built-in and user patches by
+//!   `rsxp::runtime_patch::patches()`, split into built-in and user patches by
 //!   the `user/` id prefix. Each row is a checkbox — driving
 //!   `Backend::patch_enabled` / `Backend::set_patch_enabled` — plus, when the
 //!   patch exposes a `PatchParameter`, a slider that reads and writes
@@ -58,7 +58,7 @@ impl Workspace {
     }
 
     fn draw_patch_catalog(&mut self, ui: &mut egui::Ui, user_patches: bool) {
-        let all_patches = crate::runtime_patch::patches();
+        let all_patches = rsxp::runtime_patch::patches();
         let patches: Vec<_> = all_patches
             .iter()
             .filter(|patch| patch.id.starts_with("user/") == user_patches)

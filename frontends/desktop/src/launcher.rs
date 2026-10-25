@@ -4,9 +4,9 @@
 //! `config/config.json`; clicking refresh updates their offline caches and the
 //! UI reads only the cache, so an unreachable server never empties the library.
 //!
-//! The presentation follows the ArcadeNeon design system: a persistent neon
-//! sidebar, card-based game grid, and high-contrast status chips.
-use rsxp::ui::theme::{self, ButtonKind, ButtonSize, Tone};
+//! The presentation follows the Adventure Journal design system: a calm
+//! library for discovering and returning to RPG adventures.
+use rsxp_ui::theme::{self, ButtonKind, ButtonSize, Tone};
 use rsxp_provision::catalog::CatalogEntry;
 use rsxp_provision::settings::Settings;
 use rsxp_provision::{self as provision, Repository};
@@ -54,6 +54,8 @@ pub struct Launcher {
     task: Option<Receiver<Result<Completed, String>>>,
     status: String,
     error: Option<String>,
+    theme_name: String,
+    themes: Vec<theme::ThemeDefinition>,
 }
 impl Default for Launcher {
     fn default() -> Self {
@@ -61,10 +63,11 @@ impl Default for Launcher {
         let entries = provision::catalog::load_entries(&root);
         let (catalogs, warnings) = provision::catalog::selected(&root);
         let common = provision::settings::common(&root).unwrap_or_default();
+        let themes = theme::load_themes(&root.join("config/themes.json"));
         let status = if !entries.is_empty() && catalogs.is_empty() {
             "Refresh repositories to load your permanent catalogs."
         } else {
-            "Your games. One neon home."
+            "Your adventures, ready to continue."
         };
         Self {
             covers: Default::default(),
@@ -81,6 +84,8 @@ impl Default for Launcher {
             task: None,
             status: status.into(),
             error: (!warnings.is_empty()).then(|| warnings.join("\n")),
+            theme_name: "Adventure Journal".into(),
+            themes,
         }
     }
 }
@@ -125,6 +130,7 @@ impl Launcher {
             patches: self.common.patches.join(", "),
             settings: self.common.clone(),
             error: None,
+            capturing_key: None,
         });
     }
 
@@ -134,6 +140,9 @@ impl Launcher {
         recent: &[String],
         runtime_error: Option<&str>,
     ) -> Option<PathBuf> {
+        if let Some(selected) = self.themes.iter().find(|t| t.name == self.theme_name) {
+            theme::set_active_theme(selected.clone());
+        }
         theme::apply(ui.ctx());
         let mut launch = None;
         keyboard_navigation(ui.ctx(), &mut self.page);
@@ -213,7 +222,7 @@ impl Launcher {
             .resizable(false)
             .frame(
                 egui::Frame::new()
-                    .fill(theme::SURFACE)
+                    .fill(theme::surface())
                     .inner_margin(egui::Margin::symmetric(16, 18)),
             )
             .show(ui, |ui| self.draw_nav(ui, recent));
@@ -221,7 +230,7 @@ impl Launcher {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
-                    .fill(theme::BG)
+                    .fill(theme::background())
                     .inner_margin(egui::Margin::symmetric(26, 20)),
             )
             .show(ui, |ui| {
@@ -244,7 +253,7 @@ impl Launcher {
         let (rect, _) = ui.allocate_exact_size(egui::vec2(104.0, 46.0), egui::Sense::hover());
         theme::glow(ui.painter(), rect, 10, theme::PINK, 0.55);
         theme::centered_text(ui, rect, "RSXP", theme::display_font(32.0), theme::PINK);
-        ui.label(theme::eyebrow("Arcade game library"));
+        ui.label(theme::eyebrow("RPG adventure library"));
         ui.add_space(24.0);
         for (index, (page, label)) in [
             (Page::Library, "Library"),
@@ -265,7 +274,7 @@ impl Launcher {
 
         ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
             egui::Frame::new()
-                .fill(theme::SURFACE_RAISED)
+                .fill(theme::surface())
                 .stroke(egui::Stroke::new(1.0, theme::BORDER))
                 .corner_radius(egui::CornerRadius::same(8))
                 .inner_margin(egui::Margin::same(12))
@@ -339,7 +348,7 @@ impl Launcher {
             "RPG Maker, GBA and NDS games in one place. Drop a folder or ROM anywhere to play.",
         );
         egui::Frame::new()
-            .fill(theme::SURFACE)
+            .fill(theme::surface())
             .stroke(egui::Stroke::new(1.0, theme::BORDER))
             .corner_radius(egui::CornerRadius::same(10))
             .inner_margin(egui::Margin::symmetric(12, 10))
@@ -617,6 +626,7 @@ impl Launcher {
                                         patches: effective.patches.join(", "),
                                         settings: effective,
                                         error: None,
+                                        capturing_key: None,
                                     });
                                 }
                             });
@@ -673,7 +683,7 @@ impl Launcher {
             "Catalogs are stored permanently in config/config.json. Selected catalogs contribute games to the library; unselected ones stay available offline.",
         );
         egui::Frame::new()
-            .fill(theme::SURFACE)
+            .fill(theme::surface())
             .stroke(egui::Stroke::new(1.0, theme::BORDER))
             .corner_radius(egui::CornerRadius::same(10))
             .inner_margin(egui::Margin::same(14))
@@ -738,7 +748,7 @@ impl Launcher {
             .show(ui, |ui| {
                 for entry in &mut self.entries {
                     egui::Frame::new()
-                        .fill(theme::SURFACE_RAISED)
+                        .fill(theme::surface_inset())
                         .stroke(egui::Stroke::new(1.0, theme::BORDER))
                         .corner_radius(egui::CornerRadius::same(8))
                         .inner_margin(egui::Margin::same(14))
@@ -917,6 +927,26 @@ impl Launcher {
         ui.add_space(14.0);
         theme::card(false, None).show(ui, |ui| {
             ui.set_width(ui.available_width());
+            theme::section_label(ui, "Appearance", theme::CYAN);
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label("Theme");
+                egui::ComboBox::from_id_salt("launcher-theme")
+                    .selected_text(&self.theme_name)
+                    .show_ui(ui, |ui| {
+                        for definition in &self.themes {
+                            ui.selectable_value(&mut self.theme_name, definition.name.clone(), &definition.name);
+                        }
+                    });
+                if theme::button_sized(ui, "Save themes.json", ButtonKind::Secondary, ButtonSize::Sm).clicked() {
+                    let _ = theme::save_themes(&self.root.join("config/themes.json"), &self.themes);
+                }
+            });
+            ui.label("Built-in themes can be extended or edited in config/themes.json. Colors use #RRGGBB values.");
+        });
+        ui.add_space(14.0);
+        theme::card(false, None).show(ui, |ui| {
+            ui.set_width(ui.available_width());
             theme::section_label(ui, "Control API", theme::PINK);
             ui.add_space(6.0);
             ui.label(
@@ -951,7 +981,7 @@ impl Launcher {
             "Everything RSXP writes lives under this portable home. Copy it between machines and your library, saves and snapshots come along.",
         );
         egui::Frame::new()
-            .fill(theme::SURFACE)
+            .fill(theme::surface())
             .stroke(egui::Stroke::new(1.0, theme::BORDER))
             .corner_radius(egui::CornerRadius::same(8))
             .inner_margin(egui::Margin::same(12))
@@ -1164,7 +1194,7 @@ fn cover_placeholder(
 ) {
     let painter = ui.painter_at(rect);
     let base = match platform {
-        "GBA" => egui::Color32::from_rgb(8, 35, 46),
+        "GBA" => egui::Color32::from_rgb(79, 57, 43),
         "NDS" => egui::Color32::from_rgb(38, 14, 44),
         _ => egui::Color32::from_rgb(12, 40, 30),
     };
@@ -1201,7 +1231,7 @@ fn game_card(ui: &mut egui::Ui, contents: impl FnOnce(&mut egui::Ui)) {
         egui::Layout::top_down(egui::Align::Min),
         |ui| {
             egui::Frame::new()
-                .fill(theme::SURFACE_RAISED)
+                .fill(theme::surface_inset())
                 .stroke(egui::Stroke::new(1.0, theme::BORDER))
                 .corner_radius(egui::CornerRadius::same(12))
                 .inner_margin(egui::Margin::same(CARD_MARGIN as i8))
@@ -1235,6 +1265,8 @@ mod tests {
             task: None,
             status: String::new(),
             error: None,
+            theme_name: "Adventure Journal".into(),
+            themes: theme::builtin_themes(),
         }
     }
     #[test]

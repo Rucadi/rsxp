@@ -1,6 +1,6 @@
 # ArcadeNeon fonts
 
-These typefaces are embedded by `crates/rsxp-rgss/src/ui/theme.rs` so the
+These typefaces are embedded by `crates/rsxp-ui/src/ui/theme.rs` so the
 desktop, browser, and Android frontends share identical typography.
 
 | File | Family | Source |

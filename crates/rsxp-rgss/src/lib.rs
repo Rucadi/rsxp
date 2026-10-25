@@ -24,19 +24,13 @@
 //! * [`runtime_settings`] — thread-local live settings (frame-rate cap,
 //!   fast-forward, reset) a host UI can change while the game runs.
 //! * [`controls`] — the shared gamepad-to-RGSS-action mapping.
-//! * [`workspace_services`] *(feature `ui`)* — the default
-//!   [`ui::backend::Backend`] adapter bridging the egui workspace to the engine
-//!   and host.
 //! * [`api_bridge`] *(feature `game-api`)* — the local game-command queue and
 //!   HTTP routing used by the desktop and browser tools.
 //! * [`cable_club`] / [`cable_unmod`] *(feature `game-api`, non-WASM)* — the
 //!   Cable Club peer-relay servers.
-//! * [`ui`] *(feature `ui`)* — the shared egui workspace rendered by both the
-//!   native and browser frontends.
 //!
 //! ## Features
-//! `ui` enables the shared egui workspace; `gpu` enables the device compositor without pulling in
-//! egui, so native/mobile frontends supply their own presentation; `game-api`
+//! `gpu` enables the device compositor; `game-api`
 //! enables the command bridge; `api-docs` enables the code-first OpenAPI schema
 //! used by the `rsxp-mcp` binary.
 #[cfg(feature = "game-api")]
@@ -58,15 +52,8 @@ pub mod portable_media;
 /// Embedded Ruby source bundles, assembled at compile time from logical units.
 pub mod ruby;
 pub mod runtime_settings;
-/// Shared egui workspace used by both the native and browser frontends.
-#[cfg(feature = "ui")]
-pub mod ui;
-
 // Preserve existing public paths while grouping implementations by ownership.
 pub use data::{archive, table};
 pub use engine::{host, input};
 pub use graphics::tilemap;
 pub use patches as runtime_patch;
-
-#[cfg(feature = "ui")]
-pub mod workspace_services;

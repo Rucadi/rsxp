@@ -64,11 +64,14 @@ RGSS application.
 | `crates/rsxp-core/` | Emulator-core contract: video/audio/input/control/events, no RGSS or frontend dependencies |
 | `crates/rsxp-frontend/` | Generic core catalog, content routing and dedicated core-thread driver |
 | `crates/rsxp-cores/` | Build-time registry; features select which cores a frontend links |
-| `crates/rsxp-rgss/` | The `rsxp` engine package: graphics, GPU compositor, archives, media, Ruby shim and shared RGSS workspace UI |
-| `crates/rsxp-ui/` | Cross-platform eframe `App` and shared game-frame texture presentation |
+| `crates/rsxp-rgss/` | The `rsxp` engine package: graphics, GPU compositor, archives, media, Ruby shim and RGSS runtime services |
+| `crates/rsxp-ui/` | Shared workspace, themes, service adapters and cross-platform frame presentation |
 | `cores/rgss/core/` | RGSS adapter implementing `rsxp_core::Core` |
 | `cores/rgss/ruby/` | MRI embedding and all Magnus bindings (package `rsxp-rgss-ruby`) |
-| `cores/gba/core/` | GBA adapter implementing `rsxp_core::Core` (RustBoyAdvance-NG backend) |
+| `crates/rsxp-nds/` | DS interface and screen-layout UI |
+| `crates/rsxp-gba/` | GBA interface presentation |
+| `cores/gba/core/` | GBA emulator adapter |
+| `cores/nds/core/` | DS emulator adapter; vendor code lives in `cores/nds/vendor/` |
 | `frontends/core-runner/` | Headless generic runner for core validation |
 | `frontends/desktop/` | Desktop binary, dashboard, window, audio, presentation and session transport |
 | `platforms/web/` | Browser frontend (separate Cargo workspace) |
@@ -300,7 +303,7 @@ remains software. See [browser setup and limitations](../platforms/web/README.md
 
 ## Workspace and inspection
 
-Shared panels live in `crates/rsxp-rgss/src/ui/`, with a `ui::backend::Backend` service contract.
+Shared panels live in `crates/rsxp-ui/src/ui/`, with a `ui::backend::Backend` service contract.
 `workspace_services::LocalServices` adapts local settings, patches, API requests,
 assets and native cable services. The dashboard also routes remote session
 controls and replies. Session/library/save actions are frontend intents; the
@@ -322,6 +325,7 @@ separate relay services, not a general HTTP implementation for game scripts.
 | Build-time core registry | `crates/rsxp-cores/` |
 | RGSS core adapter | `cores/rgss/core/` |
 | GBA core adapter | `cores/gba/core/` |
+| DS core adapter | `cores/nds/core/` |
 | Public engine modules and compatibility re-exports | `crates/rsxp-rgss/src/lib.rs` |
 | Runtime registries and bridge entry points | `crates/rsxp-rgss/src/engine/mod.rs` |
 | Protocol, assets, input, frame and scene order | `crates/rsxp-rgss/src/engine/{commands,assets,input,frame,scene}.rs` |
@@ -334,7 +338,7 @@ separate relay services, not a general HTTP implementation for game scripts.
 | Dashboard, transport, library and save backups | `frontends/desktop/src/{dashboard,session,library,saves}.rs` |
 | Platform services | `frontends/desktop/src/{host,window,gpu_present,media,audio}.rs` |
 | Ruby VM, Magnus and Win32 adapters | `cores/rgss/ruby/src/` |
-| Workspace panels and services | `crates/rsxp-rgss/src/ui/`, `crates/rsxp-rgss/src/workspace_services/`, `crates/rsxp-rgss/src/workspace_services.rs` |
+| Workspace panels and services | `crates/rsxp-ui/src/ui/`, `crates/rsxp-ui/src/workspace_services/`, `crates/rsxp-ui/src/workspace_services.rs` |
 | Runtime patch catalog and Ruby patch bodies | `crates/rsxp-rgss/src/patches/` |
 | Browser scheduling and Ruby adaptations | `platforms/web/browser/app.js` |
 | Browser exports, services and presentation | `platforms/web/engine/src/` |
@@ -366,3 +370,5 @@ storage lives in the shared RGSS shim, selected only without native bindings.
 Interpreter embedding, native retained-state acceleration, composition backend,
 save persistence, process launching and network transport still have host-specific
 implementations. They are not additional game-logic or tool-panel implementations.
+
+Emulator implementations and vendor dependencies remain in `cores/gba` and `cores/nds`. Platform-specific RSXP interface, GUI and connectivity code belongs in `rsxp-gba` and `rsxp-nds`, independently of the emulator crates. Shared workspace code belongs in `rsxp-ui`; generic core contracts remain in `rsxp-core`.

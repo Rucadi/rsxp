@@ -12,7 +12,7 @@ rsxp-control = { path = "../../crates/rsxp-control" }
 serde = { version = "1", features = ["derive"] }
 rsxp-core-nds = { path = "../../cores/nds/core", optional = true }
 rsxp-core-gba = { path = "../../cores/gba/core", optional = true }
-rsxp = { path = "../../crates/rsxp-rgss", features = ["gpu", "ui", "game-api", "portable-media"], optional = true }
+rsxp = { path = "../../crates/rsxp-rgss", features = ["gpu", "game-api", "portable-media"], optional = true }
 rsxp-core = { path = "../../crates/rsxp-core" }
 rsxp-extension-api = { path = "../../crates/rsxp-extension-api" }
 rsxp-cores = { path = "../../crates/rsxp-cores", default-features = false }

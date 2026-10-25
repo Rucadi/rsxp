@@ -117,8 +117,8 @@ pub async fn web_init_eframe(canvas: web_sys::HtmlCanvasElement) -> Result<(), J
     let runner = eframe::WebRunner::new();
     let creator: eframe::AppCreator<'static> = Box::new(|_| {
         let mut app = rsxp_ui::SharedApp::default();
-        let mut panel = rsxp::ui::session::SessionPanel::default();
-        panel.capabilities = rsxp::ui::session::SessionCapabilities::BROWSER;
+        let mut panel = rsxp_ui::session::SessionPanel::default();
+        panel.capabilities = rsxp_ui::session::SessionCapabilities::BROWSER;
         panel.api_bridge = true;
         panel.api_status = "Browser bridge · no TCP listener".into();
         app.set_save_buttons(true);
@@ -420,7 +420,7 @@ pub fn web_eframe_activate_extensions() {
 pub fn web_eframe_launcher(title: &str, status: &str, busy: bool) {
     let _ = with_eframe_app(|app| {
         let panel = app.workspace.session.get_or_insert_with(Default::default);
-        panel.capabilities = rsxp::ui::session::SessionCapabilities::BROWSER;
+        panel.capabilities = rsxp_ui::session::SessionCapabilities::BROWSER;
         panel.status = status.into();
         panel.busy = busy;
         panel.recent = if title.is_empty() {
@@ -931,15 +931,15 @@ pub fn web_register_user_patch(name: &str, source: &str) -> bool {
 
 #[wasm_bindgen]
 pub fn web_controls() -> String {
-    rsxp::controls::encode()
+    rsxp_ui::controls::encode()
 }
 #[wasm_bindgen]
 pub fn web_controls_load(value: &str) {
-    rsxp::controls::decode(value);
+    rsxp_ui::controls::decode(value);
 }
 #[wasm_bindgen]
 pub fn web_controllers_connected(count: usize) {
-    let mut mapping = rsxp::controls::get();
+    let mut mapping = rsxp_ui::controls::get();
     mapping.connected = count;
-    rsxp::controls::set(mapping);
+    rsxp_ui::controls::set(mapping);
 }

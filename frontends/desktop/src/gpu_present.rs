@@ -2,7 +2,7 @@
 //! A wgpu surface on a winit-owned native window, plus the shared workspace UI.
 //!
 //! [`GpuDisplay`] owns the swapchain (`wgpu::Surface` + configuration), the
-//! presentation render pipeline, a [`rsxp::ui::Workspace`] instance, the egui
+//! presentation render pipeline, a [`rsxp_ui::Workspace`] instance, the egui
 //! renderer, and presentation statistics. It draws everything into one render
 //! pass per frame: first the game image, then the egui overlay on top.
 //!
@@ -56,7 +56,7 @@ pub struct GpuDisplay {
     bound_frame: Option<(wgpu::Buffer, wgpu::BindGroup)>,
     previous_dimensions: [f32; 8],
     // The workspace UI is shared with the browser frontend.
-    workspace: rsxp::ui::Workspace,
+    workspace: rsxp_ui::Workspace,
     global_fullscreen_request: Option<bool>,
     game_pointer_rect: egui::Rect,
 }
@@ -65,7 +65,7 @@ impl GpuDisplay {
     pub fn set_game_metrics(&mut self, fps: f64, frames: u64) {
         self.game_metrics = Some((fps, frames));
     }
-    pub fn workspace_mut(&mut self) -> &mut rsxp::ui::Workspace {
+    pub fn workspace_mut(&mut self) -> &mut rsxp_ui::Workspace {
         &mut self.workspace
     }
     pub fn performance_visible(&self) -> bool {
@@ -211,7 +211,7 @@ impl GpuDisplay {
             frames: 0,
             bound_frame: None,
             previous_dimensions: [0.0; 8],
-            workspace: rsxp::ui::Workspace::new(),
+            workspace: rsxp_ui::Workspace::new(),
             global_fullscreen_request: None,
             game_pointer_rect: egui::Rect::ZERO,
         })
@@ -302,7 +302,7 @@ impl GpuDisplay {
             self.fps_frames = 0;
             self.fps_start = Instant::now();
         }
-        let workspace_info = rsxp::ui::WorkspaceInfo {
+        let workspace_info = rsxp_ui::WorkspaceInfo {
             core_id: "rgss",
             logical_size,
             fps: self.game_metrics.map_or(self.fps, |m| m.0),

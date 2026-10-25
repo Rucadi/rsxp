@@ -4509,16 +4509,15 @@ name = "rsxp"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
- "egui",
  "fontdue",
  "gif",
  "image",
  "ogg",
  "pollster 1.0.1",
  "rsxp-control",
+ "serde",
  "serde_json",
  "theora-rs",
- "web-time",
  "wgpu 30.0.1",
 ]
 
@@ -4671,6 +4670,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsxp-gba"
+version = "0.1.0"
+dependencies = [
+ "egui",
+]
+
+[[package]]
+name = "rsxp-nds"
+version = "0.1.0"
+dependencies = [
+ "egui",
+]
+
+[[package]]
 name = "rsxp-provision"
 version = "0.1.0"
 dependencies = [
@@ -4695,10 +4708,16 @@ dependencies = [
  "base64 0.22.1",
  "eframe",
  "egui",
+ "image",
  "rsxp",
  "rsxp-extension-api",
  "rsxp-extension-ui",
  "rsxp-extensions",
+ "rsxp-gba",
+ "rsxp-nds",
+ "serde",
+ "serde_json",
+ "web-time",
  "winit",
 ]
 

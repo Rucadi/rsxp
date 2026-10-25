@@ -1,6 +1,6 @@
 # Shared frontend and platform adapters
 
-Desktop and browser now use the shared `rsxp::ui::Workspace` and `SessionPanel`
+Desktop and browser now use the shared `rsxp_ui::ui::Workspace` and `SessionPanel`
 inside the shared `rsxp-ui::SharedApp`. Eframe owns both windows/canvas and UI
 input; browser HTML contains the canvas, file inputs, and a boot-error message.
 

@@ -91,28 +91,7 @@ pub enum ViewMode {
     Floating,
 }
 
-/// Presentation presets for the two Nintendo DS LCDs.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum DsLayout {
-    #[default]
-    Vertical,
-    Horizontal,
-    TopLarge,
-    TouchLarge,
-    TopOnly,
-    TouchOnly,
-}
-
-impl DsLayout {
-    pub const fn aspect(self) -> f32 {
-        match self {
-            Self::Vertical => 256.0 / 384.0,
-            Self::Horizontal => 512.0 / 192.0,
-            Self::TopLarge | Self::TouchLarge => 768.0 / 384.0,
-            Self::TopOnly | Self::TouchOnly => 256.0 / 192.0,
-        }
-    }
-}
+pub use rsxp_nds::ui::DsLayout;
 
 impl ViewMode {
     pub fn label(self) -> &'static str {
@@ -202,6 +181,8 @@ pub struct Workspace {
     ds_layout: DsLayout,
     controls_visible: bool,
     controller_settings_open: bool,
+    keyboard_capture: Option<i32>,
+    keyboard_add_action: i32,
     was_global_fullscreen: bool,
     reset_confirm: bool,
     /// `Some((done, total))` shows a download progress screen instead of the
@@ -231,6 +212,8 @@ impl Default for Workspace {
             ds_layout: DsLayout::default(),
             controls_visible: false,
             controller_settings_open: false,
+            keyboard_capture: None,
+            keyboard_add_action: 0,
             was_global_fullscreen: false,
             reset_confirm: false,
             loading: None,
@@ -813,7 +796,7 @@ mod workspace_tests {
 
     #[test]
     fn drawing_before_the_runner_is_ready_does_not_override_its_rate() {
-        crate::runtime_settings::reset();
+        rsxp::runtime_settings::reset();
         let mut workspace = Workspace::new();
         let mut session = session::SessionPanel::default();
         session.active = true;
@@ -841,7 +824,7 @@ mod workspace_tests {
                     workspace.draw(ui, &info);
                 })
                 .drop_without_applying_deltas();
-            assert_eq!(crate::runtime_settings::rate_override(), None);
+            assert_eq!(rsxp::runtime_settings::rate_override(), None);
         }
     }
 }

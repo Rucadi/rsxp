@@ -30,80 +30,6 @@ impl Workspace {
         }
     }
 
-    fn paint_ds_screen(&self, ui: &egui::Ui, rect: egui::Rect, top: bool) {
-        if let Some(texture) = self.frame_texture {
-            let uv = if top {
-                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 0.5))
-            } else {
-                egui::Rect::from_min_max(egui::pos2(0.0, 0.5), egui::pos2(1.0, 1.0))
-            };
-            ui.painter().image(texture, rect, uv, egui::Color32::WHITE);
-        }
-    }
-
-    fn record_ds_rect(output: &mut WorkspaceOutput, rect: egui::Rect, top: bool) {
-        output.game_rect = if output.game_rect == egui::Rect::ZERO {
-            rect
-        } else {
-            output.game_rect.union(rect)
-        };
-        if !top {
-            output.touch_rect = rect;
-        }
-    }
-
-    fn ds_layout_rects(
-        &self,
-        available: egui::Rect,
-    ) -> (Option<egui::Rect>, Option<egui::Rect>) {
-        let (width, height) = match self.ds_layout {
-            DsLayout::Vertical => (256, 384),
-            DsLayout::Horizontal => (512, 192),
-            DsLayout::TopLarge | DsLayout::TouchLarge => (768, 384),
-            DsLayout::TopOnly | DsLayout::TouchOnly => (256, 192),
-        };
-        let canvas = if self.ds_layout == DsLayout::Horizontal && !self.controls_visible {
-            // Horizontal DS mode is intentionally edge-to-edge vertically:
-            // both LCDs fill the window height and meet its top and bottom.
-            let scale = available.height() / height as f32;
-            let size = egui::vec2(width as f32 * scale, available.height());
-            egui::Rect::from_center_size(
-                egui::pos2(available.center().x, available.min.y + size.y * 0.5),
-                size,
-            )
-        } else {
-            aspect_rect(available, (width, height))
-        };
-        let scale = (canvas.width() / width as f32).min(canvas.height() / height as f32);
-        let at = |x: u32, y: u32, w: u32, h: u32| {
-            egui::Rect::from_min_size(
-                canvas.min + egui::vec2(x as f32 * scale, y as f32 * scale),
-                egui::vec2(w as f32 * scale, h as f32 * scale),
-            )
-        };
-        match self.ds_layout {
-            DsLayout::Vertical => (Some(at(0, 0, 256, 192)), Some(at(0, 192, 256, 192))),
-            DsLayout::Horizontal => (Some(at(0, 0, 256, 192)), Some(at(256, 0, 256, 192))),
-            DsLayout::TopLarge => (Some(at(0, 0, 512, 384)), Some(at(512, 96, 256, 192))),
-            DsLayout::TouchLarge => (Some(at(0, 96, 256, 192)), Some(at(256, 0, 512, 384))),
-            DsLayout::TopOnly => (Some(at(0, 0, 256, 192)), None),
-            DsLayout::TouchOnly => (None, Some(at(0, 0, 256, 192))),
-        }
-    }
-
-    fn draw_ds_docked(&self, ui: &mut egui::Ui, output: &mut WorkspaceOutput) {
-        let available = ui.max_rect();
-        let (top, touch) = self.ds_layout_rects(available);
-        if let Some(rect) = top {
-            self.paint_ds_screen(ui, rect, true);
-            Self::record_ds_rect(output, rect, true);
-        }
-        if let Some(rect) = touch {
-            self.paint_ds_screen(ui, rect, false);
-            Self::record_ds_rect(output, rect, false);
-        }
-    }
-
     pub(super) fn draw_game_view(
         &mut self,
         ui: &mut egui::Ui,
@@ -113,16 +39,16 @@ impl Workspace {
     ) {
         if core_id == "nds" && logical_size == (256, 384) {
             egui::CentralPanel::default()
-                .frame(egui::Frame::new().fill(theme::BG))
+                .frame(egui::Frame::new().fill(egui::Color32::BLACK))
                 .show(ui, |ui| {
-                    self.draw_ds_docked(ui, output);
+                    (output.game_rect, output.touch_rect) = self.ds_layout.paint(ui, self.frame_texture, self.controls_visible);
                 });
             return;
         }
         let context = ui.ctx().clone();
         if self.controls_visible && self.view_mode == ViewMode::Floating {
             egui::CentralPanel::default()
-                .frame(egui::Frame::new().fill(theme::BG))
+                .frame(egui::Frame::new().fill(egui::Color32::BLACK))
                 .show(ui, |ui| {
                     ui.add_space(ui.available_height() * 0.18);
                     ui.vertical_centered(|ui| {
@@ -149,7 +75,7 @@ impl Workspace {
                 .min_size(egui::vec2(320.0, 240.0))
                 .movable(true)
                 .resizable(true)
-                .frame(egui::Frame::window(&context.global_style()).fill(theme::BG))
+                .frame(egui::Frame::window(&context.global_style()).fill(egui::Color32::BLACK))
                 .show(&context, |ui| {
                     let (rect, _) =
                         ui.allocate_exact_size(ui.available_size(), egui::Sense::hover());
@@ -159,7 +85,7 @@ impl Workspace {
                 });
         } else {
             output.game_rect = egui::CentralPanel::default()
-                .frame(egui::Frame::new().fill(theme::BG))
+                .frame(egui::Frame::new().fill(egui::Color32::BLACK))
                 .show(ui, |ui| {
                     // Always preserve the core's native aspect ratio. The native
                     // frontend may resize the window to this ratio while the UI

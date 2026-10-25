@@ -12,7 +12,7 @@ cores/
   gba/
     core/     # GBA adapter using RustBoyAdvance-NG (MIT)
   gb/         # future
-  nds/        # future
+  nds/        # DS adapter and Dust vendor dependencies
 ```
 
 ## Adding a core
@@ -58,3 +58,6 @@ cargo run -p rsxp-core-runner -- \
 
 See [the DS core guide](nds/README.md) for system files,
 controls, build compatibility, licensing and limitations.
+
+Platform-specific RSXP interface, GUI and connectivity code belongs in
+`crates/rsxp-gba` or `crates/rsxp-nds`, separate from these emulator cores.

@@ -577,7 +577,6 @@ impl Core for GbcAdapter {
             return Err(CoreError::runtime("Game Boy core was not initialized"));
         }
         let mut commands = Vec::with_capacity(16);
-        let period = 1.0 / FRAME_RATE;
         let mut next_deadline = 0.0;
         let mut audio_paused = false;
         let mut run_frames = 0u64;
@@ -619,6 +618,9 @@ impl Core for GbcAdapter {
                 next_deadline = 0.0;
                 continue;
             }
+            let period = control
+                .target_fps()
+                .map_or(1.0 / FRAME_RATE, |fps| 1.0 / f64::from(fps));
             let Some(context) = self.context.as_ref() else {
                 continue;
             };

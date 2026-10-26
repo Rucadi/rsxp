@@ -36,6 +36,7 @@
 //! non-draw-list data must not be dropped.
 use crate::gpu_callback::{GameCallback, GameGpu};
 use crate::session::{read_message, write_message};
+use base64::Engine as _;
 use fanplay_rgss::{graphics::Bitmap, input::Input};
 use fanplay_extension_api::{OperationError, OperationRequest, OperationResponse};
 use serde_json::{json, Value};
@@ -49,6 +50,7 @@ use std::{
         Arc, Mutex,
     },
     time::Duration,
+    time::Instant,
 };
 
 fn start_control_server(
@@ -513,6 +515,12 @@ impl Session {
                             state.control["scroll"] = json!(0);
                             state.control["text"] = json!("");
                             state.control["api"] = json!("");
+                            // Save/load state requests are one-shot commands.
+                            // Clear them in the transport thread immediately
+                            // after cloning so a fast runner cannot apply the
+                            // same request on several consecutive polls before
+                            // the UI has rendered its next frame.
+                            state.control["state"] = Value::Null;
                             control
                         };
                         write_message(&mut *control_stream, &control).map_err(|error| {
@@ -666,6 +674,8 @@ struct DesktopApp {
     pending_webview_assets: Vec<(u64, String, String, u8)>,
     plugin_webview: Option<(String, String, crate::webview::PluginWebView)>,
     pending_webview_commands: Vec<PluginWebViewCommand>,
+    pending_state: Option<Value>,
+    state_slots_cache: Option<(String, Instant, Vec<fanplay_ui::StateSlot>)>,
     shift_forwarded: bool,
 }
 
@@ -751,6 +761,8 @@ impl DesktopApp {
             pending_webview_assets: Vec::new(),
             plugin_webview: None,
             pending_webview_commands: Vec::new(),
+            pending_state: None,
+            state_slots_cache: None,
             shift_forwarded: false,
         }
     }
@@ -767,6 +779,8 @@ impl DesktopApp {
         self.plugin_webview_api_bridge.clear();
         self.plugin_webview = None;
         self.pending_webview_commands.clear();
+        self.pending_state = None;
+        self.state_slots_cache = None;
         self.input.release_all();
         if let Some(panel) = self.shared.workspace.session.as_mut() {
             panel.active = false;
@@ -981,7 +995,112 @@ impl DesktopApp {
         }
     }
 
+    fn cartridge_state_store(&self) -> Option<(fanplay_frontend::SaveStore, u32)> {
+        let session = self.session.as_ref()?;
+        if session.core_id == "rgss" {
+            return None;
+        }
+        let panel = self.shared.workspace.session.as_ref()?;
+        let path = PathBuf::from(&panel.source);
+        let catalog = fanplay_cores::catalog();
+        let registration = catalog.get(session.core_id)?;
+        if !registration
+            .info
+            .capabilities
+            .contains(fanplay_core::CoreCapabilities::SAVE_STATES)
+        {
+            return None;
+        }
+        let content_id = fanplay_frontend::ContentId::of_file(&path).ok()?;
+        let base = fanplay_provision::root(Some(&path)).join("saves");
+        let store = fanplay_frontend::SaveStore::new(&base, session.core_id, content_id).ok()?;
+        Some((store, registration.info.state_revision))
+    }
+
+    fn state_slots(&mut self) -> (bool, Vec<fanplay_ui::StateSlot>) {
+        let Some(session) = self.session.as_ref() else {
+            self.state_slots_cache = None;
+            return (false, Vec::new());
+        };
+        if session.core_id == "rgss" {
+            self.state_slots_cache = None;
+            return (false, Vec::new());
+        }
+        let source = self
+            .shared
+            .workspace
+            .session
+            .as_ref()
+            .map_or(String::new(), |panel| panel.source.clone());
+        let cache_key = format!("{}:{source}", session.core_id);
+        if let Some((key, created, slots)) = &self.state_slots_cache
+            && key == &cache_key
+            && created.elapsed() < Duration::from_secs(2)
+        {
+            return (true, slots.clone());
+        }
+        let Some((store, _)) = self.cartridge_state_store() else {
+            self.state_slots_cache = None;
+            return (false, Vec::new());
+        };
+        let mut slots = std::collections::BTreeMap::new();
+        for slot in ["1", "2", "3"] {
+            slots.insert(slot.to_owned(), fanplay_frontend::StateSnapshot {
+                slot: slot.to_owned(),
+                saved_at: None,
+                bytes: 0,
+            });
+        }
+        if let Ok(snapshots) = store.list_state_snapshots() {
+            for snapshot in snapshots {
+                slots.insert(snapshot.slot.clone(), snapshot);
+            }
+        }
+        let slots = slots
+            .into_values()
+            .map(|snapshot| fanplay_ui::StateSlot {
+                slot: snapshot.slot,
+                saved_at: snapshot.saved_at.map(format_state_time),
+                bytes: snapshot.bytes,
+            })
+            .collect::<Vec<_>>();
+        self.state_slots_cache = Some((cache_key, Instant::now(), slots.clone()));
+        (true, slots)
+    }
+
+    fn request_state_load(&mut self, slot: String) {
+        let Some((store, revision)) = self.cartridge_state_store() else {
+            return;
+        };
+        match store.read_state(&slot, revision) {
+            Ok(Some(envelope)) => match envelope.encode() {
+                Ok(data) => {
+                    self.pending_state = Some(json!({
+                        "load_state": {
+                            "slot": slot,
+                            "data": base64::engine::general_purpose::STANDARD.encode(data),
+                        }
+                    }));
+                }
+                Err(error) => self.shared.workspace.session.as_mut().unwrap().error =
+                    Some(format!("Could not encode state: {error}")),
+            },
+            Ok(None) => self.shared.workspace.session.as_mut().unwrap().error =
+                Some(format!("State slot {slot} is empty")),
+            Err(error) => self.shared.workspace.session.as_mut().unwrap().error =
+                Some(format!("Could not load state {slot}: {error}")),
+        }
+    }
+
     fn start_game(&mut self, args: Vec<String>, ctx: &egui::Context) {
+        let cartridge_game = args.windows(2).any(|pair| {
+            pair[0] == "--game"
+                && PathBuf::from(&pair[1]).extension().is_some_and(|extension| {
+                    ["gb", "gbc", "gba", "nds"]
+                        .iter()
+                        .any(|wanted| extension.eq_ignore_ascii_case(wanted))
+                })
+        });
         let settings = args
             .windows(2)
             .find(|a| a[0] == "--game")
@@ -1000,7 +1119,13 @@ impl DesktopApp {
         self.input.release_all();
         fanplay_rgss::runtime_settings::reset();
         fanplay_rgss::runtime_settings::set_fast_forward(self.active_settings.fast_forward);
-        if let Some(fps) = self.active_settings.fps {
+        // The persisted FPS preference predates cartridge target pacing and is
+        // intended for RGSS. Cartridge speed is selected explicitly through
+        // the workspace presets, so do not accidentally throttle an NDS/GBA/
+        // GB session with an RGSS setting such as 40 FPS.
+        if !cartridge_game
+            && let Some(fps) = self.active_settings.fps
+        {
             fanplay_rgss::runtime_settings::set_rate_override(fps);
         }
         fanplay_rgss::runtime_patch::reset();
@@ -1012,6 +1137,8 @@ impl DesktopApp {
         self.pending_webview_assets.clear();
         self.plugin_webview = None;
         self.pending_webview_commands.clear();
+        self.pending_state = None;
+        self.state_slots_cache = None;
         let panel = self.shared.workspace.session.take();
         self.shared.workspace = fanplay_ui::Workspace::new();
         self.shared.workspace.session = panel;
@@ -1537,6 +1664,7 @@ impl DesktopApp {
             "x":mouse.x as i32,"y":mouse.y as i32,"inside":self.input.mouse_inside,
             "scroll":self.input.scroll_v,"text":std::mem::take(&mut self.input.text),"fast":fanplay_rgss::runtime_settings::fast_forward(),
             "rate":fanplay_rgss::runtime_settings::rate_override(),"api":old_api+api.as_str(),
+            "state":self.pending_state.take().unwrap_or(Value::Null),
             "patches":fanplay_rgss::runtime_patch::patches().iter().map(|patch|json!([patch.id,fanplay_rgss::runtime_patch::is_enabled(&patch.id),fanplay_rgss::runtime_patch::value(&patch.id)])).collect::<Vec<_>>()});
         if let Some(error) = state.error.take() {
             self.shared.workspace.session.as_mut().unwrap().error = Some(error);
@@ -1633,11 +1761,20 @@ impl eframe::App for DesktopApp {
             }
             return;
         }
+        let (supports_save_states, state_slots) = self.state_slots();
         let info = fanplay_ui::WorkspaceInfo {
             core_id: self.session.as_ref().map_or("rgss", |session| session.core_id),
             logical_size: self.logical_size,
             fps: self.fps,
+            base_fps: if self.session.as_ref().is_some_and(|session| session.core_id == "rgss")
+            {
+                if self.active_settings.rgss == Some(1) { 40 } else { 60 }
+            } else {
+                60
+            },
             frames: self.frames,
+            supports_save_states,
+            state_slots,
             global_fullscreen: ctx.input(|input| input.viewport().fullscreen.unwrap_or(false)),
             show_fullscreen: true,
             show_save_buttons: false,
@@ -1677,6 +1814,13 @@ impl eframe::App for DesktopApp {
         self.touch_rect = output.touch_rect;
         let output_create_backup = output.create_backup;
         let output_restore_latest = output.restore_latest_backup;
+        if let Some(slot) = output.save_state {
+            self.pending_state = Some(json!({"save_state": slot}));
+            self.state_slots_cache = None;
+        }
+        if let Some(slot) = output.load_state {
+            self.request_state_load(slot);
+        }
         let output_open_game = output.open_game_folder;
         let output_open_save = output.open_save_folder;
         let output_open_patches = output.open_patches_folder;
@@ -1882,6 +2026,24 @@ fn save_location(root: &std::path::Path, source: &str) -> Option<(String, PathBu
         fanplay_provision::folders::save_directory(root, &fanplay_provision::folders::title(&path))
     };
     Some((key, save))
+}
+
+fn format_state_time(seconds: u64) -> String {
+    let days = seconds / 86_400;
+    let day_seconds = seconds % 86_400;
+    let hour = day_seconds / 3_600;
+    let minute = (day_seconds % 3_600) / 60;
+    let z = days as i64 + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let year = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let month = (5 * doy + 2) / 153;
+    let day = doy - (153 * month + 2) / 5 + 1;
+    let month = month + if month < 10 { 3 } else { -9 };
+    let year = year + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02} UTC")
 }
 
 /// Adapts the generic plugin request envelope to the RGSS bridge's positional

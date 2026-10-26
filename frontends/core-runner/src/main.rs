@@ -26,6 +26,7 @@ use fanplay_frontend::{spawn_core, ContentId, SaveStore, StorageWorker};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 fn main() {
     if let Err(error) = run() {
@@ -378,9 +379,19 @@ impl EventSink for NativeEvents {
             CoreEvent::Window(command) => eprintln!("window: {command:?}"),
             CoreEvent::Log(level, message) => log(level, &message),
             CoreEvent::SaveState { slot, data } => {
-                match self.submitter.submit(SaveStore::state_key(&slot), data) {
-                    Ok(()) => eprintln!("save state queued: {slot}"),
-                    Err(error) => eprintln!("could not queue save state {slot}: {error}"),
+                let bytes = data.len();
+                if let Err(error) = self.submitter.submit(SaveStore::state_key(&slot), data) {
+                    eprintln!("could not queue save state {slot}: {error}");
+                } else {
+                    eprintln!("save state queued: {slot}");
+                    if let Ok(saved_at) = SystemTime::now().duration_since(UNIX_EPOCH)
+                        && let Err(error) = self.submitter.submit(
+                            SaveStore::state_metadata_key(&slot),
+                            SaveStore::state_metadata(saved_at.as_secs(), bytes),
+                        )
+                    {
+                        eprintln!("could not queue save metadata {slot}: {error}");
+                    }
                 }
             }
             CoreEvent::SaveRam { data } => {

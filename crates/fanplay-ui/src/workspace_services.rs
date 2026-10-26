@@ -58,7 +58,11 @@ impl crate::ui::backend::Backend for LocalServices {
         fanplay_rgss::runtime_settings::current_rate()
     }
     fn set_rate_override(&self, v: u32) {
-        fanplay_rgss::runtime_settings::set_rate_override(v)
+        if v == 0 {
+            fanplay_rgss::runtime_settings::clear_rate_override();
+        } else {
+            fanplay_rgss::runtime_settings::set_rate_override(v);
+        }
     }
     fn request_reset(&self) {
         fanplay_rgss::runtime_settings::request_reset()

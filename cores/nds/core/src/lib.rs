@@ -446,7 +446,6 @@ impl Core for NdsAdapter {
         let mut commands = Vec::with_capacity(16);
         let mut frames = 0u64;
         let mut deadline = 0.0;
-        let period = 560190.0 / 33513982.0;
         let mut audio_paused = false;
         while !control.should_stop() && control.frame_limit().is_none_or(|limit| frames < limit) {
             control.take_requests(&mut commands);
@@ -576,6 +575,9 @@ impl Core for NdsAdapter {
                 deadline = 0.0;
                 continue;
             }
+            let period = control
+                .target_fps()
+                .map_or(560190.0 / 33513982.0, |fps| 1.0 / f64::from(fps));
             let platform = &self.context.as_ref().unwrap().platform;
             let now = platform.now();
             if now <= 0.0 {

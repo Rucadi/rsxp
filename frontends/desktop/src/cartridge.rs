@@ -21,8 +21,10 @@ use fanplay_core::{
     AudioConfig, AudioSink, Button, Content, CoreControl, CoreEvent, CoreLoadInfo,
     CoreRegistration, EventSink, FrameError, PcmBuffer, PcmRing, PcmRingConsumer, PcmRingProducer,
     PcmStatus, Platform, PlatformError, PlatformResult, SessionConfig, VideoFrame, VideoSink,
+    CoreCommand,
 };
 use fanplay_frontend::{video::convert_argb, ContentId, SaveStore, StorageSubmitter, StorageWorker};
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::collections::VecDeque;
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -362,6 +364,20 @@ impl TransportInput for HostInput {
     fn fast_forward(&mut self, enabled: bool) {
         self.control.set_fast_forward(enabled);
     }
+    fn rate_override(&mut self, rate: Option<u32>) {
+        self.control.set_target_fps(rate);
+    }
+    fn save_state(&mut self, slot: &str) {
+        let _ = self
+            .control
+            .send_request(CoreCommand::SaveState { slot: slot.to_owned() });
+    }
+    fn load_state(&mut self, slot: &str, data: &[u8]) {
+        let _ = self.control.send_request(CoreCommand::LoadState {
+            slot: slot.to_owned(),
+            data: data.to_vec(),
+        });
+    }
 }
 
 struct CartridgePlatform {
@@ -536,8 +552,17 @@ impl EventSink for CartridgeEvents {
             CoreEvent::Window(command) => eprintln!("Cartridge window: {command:?}"),
             CoreEvent::Log(_, message) => eprintln!("{message}"),
             CoreEvent::SaveState { slot, data } => {
+                let bytes = data.len();
                 if let Err(error) = self.submitter.submit(SaveStore::state_key(&slot), data) {
                     eprintln!("Cartridge: could not queue save state {slot}: {error}");
+                } else if let Ok(saved_at) = SystemTime::now().duration_since(UNIX_EPOCH) {
+                    let metadata = SaveStore::state_metadata(saved_at.as_secs(), bytes);
+                    if let Err(error) = self.submitter.submit(
+                        SaveStore::state_metadata_key(&slot),
+                        metadata,
+                    ) {
+                        eprintln!("Cartridge: could not queue save metadata {slot}: {error}");
+                    }
                 }
             }
             CoreEvent::SaveRam { data } => {

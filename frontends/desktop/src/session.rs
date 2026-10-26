@@ -22,6 +22,7 @@
 //! runtime settings (fast-forward, rate override) and runtime patches, returning
 //! `false` on a `stop` request or when the stream/peer is lost.
 use serde_json::{json, Value};
+use base64::Engine as _;
 use std::io::{Read, Write};
 #[cfg(any(not(windows), test))]
 use std::net::TcpStream;
@@ -41,6 +42,8 @@ pub trait TransportInput {
 
     fn fast_forward(&mut self, _enabled: bool) {}
     fn rate_override(&mut self, _rate: Option<u32>) {}
+    fn save_state(&mut self, _slot: &str) {}
+    fn load_state(&mut self, _slot: &str, _data: &[u8]) {}
     fn patch(&mut self, _id: &str, _enabled: bool, _value: Option<f64>) {}
     fn relay_api(&mut self, _request: &str) {}
 }
@@ -70,6 +73,8 @@ impl TransportInput for fanplay_rgss::input::Input {
     fn rate_override(&mut self, rate: Option<u32>) {
         if let Some(rate) = rate {
             fanplay_rgss::runtime_settings::set_rate_override(rate);
+        } else {
+            fanplay_rgss::runtime_settings::clear_rate_override();
         }
     }
     fn patch(&mut self, id: &str, enabled: bool, value: Option<f64>) {
@@ -317,6 +322,15 @@ impl Runner {
             .map(|r| r as u32);
         self.reported_rate = rate.unwrap_or(0);
         input.rate_override(rate);
+        if let Some(slot) = value["state"]["save_state"].as_str() {
+            input.save_state(slot);
+        }
+        if let (Some(slot), Some(data)) = (
+            value["state"]["load_state"]["slot"].as_str(),
+            value["state"]["load_state"]["data"].as_str(),
+        ) && let Ok(data) = base64::engine::general_purpose::STANDARD.decode(data) {
+            input.load_state(slot, &data);
+        }
         if let Some(patches) = value["patches"].as_array() {
             for patch in patches {
                 if let Some(id) = patch[0].as_str() {

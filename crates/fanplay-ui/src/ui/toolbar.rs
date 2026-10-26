@@ -109,6 +109,28 @@ impl Workspace {
                         if ui.checkbox(&mut fast_forward, "Uncapped (F11)").changed() {
                             self.backend.set_fast_forward(fast_forward);
                         }
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label("Target");
+                            for (label, multiplier) in [
+                                ("1×", 1u32),
+                                ("2×", 2),
+                                ("3×", 3),
+                                ("4×", 4),
+                                ("5×", 5),
+                                ("8×", 8),
+                            ] {
+                                if ui.button(label).clicked() {
+                                    self.backend.set_fast_forward(false);
+                                    self.backend.set_rate_override(
+                                        info.base_fps.saturating_mul(multiplier).max(1),
+                                    );
+                                }
+                            }
+                            if ui.button("Game rate").clicked() {
+                                self.backend.set_fast_forward(false);
+                                self.backend.set_rate_override(0);
+                            }
+                        });
                         let current_rate = self.backend.current_rate();
                         let mut fps = if current_rate == 0 { 60 } else { current_rate };
                         if ui
@@ -125,6 +147,41 @@ impl Workspace {
                         }
                         ui.weak("Changing the frame rate may change gameplay speed.");
                     });
+                    if info.supports_save_states {
+                        ui.menu_button("States", |ui| {
+                            ui.label(theme::eyebrow("Game snapshots"));
+                            for slot in &info.state_slots {
+                                ui.horizontal(|ui| {
+                                    ui.label(format!("Slot {}", slot.slot));
+                                    if let Some(saved_at) = &slot.saved_at {
+                                        ui.label(
+                                            egui::RichText::new(if slot.bytes >= 1024 {
+                                                format!("{saved_at} · {:.1} KiB", slot.bytes as f32 / 1024.0)
+                                            } else {
+                                                format!("{saved_at} · {} B", slot.bytes)
+                                            })
+                                                .font(theme::body_font(11.0))
+                                                .color(theme::TEXT_MUTED),
+                                        );
+                                    } else {
+                                        ui.label(
+                                            egui::RichText::new("empty")
+                                                .font(theme::body_font(11.0))
+                                                .color(theme::TEXT_FAINT),
+                                        );
+                                    }
+                                    if ui.button("Save").clicked() {
+                                        output.save_state = Some(slot.slot.clone());
+                                    }
+                                    if (slot.saved_at.is_some() || slot.bytes > 0)
+                                        && ui.button("Load").clicked()
+                                    {
+                                        output.load_state = Some(slot.slot.clone());
+                                    }
+                                });
+                            }
+                        });
+                    }
                     ui.menu_button("Folders", |ui| {
                         if ui.button("Game folder").clicked() {
                             output.open_game_folder = true;

@@ -300,6 +300,16 @@ pub struct SaveStore {
     native_root: Option<PathBuf>,
 }
 
+/// Metadata shown for a saved emulator snapshot. The payload itself remains
+/// in the versioned `.rsxpstate` file; this small sidecar keeps listing slots
+/// cheap and lets frontends show when a snapshot was created.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StateSnapshot {
+    pub slot: String,
+    pub saved_at: Option<u64>,
+    pub bytes: usize,
+}
+
 impl SaveStore {
     /// Opens the native save area `<base>/<core>/<content-hash>` and creates it.
     pub fn new(
@@ -361,6 +371,29 @@ impl SaveStore {
         format!("states/{}.rsxpstate", safe_component(slot))
     }
 
+    pub fn state_metadata_key(slot: &str) -> String {
+        format!("states/{}.json", safe_component(slot))
+    }
+
+    pub fn state_metadata(saved_at: u64, bytes: usize) -> Vec<u8> {
+        format!("{saved_at}\n{bytes}").into_bytes()
+    }
+
+    pub fn read_state_metadata(&self, slot: &str) -> Result<Option<(u64, usize)>, StorageError> {
+        let Some(bytes) = self.storage.read(&Self::state_metadata_key(slot))? else {
+            return Ok(None);
+        };
+        let text = String::from_utf8_lossy(&bytes);
+        let mut fields = text.lines();
+        let Some(saved_at) = fields.next().and_then(|value| value.parse().ok()) else {
+            return Ok(None);
+        };
+        let Some(bytes) = fields.next().and_then(|value| value.parse().ok()) else {
+            return Ok(None);
+        };
+        Ok(Some((saved_at, bytes)))
+    }
+
     pub fn save_key(name: &str) -> String {
         format!("save/{}", safe_component(name))
     }
@@ -400,6 +433,30 @@ impl SaveStore {
                     .map(str::to_owned)
             })
             .collect())
+    }
+
+    pub fn list_state_snapshots(&self) -> Result<Vec<StateSnapshot>, StorageError> {
+        let mut snapshots = self
+            .list_states()?
+            .into_iter()
+            .map(|slot| {
+                let metadata = self.read_state_metadata(&slot).ok().flatten();
+                let (saved_at, mut bytes) = metadata.map_or((None, 0), |(saved_at, bytes)| {
+                    (Some(saved_at), bytes)
+                });
+                if bytes == 0 {
+                    bytes = self
+                        .storage
+                        .read(&Self::state_key(&slot))
+                        .ok()
+                        .flatten()
+                        .map_or(0, |data| data.len());
+                }
+                StateSnapshot { slot, saved_at, bytes }
+            })
+            .collect::<Vec<_>>();
+        snapshots.sort_by(|a, b| a.slot.cmp(&b.slot));
+        Ok(snapshots)
     }
 
     pub fn write_save(&self, name: &str, bytes: &[u8]) -> Result<(), StorageError> {

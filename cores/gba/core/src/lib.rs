@@ -582,7 +582,6 @@ impl Core for GbaAdapter {
             return Err(CoreError::runtime("GBA core was not initialized"));
         }
         let mut commands = Vec::with_capacity(16);
-        let period = 1.0 / FRAME_RATE;
         let mut next_deadline = 0.0f64;
         let mut audio_paused = false;
         // The frontend may drive the core one frame at a time (the browser
@@ -624,6 +623,9 @@ impl Core for GbaAdapter {
                 next_deadline = 0.0;
                 continue;
             }
+            let period = control
+                .target_fps()
+                .map_or(1.0 / FRAME_RATE, |fps| 1.0 / f64::from(fps));
             let Some(context) = self.context.as_ref() else {
                 continue;
             };

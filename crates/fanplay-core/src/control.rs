@@ -119,6 +119,10 @@ pub struct CoreControl {
     stop: AtomicBool,
     paused: AtomicBool,
     fast_forward: AtomicBool,
+    /// Target output rate in frames per second. Zero keeps the core's native
+    /// pacing; this is separate from fast-forward so 2x/3x speed remains
+    /// bounded and usable for cartridge cores.
+    target_fps: AtomicU64,
     frame_limit: AtomicU64,
     input: InputState,
     next_request: AtomicU64,
@@ -140,6 +144,7 @@ impl CoreControl {
             stop: AtomicBool::new(false),
             paused: AtomicBool::new(false),
             fast_forward: AtomicBool::new(false),
+            target_fps: AtomicU64::new(0),
             frame_limit: AtomicU64::new(0),
             input: InputState::new(),
             next_request: AtomicU64::new(0),
@@ -183,6 +188,26 @@ impl CoreControl {
     #[inline]
     pub fn fast_forward(&self) -> bool {
         self.fast_forward.load(Ordering::Acquire)
+    }
+
+    /// Sets a bounded target frame rate. None restores the core's native
+    /// pacing; values are clamped to a practical 1..=1000 FPS range.
+    #[inline]
+    pub fn set_target_fps(&self, fps: Option<u32>) {
+        self.target_fps.store(
+            fps.map(|value| u64::from(value.clamp(1, 1000)))
+                .unwrap_or(0),
+            Ordering::Release,
+        );
+    }
+
+    /// Returns the requested target frame rate, or None for native pacing.
+    #[inline]
+    pub fn target_fps(&self) -> Option<u32> {
+        match self.target_fps.load(Ordering::Acquire) {
+            0 => None,
+            value => Some(value as u32),
+        }
     }
 
     /// Zero means unlimited. This is a safety limit for tests and benchmarks,
@@ -337,10 +362,14 @@ mod tests {
         let control = CoreControl::new();
         control.set_fast_forward(true);
         control.set_paused(true);
+        control.set_target_fps(Some(120));
         control.set_frame_limit(Some(120));
         assert!(control.fast_forward());
         assert!(control.paused());
+        assert_eq!(control.target_fps(), Some(120));
         assert_eq!(control.frame_limit(), Some(120));
+        control.set_target_fps(None);
+        assert_eq!(control.target_fps(), None);
         control.stop();
         assert!(control.should_stop());
     }

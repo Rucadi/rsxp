@@ -110,12 +110,24 @@ pub struct WorkspaceInfo {
     pub core_id: &'static str,
     pub logical_size: (u32, u32),
     pub fps: f64,
+    /// Native target rate used to calculate 1x/2x/3x speed presets.
+    pub base_fps: u32,
     pub frames: u64,
+    pub supports_save_states: bool,
+    pub state_slots: Vec<StateSlot>,
     pub global_fullscreen: bool,
     /// Show the OS/browser fullscreen button (the desktop window has one).
     pub show_fullscreen: bool,
     /// Show the save export/import buttons (the browser provides the dialogs).
     pub show_save_buttons: bool,
+}
+
+/// A named emulator snapshot exposed by a frontend.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct StateSlot {
+    pub slot: String,
+    pub saved_at: Option<String>,
+    pub bytes: usize,
 }
 
 /// What the workspace asked the frontend to do, plus the game view rect.
@@ -131,6 +143,8 @@ pub struct WorkspaceOutput {
     pub import_saves: bool,
     pub create_backup: bool,
     pub restore_latest_backup: bool,
+    pub save_state: Option<String>,
+    pub load_state: Option<String>,
     pub open_game_folder: bool,
     pub open_save_folder: bool,
     pub open_patches_folder: bool,
@@ -147,6 +161,8 @@ impl Default for WorkspaceOutput {
             import_saves: false,
             create_backup: false,
             restore_latest_backup: false,
+            save_state: None,
+            load_state: None,
             open_game_folder: false,
             open_save_folder: false,
             open_patches_folder: false,
@@ -645,7 +661,10 @@ mod workspace_tests {
             core_id: "rgss",
             logical_size,
             fps: 0.0,
+            base_fps: 60,
             frames: 0,
+            supports_save_states: false,
+            state_slots: Vec::new(),
             global_fullscreen: fullscreen,
             show_fullscreen: true,
             show_save_buttons: false,
@@ -772,7 +791,10 @@ mod workspace_tests {
             core_id: "rgss",
             logical_size: (640, 480),
             fps: 0.0,
+            base_fps: 60,
             frames: 0,
+            supports_save_states: false,
+            state_slots: Vec::new(),
             global_fullscreen: false,
             show_fullscreen: true,
             show_save_buttons: false,
@@ -806,7 +828,10 @@ mod workspace_tests {
             core_id: "rgss",
             logical_size: (640, 480),
             fps: 0.0,
+            base_fps: 60,
             frames: 0,
+            supports_save_states: false,
+            state_slots: Vec::new(),
             global_fullscreen: false,
             show_fullscreen: true,
             show_save_buttons: false,

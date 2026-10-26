@@ -10,7 +10,7 @@ use fanplay_rgss::graphics::Bitmap;
 pub use fanplay_rgss::controls;
 pub mod workspace_services;
 pub mod ui;
-pub use ui::{DsLayout, ViewMode, Workspace, WorkspaceInfo, WorkspaceOutput};
+pub use ui::{DsLayout, StateSlot, ViewMode, Workspace, WorkspaceInfo, WorkspaceOutput};
 pub use ui::session;
 pub use ui::theme;
 use fanplay_extension_api::{OperationRequest, OperationResponse, UiDescription};
@@ -143,7 +143,10 @@ impl Default for SharedApp {
                 core_id: "rgss",
                 logical_size: (640, 480),
                 fps: 0.0,
+                base_fps: 60,
                 frames: 0,
+                supports_save_states: false,
+                state_slots: Vec::new(),
                 global_fullscreen: false,
                 show_fullscreen: true,
                 show_save_buttons: false,
@@ -547,6 +550,14 @@ impl SharedApp {
         self.output.create_backup = false;
         self.output.restore_latest_backup = false;
         actions
+    }
+
+    /// Consumes save-state intents emitted by the workspace toolbar.
+    pub fn take_state_actions(&mut self) -> (Option<String>, Option<String>) {
+        (
+            self.output.save_state.take(),
+            self.output.load_state.take(),
+        )
     }
 
     /// Consumes folder-open intents from the last workspace frame.

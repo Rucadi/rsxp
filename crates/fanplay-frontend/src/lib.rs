@@ -24,8 +24,8 @@ pub mod storage;
 pub mod video;
 
 pub use storage::{
-    ContentId, FsStorage, MemoryStorage, SaveStore, Storage, StorageError, StorageSubmitter,
-    StorageWorker, WorkerStatus,
+    ContentId, FsStorage, MemoryStorage, SaveStore, StateSnapshot, Storage, StorageError,
+    StorageSubmitter, StorageWorker, WorkerStatus,
 };
 
 const HEADER_BYTES: usize = 64;

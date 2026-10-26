@@ -9,14 +9,14 @@
 //! reparented into an arbitrary winit surface. The GTK path works on both X11
 //! and Wayland, at the cost of hosting the view in its own toplevel window.
 //! GTK events are pumped from the egui update loop, as wry recommends for
-//! winit hosts. macOS uses a hidden child only as a Wry opener and presents
-//! the actual page in Wry's native popup window; other desktop platforms keep
+//! winit hosts. macOS and Windows use a hidden child only as a Wry opener and
+//! present the actual page in Wry's native popup window; other desktop platforms keep
 //! the embedded child webview. The browser frontend uses a DOM iframe for the
 //! equivalent operation.
 
 use eframe::Frame;
 use std::sync::{Arc, Mutex};
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use wry::NewWindowResponse;
 use wry::{WebView, WebViewBuilder};
 
@@ -64,6 +64,19 @@ pub struct PluginWebView {
     #[allow(dead_code)]
     window: Option<gtk::Window>,
     requests: Arc<Mutex<Vec<PluginWebViewRequest>>>,
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for PluginWebView {
+    fn drop(&mut self) {
+        // GTK keeps references to toplevel windows independently of the Rust
+        // wrapper. Close it explicitly before WebKit is released; otherwise
+        // replacing a plugin view can leave the old window visible as a black
+        // surface while the new WebView is being initialized.
+        if let Some(window) = self.window.take() {
+            window.close();
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -140,15 +153,15 @@ impl PluginWebView {
             let _ = frame;
             Self::open_linux(title, builder.with_html(document), requests)
         }
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         {
             let window = frame
                 .winit_window()
                 .ok_or_else(|| "the desktop window is not available".to_owned())?;
-            Self::open_macos(window, builder, &document, requests)
+            Self::open_native_popup(window, builder, &document, requests)
         }
         #[cfg(not(target_os = "linux"))]
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
             let window = frame
                 .winit_window()
@@ -162,13 +175,13 @@ impl PluginWebView {
         }
     }
 
-    /// Wry can create a real native popup for `window.open` on macOS. Keep a
-    /// hidden child webview as the opener so the popup shares the same WKWebView
+    /// Wry can create a real native popup for `window.open` on macOS and Windows.
+    /// Keep a hidden child webview as the opener so the popup shares the same
     /// configuration and IPC handler, then write the plugin document into the
     /// popup. The popup is owned by Wry and gets normal title-bar controls and
     /// resize behavior.
-    #[cfg(target_os = "macos")]
-    fn open_macos(
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    fn open_native_popup(
         window: &winit::window::Window,
         builder: WebViewBuilder<'_>,
         document: &str,
@@ -247,9 +260,9 @@ impl PluginWebView {
     /// Keeps child webviews aligned with the dashboard after its window is
     /// resized. GTK views use their expanding container instead.
     pub fn resize(&self, frame: &Frame) {
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         let _ = frame;
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
         if let Some(window) = frame.winit_window() {
             let logical_size = window.inner_size().to_logical::<f64>(window.scale_factor());
             let width = (logical_size.width - VIEW_POSITION.0).max(1.0);
@@ -337,7 +350,7 @@ fn native_bridge_script() -> &'static str {
     "#
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn javascript_string(value: &str) -> String {
     // JSON is valid JavaScript string syntax. Escape HTML-sensitive characters
     // as well so a plugin containing `</script>` cannot terminate the launcher

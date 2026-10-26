@@ -33,9 +33,6 @@ end
 eval(__fanplay_retained_source,TOPLEVEL_BINDING,'fanplay/retained.rb',1) if defined?(__fanplay_retained_source)
 
 begin
-  if FANPLAY.call('api_supported')=='1'
-    eval(FANPLAY.call('api_game_bridge').force_encoding(Encoding::UTF_8),TOPLEVEL_BINDING,'api/game_bridge.rb',1)
-  end
   eval(FANPLAY.call('rpg').force_encoding(Encoding::UTF_8),TOPLEVEL_BINDING,"<RPG#{RGSS_VERSION}>",1)
   FANPLAY.startup_yield
   FANPLAY.before_scripts

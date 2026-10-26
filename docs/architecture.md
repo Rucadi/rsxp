@@ -14,7 +14,8 @@ and shared services. This is the implemented layout, not a target architecture.
 | `cores/nds/core` / `fanplay-core-nds` | Dust adapter; local dependency patches remain in `cores/nds/vendor` |
 | `cores/rgss/core` / `fanplay-core-rgss` | Generic-core adapter for the RGSS runtime |
 | `cores/rgss/ruby` / `fanplay-rgss-ruby` | MRI embedding and Magnus bindings; Rust library name `ruby_rgss_core` |
-| `crates/fanplay-rgss` | RPG Maker runtime, resources, renderers, media, Ruby shim, patches and game bridge; package `fanplay-rgss`, import `fanplay_rgss` |
+| `crates/fanplay-rgss` | RPG Maker runtime, resources, renderers, media, Ruby shim, patches and generic extension transport; package `fanplay-rgss`, import `fanplay_rgss` |
+| `crates/fanplay-mcp` | Standalone MCP adapter and generated OpenAPI snapshot; connects to a running frontend and owns no emulator or game API implementation |
 | `crates/fanplay-gba` | GBA library/interface presentation, no emulator dependency |
 | `crates/fanplay-nds` | DS screen geometry, layout selection, painting and library presentation, no emulator dependency |
 | `crates/fanplay-ui` | Shared eframe app, workspace, themes, panels and runtime service adapter |

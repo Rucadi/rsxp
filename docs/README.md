@@ -17,7 +17,7 @@ work are described separately.
 | Browser runtime | [Browser guide](../platforms/web/README.md) |
 | GBA / DS behavior | [GBA](../cores/gba/README.md), [DS](../cores/nds/README.md) |
 | Library, storage and downloads | [Provisioning](software-provision.md) |
-| Local API and MCP | [Control API](control-api.md), [MCP](../crates/fanplay-rgss/api/README.md) |
+| Local API and MCP | [Control API](control-api.md), [MCP](../crates/fanplay-mcp/README.md) |
 | Rhai and game-specific tools | [Plugins](../extensions/README.md) |
 | Names and existing data | [Rename compatibility](rename.md) |
 | Visual direction | [Design system](../DESIGN.md) |

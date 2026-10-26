@@ -50,10 +50,6 @@ console.log('OK');
 // The browser inspector uses the shared game-thread queue without a listener.
 const { strict: assert } = await import('node:assert');
 assert.equal(call('api_supported'), '1');
-// The game-specific Ruby API is now installed by the Rhai extension package.
-// The legacy endpoint remains available for compatibility, but intentionally
-// has no bundled module to avoid loading the old in-core bridge twice.
-assert.equal(call('api_game_bridge'), '');
 // Before extension activation only the core bridge operations are registered;
 // game-specific operations arrive with the active Rhai package. Use the
 // built-in Ruby injection operation to verify the shared queue transport.

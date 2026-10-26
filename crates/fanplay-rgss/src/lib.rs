@@ -30,9 +30,8 @@
 //!   Cable Club peer-relay servers.
 //!
 //! ## Features
-//! `gpu` enables the device compositor; `game-api`
-//! enables the command bridge; `api-docs` enables the code-first OpenAPI schema
-//! used by the `fanplay-mcp` binary.
+//! `gpu` enables the device compositor; `game-api` enables the generic command
+//! transport used by extension packages and frontend control surfaces.
 #[cfg(feature = "game-api")]
 pub mod api_bridge;
 #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]

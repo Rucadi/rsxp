@@ -1,0 +1,16 @@
+[package]
+name = "fanplay-mcp"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "GPL-2.0-or-later"
+description = "MCP adapter for the Fanplay local control API"
+publish = false
+
+[[bin]]
+name = "fanplay-mcp"
+path = "src/main.rs"
+
+[dependencies]
+fanplay-control = { path = "../fanplay-control" }
+serde_json = "1"

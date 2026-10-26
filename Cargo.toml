@@ -11,6 +11,7 @@ members = [
     "crates/fanplay-frontend",
     "crates/fanplay-ui",
     "crates/fanplay-rgss",
+    "crates/fanplay-mcp",
     "crates/fanplay-gba",
     "crates/fanplay-nds",
     "cores/gba/core",

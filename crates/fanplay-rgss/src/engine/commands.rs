@@ -71,10 +71,6 @@ impl Runtime {
                 return Ok(text(if cfg!(feature = "game-api") { "1" } else { "0" }));
             }
             #[cfg(feature = "game-api")]
-            "api_game_bridge" => {
-                return Ok(crate::ruby::GAME_BRIDGE_SOURCE.as_bytes().to_vec());
-            }
-            #[cfg(feature = "game-api")]
             "api_poll" => return Ok(crate::api_bridge::poll()),
             #[cfg(feature = "game-api")]
             "api_respond" => {

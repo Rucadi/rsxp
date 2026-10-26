@@ -1745,6 +1745,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fanplay-mcp"
+version = "0.1.0"
+dependencies = [
+ "fanplay-control",
+ "serde_json",
+]
+
+[[package]]
 name = "fanplay-nds"
 version = "0.1.0"
 dependencies = [

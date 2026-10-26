@@ -39,7 +39,7 @@ cargo test -p fanplay-control -p fanplay-api -p fanplay-provision
 cargo test -p fanplay-extension-api -p fanplay-extensions -p fanplay-extension-ui
 
 # Generate the static control catalog
-cargo api-openapi > crates/fanplay-rgss/api/openapi.json
+cargo api-openapi > crates/fanplay-mcp/openapi.json
 
 # Browser: build generated modules before the full JS/WASM suite
 cargo xtask web

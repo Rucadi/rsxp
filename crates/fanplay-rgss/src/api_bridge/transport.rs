@@ -117,7 +117,7 @@ fn control_catalog() -> Catalog {
             &route.method,
             &route.path,
             format!("Game operation {}", route.operation),
-            "Route supplied by a loaded Rhai plugin and executed by the game bridge.",
+            "Route supplied and executed by a loaded Rhai extension.",
             Scope::Extensions,
         );
         for argument in &route.arguments {

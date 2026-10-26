@@ -121,15 +121,11 @@ algorithm is portable, but its new Ruby binding is desktop-only.
 
 ## Verification
 
-`cargo test -p fanplay-desktop --test cli retained_native_state_and_map_match_legacy_frames` compares
-per-frame pixel and public-coordinate digests across eight combinations of
-state, map, native scrolling, world camera and chunk caching. The map
-fixture loads the actual, unmodified game renderer and covers animation,
-scrolling, connected maps, data replacement/resizing, terrain, bridges,
-priorities, viewport effects and bitmap changes. It also verifies idle frames
-skip resource submissions and cell refreshes. Lifecycle coverage includes weak
-references, nested values, Marshal/copy, Ruby-thread mutation, allocation followed
-by initialization, late overrides and alias-based plugin wrappers.
+`cargo test -p fanplay-desktop --test cli retained_native_state_matches_legacy_frames`
+compares a repository-owned RGSS fixture across eight combinations of state,
+map, native scrolling, world camera and chunk caching. Other hermetic CLI tests
+cover the legacy retained tilemap, sprite lifecycle, native tiles and rendering
+paths.
 
 `cargo test -p fanplay-rgss --lib --no-default-features` exercises the portable map cache without
 Ruby or GPU dependencies. Existing sprite/lifecycle and native-tile integration
@@ -143,9 +139,6 @@ identical output pixels.
 
 The portable tests cover chunk prefetch reuse, hidden-chunk retention, targeted
 rebuilds after edits, budget eviction and camera projection/priority rules.
-`world_camera_gpu_frames_match_software_during_scrolling` (ignored by default;
-requires a GPU adapter) compares actual GPU output against software at pixel
-scrolling, tile boundaries, bridges and connected-map transitions.
 
 A three-run alternating release benchmark of the saved overworld at panoramic
 zoom 3 (1536×1152, scripted walking, RTX 2080, YJIT) reduced median measured

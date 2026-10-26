@@ -28,9 +28,3 @@ pub const RGSS_SOURCE: &str = concat!(
     include_str!("ruby/compat/win32_api.rb"),
     include_str!("ruby/core/script_loader.rb"),
 );
-
-// The game-specific API is now a semi-external Rhai extension package. Keep
-// this endpoint as an empty compatibility response for older callers; the
-// core Ruby shim still owns the generic request transport and the extension
-// injects `extensions/essentials-game-api/game_api.rb` after startup.
-pub const GAME_BRIDGE_SOURCE: &str = "";

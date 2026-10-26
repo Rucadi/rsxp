@@ -40,8 +40,8 @@ HTTP listener while a session is running.
 Game-specific tools are Rhai extensions. On native hosts, HTML tools use
 webviews; browser hosts use their own JS adapter. The shared runtime-service
 adapter is in `fanplay-ui/src/workspace_services.rs`, and RGSS data/mutations
-remain owned by the game bridge. Tool availability depends on the loaded game
-and extension declarations.
+remain owned by the loaded extensions. Tool availability depends on the loaded
+game and extension declarations.
 
 ## Saves and appearance
 

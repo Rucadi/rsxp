@@ -55,7 +55,6 @@ gba = ["dep:fanplay-core-gba", "fanplay-cores/gba"]
 nds = ["dep:fanplay-core-nds", "fanplay-cores/nds"]
 rgss = ["dep:fanplay-rgss", "dep:fanplay-ui", "dep:ruby_rgss_core", "fanplay-cores/rgss"]
 gpu = []
-game-tests = []
 
 [[bin]]
 name = "fanplay"
@@ -65,12 +64,6 @@ path = "src/main.rs"
 name = "cli"
 path = "tests/cli.rs"
 required-features = ["rgss"]
-
-# Manual tests requiring local game trees (`ericlostie/`, `pokemonz/`).
-[[test]]
-name = "game-tests"
-path = "tests/game-tests.rs"
-required-features = ["game-tests"]
 
 [[example]]
 name = "session-bench"

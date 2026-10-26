@@ -1064,7 +1064,7 @@ fn game_endpoints() -> Vec<Endpoint> {
             "GET",
             "/v1/game/status",
             "Read game status",
-            "Returns the running RGSS game's current map, player position, frame counters, and generic runtime facts. Produced by the injected game bridge.",
+            "Returns the running RGSS game's current map, player position, frame counters, and generic runtime facts. Produced by the loaded game API extension.",
             Scope::Game,
         ),
         Endpoint::new(
@@ -1096,7 +1096,7 @@ fn game_endpoints() -> Vec<Endpoint> {
             "radius",
             ParameterType::Integer,
             false,
-            "Tile radius around the player; defaults to the game bridge's limit",
+            "Tile radius around the player; defaults to the game API extension's limit",
         ).range(1.0, 64.0)),
         Endpoint::new(
             "game.teleport",

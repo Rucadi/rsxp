@@ -5,9 +5,8 @@ API. It discovers operations and extension routes over HTTP and maps them to
 MCP tools. The game runs in the existing player process, not in the MCP binary.
 
 ```sh
-cargo build --release -p fanplay-rgss --no-default-features \
-  --features api-docs --bin fanplay-mcp
-cargo api-openapi > crates/fanplay-rgss/api/openapi.json
+cargo build --release -p fanplay-mcp
+cargo api-openapi > crates/fanplay-mcp/openapi.json
 ```
 
 Example client configuration:
@@ -34,6 +33,6 @@ Use `/v1/discovery` or `/v1/openapi.json` on the live player to inspect its
 available operations and loaded extension routes. The static file is not a
 promise that every operation is executable without a game.
 
-See [control API](../../../docs/control-api.md) for transport/ownership,
-[plugins](../../../extensions/README.md) for game-specific operations, and
-[`main.rs`](main.rs) for the MCP implementation.
+See [control API](../../docs/control-api.md) for transport/ownership,
+[plugins](../../extensions/README.md) for game-specific operations, and
+[`main.rs`](src/main.rs) for the MCP implementation.

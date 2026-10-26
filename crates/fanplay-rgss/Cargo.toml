@@ -29,16 +29,9 @@ default = ["gpu"]
 gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
 # Shared local game-command queue, Ruby adapter and egui inspector controls.
 game-api = ["dep:image", "dep:fanplay-control"]
-# Compile-time, code-first OpenAPI generation for the MCP/HTTP API binary.
-api-docs = ["dep:fanplay-control"]
 
 [lib]
 path = "src/lib.rs"
-
-[[bin]]
-name = "fanplay-mcp"
-path = "api/main.rs"
-required-features = ["api-docs"]
 
 [[example]]
 name = "render-bench"

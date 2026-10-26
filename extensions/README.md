@@ -101,7 +101,7 @@ so plugins do not need separate native and browser source files. The browser
 view's close button removes the view; a plugin can also call
 `webview_close("main")`.
 
-`essentials-game-api` uses the same mechanism for the game bridge itself: its
+`essentials-game-api` uses the same mechanism for its game-facing API: its
 `main.rhai` injects the package's `game_api.rb`, waits for registration, then
 queries `pokemon_essentials_status` to populate its panel. The core Ruby shim
 only provides the transport needed to bootstrap that first injection.

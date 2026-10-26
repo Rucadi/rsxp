@@ -539,7 +539,7 @@
     },
     "/v1/game/status": {
       "get": {
-        "description": "Returns the running RGSS game's current map, player position, frame counters, and generic runtime facts. Produced by the injected game bridge.",
+        "description": "Returns the running RGSS game's current map, player position, frame counters, and generic runtime facts. Produced by the loaded game API extension.",
         "operationId": "game_status",
         "responses": {
           "200": {
@@ -575,12 +575,12 @@
         "operationId": "game_surroundings",
         "parameters": [
           {
-            "description": "Tile radius around the player; defaults to the game bridge's limit",
+            "description": "Tile radius around the player; defaults to the game API extension's limit",
             "in": "query",
             "name": "radius",
             "required": false,
             "schema": {
-              "description": "Tile radius around the player; defaults to the game bridge's limit",
+              "description": "Tile radius around the player; defaults to the game API extension's limit",
               "maximum": 64.0,
               "minimum": 1.0,
               "type": "integer"

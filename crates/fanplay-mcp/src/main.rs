@@ -14,9 +14,9 @@
 //! Environment: `FANPLAY_API_HOST` / `FANPLAY_API_PORT` select the game endpoint
 //! (defaults `127.0.0.1` / `47821`).
 //!
-//! This binary is only built with the `api-docs` feature (see `Cargo.toml`).
-//! With that feature, `--openapi` prints the shared control catalog as OpenAPI
-//! 3.1 instead of starting the stdio loop.
+//! This binary is kept separate from every game runtime. `--openapi` prints
+//! the shared control catalog as OpenAPI 3.1 instead of starting the stdio
+//! loop.
 use std::{
     io::{self, BufRead, BufReader, Read, Write},
     net::TcpStream,
@@ -888,7 +888,6 @@ fn handle(message: Json) -> Option<String> {
 }
 
 fn main() -> io::Result<()> {
-    #[cfg(feature = "api-docs")]
     if std::env::args().any(|arg| arg == "--openapi") {
         let status = serde_json::json!({
             "base_url": "http://127.0.0.1:47821",
@@ -1007,7 +1006,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "api-docs")]
     #[test]
     fn generated_openapi_lists_the_unified_control_catalog() {
         let spec = fanplay_control::Catalog::standard()

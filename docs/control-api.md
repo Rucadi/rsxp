@@ -71,11 +71,10 @@ Game-specific semantics remain in plugins and runtime adapters. See
 start a game runtime. Its tools are built from discovery and extension routes.
 
 ```sh
-cargo build --release -p fanplay-rgss --no-default-features \
-  --features api-docs --bin fanplay-mcp
-cargo api-openapi > crates/fanplay-rgss/api/openapi.json
+cargo build --release -p fanplay-mcp
+cargo api-openapi > crates/fanplay-mcp/openapi.json
 ```
 
 The checked-in OpenAPI file is generated from the standard Rust catalog.
 Runtime discovery can include additional extension routes and live status.
-See [MCP setup](../crates/fanplay-rgss/api/README.md).
+See [MCP setup](../crates/fanplay-mcp/README.md).

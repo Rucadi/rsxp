@@ -25,6 +25,7 @@
 //!   a long session does not leak. `fade` stops with a tween (removing the
 //!   voice only when it is not fading); `position` reports the playback
 //!   position for the current non-fading BGM voice and `0.0` otherwise.
+use fanplay_rgss::host::{AudioBackend, AudioChannel};
 use kira::{
     sound::{
         static_sound::{StaticSoundData, StaticSoundHandle},
@@ -33,7 +34,6 @@ use kira::{
     },
     AudioManager, AudioManagerSettings, Decibels, DefaultBackend, Tween,
 };
-use fanplay_rgss::host::{AudioBackend, AudioChannel};
 use std::{collections::HashMap, io::Cursor, time::Duration};
 
 enum VoiceHandle {

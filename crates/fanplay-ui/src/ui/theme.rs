@@ -13,7 +13,11 @@ use egui::{
     Stroke, StrokeKind, Ui, Vec2,
 };
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path, sync::{Mutex, OnceLock}};
+use std::{
+    fs,
+    path::Path,
+    sync::{Mutex, OnceLock},
+};
 static ACTIVE_THEME: OnceLock<Mutex<ThemeDefinition>> = OnceLock::new();
 
 // ---------------------------------------------------------------------------
@@ -54,16 +58,60 @@ pub struct ThemeDefinition {
 
 impl Default for ThemeDefinition {
     fn default() -> Self {
-        Self { name: "Adventure Journal".into(), background: "#EAE6D8".into(), surface: "#FFF9EC".into(), surface_inset: "#F3EFE2".into(), text: "#263C36".into(), text_muted: "#52645C".into(), primary: "#28654D".into(), secondary: "#B56A3A".into(), accent: "#D4A43B".into(), error: "#A9363E".into() }
+        Self {
+            name: "Adventure Journal".into(),
+            background: "#EAE6D8".into(),
+            surface: "#FFF9EC".into(),
+            surface_inset: "#F3EFE2".into(),
+            text: "#263C36".into(),
+            text_muted: "#52645C".into(),
+            primary: "#28654D".into(),
+            secondary: "#B56A3A".into(),
+            accent: "#D4A43B".into(),
+            error: "#A9363E".into(),
+        }
     }
 }
 
 pub fn builtin_themes() -> Vec<ThemeDefinition> {
     vec![
         ThemeDefinition::default(),
-        ThemeDefinition { name: "Arcade Neon".into(), background: "#0A0A14".into(), surface: "#12121F".into(), surface_inset: "#1A1A2E".into(), text: "#EEEEF0".into(), text_muted: "#9999AA".into(), primary: "#FF006E".into(), secondary: "#00F0FF".into(), accent: "#39FF14".into(), error: "#FF006E".into() },
-        ThemeDefinition { name: "Moonlit Grove".into(), background: "#172722".into(), surface: "#22382F".into(), surface_inset: "#1C3028".into(), text: "#F4F0E3".into(), text_muted: "#B5C5B7".into(), primary: "#8BCDAB".into(), secondary: "#95C9ED".into(), accent: "#E7BE65".into(), error: "#F39A9A".into() },
-        ThemeDefinition { name: "Field Guide".into(), background: "#F2EBDD".into(), surface: "#FFFDF5".into(), surface_inset: "#E5EEF3".into(), text: "#263746".into(), text_muted: "#60717D".into(), primary: "#D83A3A".into(), secondary: "#2D6FA3".into(), accent: "#D9A62E".into(), error: "#B32635".into() },
+        ThemeDefinition {
+            name: "Arcade Neon".into(),
+            background: "#0A0A14".into(),
+            surface: "#12121F".into(),
+            surface_inset: "#1A1A2E".into(),
+            text: "#EEEEF0".into(),
+            text_muted: "#9999AA".into(),
+            primary: "#FF006E".into(),
+            secondary: "#00F0FF".into(),
+            accent: "#39FF14".into(),
+            error: "#FF006E".into(),
+        },
+        ThemeDefinition {
+            name: "Moonlit Grove".into(),
+            background: "#172722".into(),
+            surface: "#22382F".into(),
+            surface_inset: "#1C3028".into(),
+            text: "#F4F0E3".into(),
+            text_muted: "#B5C5B7".into(),
+            primary: "#8BCDAB".into(),
+            secondary: "#95C9ED".into(),
+            accent: "#E7BE65".into(),
+            error: "#F39A9A".into(),
+        },
+        ThemeDefinition {
+            name: "Field Guide".into(),
+            background: "#F2EBDD".into(),
+            surface: "#FFFDF5".into(),
+            surface_inset: "#E5EEF3".into(),
+            text: "#263746".into(),
+            text_muted: "#60717D".into(),
+            primary: "#D83A3A".into(),
+            secondary: "#2D6FA3".into(),
+            accent: "#D9A62E".into(),
+            error: "#B32635".into(),
+        },
     ]
 }
 
@@ -83,8 +131,13 @@ pub fn load_themes(path: &Path) -> Vec<ThemeDefinition> {
 }
 
 pub fn save_themes(path: &Path, themes: &[ThemeDefinition]) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() { fs::create_dir_all(parent)?; }
-    fs::write(path, serde_json::to_vec_pretty(themes).expect("theme serialization"))
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(
+        path,
+        serde_json::to_vec_pretty(themes).expect("theme serialization"),
+    )
 }
 
 pub fn set_active_theme(theme: ThemeDefinition) {
@@ -93,22 +146,46 @@ pub fn set_active_theme(theme: ThemeDefinition) {
 }
 
 fn active_theme() -> ThemeDefinition {
-    ACTIVE_THEME.get_or_init(|| Mutex::new(ThemeDefinition::default())).lock().expect("theme lock").clone()
+    ACTIVE_THEME
+        .get_or_init(|| Mutex::new(ThemeDefinition::default()))
+        .lock()
+        .expect("theme lock")
+        .clone()
 }
 
-pub fn background() -> Color32 { hex(&active_theme().background, BG) }
-pub fn surface() -> Color32 { hex(&active_theme().surface, SURFACE) }
-pub fn surface_inset() -> Color32 { hex(&active_theme().surface_inset, SURFACE_RAISED) }
-pub fn text() -> Color32 { hex(&active_theme().text, TEXT) }
-pub fn text_muted() -> Color32 { hex(&active_theme().text_muted, TEXT_MUTED) }
-pub fn primary() -> Color32 { hex(&active_theme().primary, PINK) }
-pub fn secondary() -> Color32 { hex(&active_theme().secondary, CYAN) }
-pub fn accent() -> Color32 { hex(&active_theme().accent, LIME) }
-pub fn error() -> Color32 { hex(&active_theme().error, ERROR) }
+pub fn background() -> Color32 {
+    hex(&active_theme().background, BG)
+}
+pub fn surface() -> Color32 {
+    hex(&active_theme().surface, SURFACE)
+}
+pub fn surface_inset() -> Color32 {
+    hex(&active_theme().surface_inset, SURFACE_RAISED)
+}
+pub fn text() -> Color32 {
+    hex(&active_theme().text, TEXT)
+}
+pub fn text_muted() -> Color32 {
+    hex(&active_theme().text_muted, TEXT_MUTED)
+}
+pub fn primary() -> Color32 {
+    hex(&active_theme().primary, PINK)
+}
+pub fn secondary() -> Color32 {
+    hex(&active_theme().secondary, CYAN)
+}
+pub fn accent() -> Color32 {
+    hex(&active_theme().accent, LIME)
+}
+pub fn error() -> Color32 {
+    hex(&active_theme().error, ERROR)
+}
 
 fn hex(value: &str, fallback: Color32) -> Color32 {
     let value = value.trim_start_matches('#');
-    if value.len() == 6 && let Ok(rgb) = u32::from_str_radix(value, 16) {
+    if value.len() == 6
+        && let Ok(rgb) = u32::from_str_radix(value, 16)
+    {
         return Color32::from_rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8);
     }
     fallback
@@ -225,11 +302,26 @@ fn install_fonts(context: &egui::Context) {
 pub fn apply(context: &egui::Context) {
     let theme = active_theme();
     let dark = theme.background.starts_with("#0A") || theme.name == "Arcade Neon";
-    context.set_theme(if dark { egui::Theme::Dark } else { egui::Theme::Light });
+    context.set_theme(if dark {
+        egui::Theme::Dark
+    } else {
+        egui::Theme::Light
+    });
     install_fonts(context);
 
-    let bg = hex(&theme.background, BG); let surface = hex(&theme.surface, SURFACE); let inset = hex(&theme.surface_inset, SURFACE_RAISED); let text = hex(&theme.text, TEXT); let muted = hex(&theme.text_muted, TEXT_MUTED); let primary = hex(&theme.primary, PINK); let secondary = hex(&theme.secondary, CYAN); let error = hex(&theme.error, ERROR);
-    let mut visuals = if dark { egui::Visuals::dark() } else { egui::Visuals::light() };
+    let bg = hex(&theme.background, BG);
+    let surface = hex(&theme.surface, SURFACE);
+    let inset = hex(&theme.surface_inset, SURFACE_RAISED);
+    let text = hex(&theme.text, TEXT);
+    let muted = hex(&theme.text_muted, TEXT_MUTED);
+    let primary = hex(&theme.primary, PINK);
+    let secondary = hex(&theme.secondary, CYAN);
+    let error = hex(&theme.error, ERROR);
+    let mut visuals = if dark {
+        egui::Visuals::dark()
+    } else {
+        egui::Visuals::light()
+    };
     visuals.panel_fill = bg;
     visuals.window_fill = inset;
     visuals.extreme_bg_color = bg;
@@ -246,8 +338,18 @@ pub fn apply(context: &egui::Context) {
     visuals.window_stroke = Stroke::new(1.0, BORDER);
     visuals.window_corner_radius = CornerRadius::same(12);
     visuals.menu_corner_radius = CornerRadius::same(12);
-    visuals.window_shadow = egui::epaint::Shadow { offset: [0, 2], blur: 8, spread: 0, color: Color32::BLACK.gamma_multiply(0.12) };
-    visuals.popup_shadow = egui::epaint::Shadow { offset: [0, 2], blur: 6, spread: 0, color: Color32::BLACK.gamma_multiply(0.10) };
+    visuals.window_shadow = egui::epaint::Shadow {
+        offset: [0, 2],
+        blur: 8,
+        spread: 0,
+        color: Color32::BLACK.gamma_multiply(0.12),
+    };
+    visuals.popup_shadow = egui::epaint::Shadow {
+        offset: [0, 2],
+        blur: 6,
+        spread: 0,
+        color: Color32::BLACK.gamma_multiply(0.10),
+    };
     visuals.text_cursor.stroke = Stroke::new(2.0, CYAN);
     visuals.button_frame = true;
     visuals.striped = true;
@@ -352,7 +454,12 @@ pub fn pulse(context: &egui::Context) -> f32 {
 /// element itself so the glow reads as light rather than an outline.
 pub fn glow(painter: &egui::Painter, rect: egui::Rect, radius: u8, color: Color32, strength: f32) {
     let _ = strength;
-    painter.rect_stroke(rect, CornerRadius::same(radius), Stroke::new(1.0, color.gamma_multiply(0.35)), StrokeKind::Inside);
+    painter.rect_stroke(
+        rect,
+        CornerRadius::same(radius),
+        Stroke::new(1.0, color.gamma_multiply(0.35)),
+        StrokeKind::Inside,
+    );
 }
 
 /// A thin neon rule with a soft fade at both ends.
@@ -641,7 +748,11 @@ pub fn tag(ui: &mut Ui, label: &str, tone: Tone) {
         .corner_radius(CornerRadius::same(4))
         .inner_margin(egui::Margin::symmetric(8, 2))
         .show(ui, |ui| {
-            ui.label(RichText::new(label_text).font(mono_font(10.0)).color(text()));
+            ui.label(
+                RichText::new(label_text)
+                    .font(mono_font(10.0))
+                    .color(text()),
+            );
         });
 }
 

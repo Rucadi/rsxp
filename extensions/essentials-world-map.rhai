@@ -1,5 +1,6 @@
 // fanplay:id = essentials-world-map
 // fanplay:name = Essentials World Map
+// fanplay:cores = rgss
 // fanplay:version = 0.1.0
 // fanplay:capabilities = ruby.inject,ruby.unload,ui.webview
 // fanplay:operation = world_map

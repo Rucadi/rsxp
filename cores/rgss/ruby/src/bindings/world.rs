@@ -19,15 +19,15 @@
 //! invalidates it so the next camera update rebuilds placements. `bound`/`forget`
 //! expose this state to `sprite.rs` and `retained.rs`. State is read fresh per
 //! call; `MapCamera`/`WorldTile` come from `fanplay_rgss::engine::world_map`.
+use fanplay_rgss::engine::{
+    self,
+    world_map::{MapCamera, WorldTile},
+};
 use magnus::{
     function, method,
     prelude::*,
     value::{Fixnum, LazyId},
     Error, RArray, RClass, RObject, Ruby, TryConvert, Value,
-};
-use fanplay_rgss::engine::{
-    self,
-    world_map::{MapCamera, WorldTile},
 };
 use std::{
     collections::{HashMap, HashSet},

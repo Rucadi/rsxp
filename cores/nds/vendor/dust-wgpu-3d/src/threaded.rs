@@ -385,10 +385,11 @@ mod tests {
                 if worker_data.stopped.load(Ordering::Relaxed) {
                     break;
                 }
-                if worker_data.capture_processing_scanline.swap(
-                    SCREEN_HEIGHT as u8,
-                    Ordering::AcqRel,
-                ) == u8::MAX {
+                if worker_data
+                    .capture_processing_scanline
+                    .swap(SCREEN_HEIGHT as u8, Ordering::AcqRel)
+                    == u8::MAX
+                {
                     done_tx.send(()).unwrap();
                 }
             }
@@ -408,9 +409,9 @@ mod tests {
         // No new 3D frame is submitted to wake the worker on our behalf.
         for _ in 0..3 {
             tx.set_capture_enabled(true);
-            done_rx.recv_timeout(Duration::from_secs(2)).expect(
-                "enabling display capture must wake the worker without another 3D frame",
-            );
+            done_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("enabling display capture must wake the worker without another 3D frame");
             tx.set_capture_enabled(false);
         }
     }

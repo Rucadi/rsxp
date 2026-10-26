@@ -1,4 +1,5 @@
 // fanplay:name = Dynamic Plugin Demo
+// fanplay:cores = rgss
 // fanplay:capabilities = ui.webview
 // fanplay:panel = demo,Dynamic Plugin
 // A single Rhai file can be imported or pasted without a companion manifest.

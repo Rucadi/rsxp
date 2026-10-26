@@ -20,13 +20,13 @@
 //! against the fresh position instead of the pre-scroll one. All Ruby work
 //! completes before the engine borrow; overflow is reported as `RangeError` and
 //! unsupported pools return `false` so the game keeps its Ruby fallback.
+use fanplay_rgss::engine::{self, SpriteMotion};
 use magnus::{
     function,
     prelude::*,
     value::{Fixnum, LazyId},
     Error, RArray, RObject, Ruby, TryConvert, Value,
 };
-use fanplay_rgss::engine::{self, SpriteMotion};
 
 macro_rules! get {
     ($object:expr,$name:literal,$ty:ty) => {{

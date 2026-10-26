@@ -22,9 +22,13 @@
 //!   `#[cfg(feature = "game-api")]`.
 pub trait Backend {
     /// Returns the physical scancode assigned to an RGSS action.
-    fn keyboard_binding(&self, action: i32) -> i32 { action }
+    fn keyboard_binding(&self, action: i32) -> i32 {
+        action
+    }
     /// Updates a keyboard binding for the active game session.
-    fn set_keyboard_binding(&self, action: i32, physical: i32) { let _ = (action, physical); }
+    fn set_keyboard_binding(&self, action: i32, physical: i32) {
+        let _ = (action, physical);
+    }
     /// Whether uncapped frame pacing (fast-forward) is currently on.
     fn fast_forward(&self) -> bool;
     /// Enables or disables uncapped frame pacing.

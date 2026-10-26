@@ -16,11 +16,13 @@ cargo test -p fanplay-core-nds
 
 Both screens are presented as a single 256×384 RGBA frame (top screen first).
 The backend uses Dust's interpreter and stereo PCM at 48 kHz or the desktop
-device rate. Desktop sessions use software by default. Set `FANPLAY_NDS_RENDERER=wgpu`
-to request Dust's wgpu 2D/3D renderers;
-the 3D pass and 2D compositor submissions are serialized on the graphics
-thread to avoid cross-thread wgpu queue submission stalls. They fall back to
-Dust's synchronous software renderers if wgpu initialization fails.
+device rate. Desktop sessions use Dust's optimized software 2D/3D renderers
+by default. The experimental wgpu path can be selected with
+`FANPLAY_NDS_RENDERER=wgpu`, but it currently has to read each frame back to
+the CPU for the desktop cartridge transport, so it is not the recommended
+gameplay path. The 3D pass and 2D compositor submissions are serialized on the
+graphics thread to avoid cross-thread wgpu queue submission stalls. wgpu falls
+back to Dust's synchronous software renderers if initialization fails.
 WebAssembly uses the same Dust software 2D/3D renderers and shared emulation/UI
 code; browser GPU threading is not required. Because the current cartridge
 transport carries CPU `VideoFrame`s between processes, desktop wgpu frames are
@@ -69,6 +71,39 @@ the running one. They are tied to this backend revision, are not Dust desktop
 state files, and are not a portable archival format. The frontend's
 save/load-state commands work with this core; the desktop runner exposes save
 states through the cartridge command queue.
+
+## Frame timing and benchmarks
+
+For gameplay, use a release build:
+
+```sh
+nix-shell --run 'cargo run --release -p fanplay-desktop -- run --game "/path/to/game.nds"'
+```
+
+The desktop launcher
+preserves the core's software renderer default; an explicit
+`FANPLAY_NDS_RENDERER=wgpu` environment or per-game setting still opts into the
+experimental GPU path. Desktop NDS sessions use a three-slot shared-memory
+frame ring, so the runner sends only slot metadata over the session channel and
+reuses its frame buffers; the dashboard still performs the final bitmap/GPU
+texture upload. Incoming frames wake the desktop UI immediately.
+
+The frame pacer includes emulation time in the first frame's budget and resumes
+after a long stall without adding a full frame of sleep. Small overruns retain
+the absolute schedule. Native timing is approximately 59.826 Hz, so a fixed
+60 Hz display can still occasionally repeat a frame even with ample CPU headroom.
+
+Measure core frame-time percentiles independently of desktop presentation:
+
+```sh
+nix-shell --run 'cargo run --release -p fanplay-core-nds --example frame_bench -- "/path/to/game.nds" 1800'
+```
+
+This runs unpaced, skips 120 warmup frames, and reports mean, p50/p95/p99,
+maximum and frames exceeding the native 16.72 ms budget. It ignores existing
+saves and discards writes. With no input it measures the opening sequence only;
+it does not measure IPC, audio-device scheduling, display latency or gameplay.
+Set `FANPLAY_NDS_RENDERER=wgpu` to compare the experimental renderer.
 
 ## Scope and compatibility
 

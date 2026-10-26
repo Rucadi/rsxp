@@ -10,7 +10,9 @@
 //! enqueues a bounded request, the worker performs atomic replacement, and
 //! [`StorageWorker::flush`] waits for every earlier write to finish.
 
-use fanplay_core::{content_hash, Content, ContentKind, StateEnvelope, StateError, MAX_STATE_PAYLOAD};
+use fanplay_core::{
+    content_hash, Content, ContentKind, StateEnvelope, StateError, MAX_STATE_PAYLOAD,
+};
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
@@ -441,9 +443,8 @@ impl SaveStore {
             .into_iter()
             .map(|slot| {
                 let metadata = self.read_state_metadata(&slot).ok().flatten();
-                let (saved_at, mut bytes) = metadata.map_or((None, 0), |(saved_at, bytes)| {
-                    (Some(saved_at), bytes)
-                });
+                let (saved_at, mut bytes) =
+                    metadata.map_or((None, 0), |(saved_at, bytes)| (Some(saved_at), bytes));
                 if bytes == 0 {
                     bytes = self
                         .storage
@@ -452,7 +453,11 @@ impl SaveStore {
                         .flatten()
                         .map_or(0, |data| data.len());
                 }
-                StateSnapshot { slot, saved_at, bytes }
+                StateSnapshot {
+                    slot,
+                    saved_at,
+                    bytes,
+                }
             })
             .collect::<Vec<_>>();
         snapshots.sort_by(|a, b| a.slot.cmp(&b.slot));

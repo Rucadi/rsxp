@@ -41,7 +41,8 @@ mod tests {
     #[test]
     #[cfg(feature = "nds")]
     fn nds_content_routes_by_extension() {
-        let path = std::env::temp_dir().join(format!("fanplay-registry-{}.NDS", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("fanplay-registry-{}.NDS", std::process::id()));
         std::fs::write(&path, [0u8; 512]).unwrap();
         assert_eq!(
             catalog()
@@ -89,7 +90,11 @@ mod tests {
             ));
             std::fs::write(&path, vec![0u8; 0x150]).unwrap();
             assert_eq!(
-                catalog.route(&fanplay_core::Content::file(&path)).unwrap().info.id,
+                catalog
+                    .route(&fanplay_core::Content::file(&path))
+                    .unwrap()
+                    .info
+                    .id,
                 "gbc"
             );
             let _ = std::fs::remove_file(path);

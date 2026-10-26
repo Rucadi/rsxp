@@ -38,7 +38,10 @@ pub fn root(game: Option<&Path>) -> PathBuf {
         };
         // Installed games inherit the enclosing portable library.
         for parent in dir.ancestors() {
-            if parent.file_name().is_some_and(|n| n == "FANPLAY" || n == "RSXP") {
+            if parent
+                .file_name()
+                .is_some_and(|n| n == "FANPLAY" || n == "RSXP")
+            {
                 return parent.to_owned();
             }
         }
@@ -64,7 +67,11 @@ pub fn root(game: Option<&Path>) -> PathBuf {
 fn portable_home(base: &Path) -> PathBuf {
     let current = base.join("FANPLAY");
     let legacy = base.join("RSXP");
-    if !current.is_dir() && legacy.is_dir() { legacy } else { current }
+    if !current.is_dir() && legacy.is_dir() {
+        legacy
+    } else {
+        current
+    }
 }
 
 pub fn initialize(root: &Path) -> Result<()> {
@@ -257,9 +264,7 @@ impl Repository {
                 .unwrap_or("");
             let valid_extension = match g.platform {
                 Platform::RpgMaker => ext.eq_ignore_ascii_case("ini"),
-                Platform::Gbc => {
-                    ext.eq_ignore_ascii_case("gb") || ext.eq_ignore_ascii_case("gbc")
-                }
+                Platform::Gbc => ext.eq_ignore_ascii_case("gb") || ext.eq_ignore_ascii_case("gbc"),
                 Platform::Gba => ext.eq_ignore_ascii_case("gba"),
                 Platform::Nds => ext.eq_ignore_ascii_case("nds"),
             };

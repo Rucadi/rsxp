@@ -103,50 +103,49 @@ impl PluginWebView {
             native_bridge_script(),
             html
         );
-        let builder = WebViewBuilder::new()
-            .with_ipc_handler(move |request| {
-                let Ok(value) = serde_json::from_str::<serde_json::Value>(request.body()) else {
-                    return;
-                };
-                let Some(kind) = value.get("kind").and_then(serde_json::Value::as_str) else {
-                    return;
-                };
-                let Some(id) = value.get("id").and_then(serde_json::Value::as_u64) else {
-                    return;
-                };
-                let message = match kind {
-                    "api" => PluginWebViewRequest::Api {
-                        id,
-                        method: value
-                            .get("method")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or("GET")
-                            .to_owned(),
-                        target: value
-                            .get("target")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or("/")
-                            .to_owned(),
-                    },
-                    "asset" => PluginWebViewRequest::Asset {
-                        id,
-                        category: value
-                            .get("category")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or_default()
-                            .to_owned(),
-                        name: value
-                            .get("name")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or_default()
-                            .to_owned(),
-                    },
-                    _ => return,
-                };
-                if let Ok(mut requests) = requests_for_ipc.lock() {
-                    requests.push(message);
-                }
-            });
+        let builder = WebViewBuilder::new().with_ipc_handler(move |request| {
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(request.body()) else {
+                return;
+            };
+            let Some(kind) = value.get("kind").and_then(serde_json::Value::as_str) else {
+                return;
+            };
+            let Some(id) = value.get("id").and_then(serde_json::Value::as_u64) else {
+                return;
+            };
+            let message = match kind {
+                "api" => PluginWebViewRequest::Api {
+                    id,
+                    method: value
+                        .get("method")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("GET")
+                        .to_owned(),
+                    target: value
+                        .get("target")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("/")
+                        .to_owned(),
+                },
+                "asset" => PluginWebViewRequest::Asset {
+                    id,
+                    category: value
+                        .get("category")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or_default()
+                        .to_owned(),
+                    name: value
+                        .get("name")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or_default()
+                        .to_owned(),
+                },
+                _ => return,
+            };
+            if let Ok(mut requests) = requests_for_ipc.lock() {
+                requests.push(message);
+            }
+        });
 
         #[cfg(target_os = "linux")]
         {

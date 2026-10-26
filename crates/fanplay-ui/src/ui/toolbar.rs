@@ -156,12 +156,15 @@ impl Workspace {
                                     if let Some(saved_at) = &slot.saved_at {
                                         ui.label(
                                             egui::RichText::new(if slot.bytes >= 1024 {
-                                                format!("{saved_at} · {:.1} KiB", slot.bytes as f32 / 1024.0)
+                                                format!(
+                                                    "{saved_at} · {:.1} KiB",
+                                                    slot.bytes as f32 / 1024.0
+                                                )
                                             } else {
                                                 format!("{saved_at} · {} B", slot.bytes)
                                             })
-                                                .font(theme::body_font(11.0))
-                                                .color(theme::TEXT_MUTED),
+                                            .font(theme::body_font(11.0))
+                                            .color(theme::TEXT_MUTED),
                                         );
                                     } else {
                                         ui.label(
@@ -376,27 +379,58 @@ impl Workspace {
     }
 
     fn draw_controller_settings_horizontal(&mut self, context: &egui::Context) {
-        if !self.controller_settings_open { return; }
+        if !self.controller_settings_open {
+            return;
+        }
         let mut open = true;
         let mut mapping = crate::controls::get();
         let keyboard_actions = [
-            (82, "Up"), (81, "Down"), (80, "Left"), (79, "Right"),
-            (4, "A / Confirm"), (5, "B / Cancel"), (6, "C / Confirm"),
-            (27, "X"), (28, "Y"), (29, "Z"), (15, "L"), (21, "R"),
-            (40, "Enter / Start"), (41, "Escape"), (225, "Shift / Run"),
-            (224, "Ctrl"), (226, "Alt"), (44, "Space"), (68, "Fast-forward"),
+            (82, "Up"),
+            (81, "Down"),
+            (80, "Left"),
+            (79, "Right"),
+            (4, "A / Confirm"),
+            (5, "B / Cancel"),
+            (6, "C / Confirm"),
+            (27, "X"),
+            (28, "Y"),
+            (29, "Z"),
+            (15, "L"),
+            (21, "R"),
+            (40, "Enter / Start"),
+            (41, "Escape"),
+            (225, "Shift / Run"),
+            (224, "Ctrl"),
+            (226, "Alt"),
+            (44, "Space"),
+            (68, "Fast-forward"),
         ];
         if let Some(target) = self.keyboard_capture {
             if context.input(|input| input.modifiers.shift) {
                 self.backend.set_keyboard_binding(target, 225);
                 self.keyboard_capture = None;
             }
-            if let Some((code, cancel)) = context.input(|input| input.events.iter().find_map(|event| {
-                let egui::Event::Key { key, physical_key, pressed: true, repeat: false, .. } = event else { return None; };
-                if *key == egui::Key::Escape { return Some((target, true)); }
-                Some((toolbar_scancode(physical_key.unwrap_or(*key))?, false))
-            })) {
-                if !cancel { self.backend.set_keyboard_binding(target, code); }
+            if let Some((code, cancel)) = context.input(|input| {
+                input.events.iter().find_map(|event| {
+                    let egui::Event::Key {
+                        key,
+                        physical_key,
+                        pressed: true,
+                        repeat: false,
+                        ..
+                    } = event
+                    else {
+                        return None;
+                    };
+                    if *key == egui::Key::Escape {
+                        return Some((target, true));
+                    }
+                    Some((toolbar_scancode(physical_key.unwrap_or(*key))?, false))
+                })
+            }) {
+                if !cancel {
+                    self.backend.set_keyboard_binding(target, code);
+                }
                 self.keyboard_capture = None;
             }
         }
@@ -483,22 +517,98 @@ impl Workspace {
 }
 
 fn toolbar_key_name(code: i32) -> String {
-    match code { 4..=29 => ((b'A' + (code - 4) as u8) as char).to_string(), 40 => "Enter".into(), 41 => "Escape".into(), 42 => "Backspace".into(), 44 => "Space".into(), 58..=69 => format!("F{}", code - 57), 79 => "Right".into(), 80 => "Left".into(), 81 => "Down".into(), 82 => "Up".into(), 225 | 229 => "Shift".into(), _ => format!("Key {code}") }
+    match code {
+        4..=29 => ((b'A' + (code - 4) as u8) as char).to_string(),
+        40 => "Enter".into(),
+        41 => "Escape".into(),
+        42 => "Backspace".into(),
+        44 => "Space".into(),
+        58..=69 => format!("F{}", code - 57),
+        79 => "Right".into(),
+        80 => "Left".into(),
+        81 => "Down".into(),
+        82 => "Up".into(),
+        225 | 229 => "Shift".into(),
+        _ => format!("Key {code}"),
+    }
 }
 
 fn toolbar_action_name(code: i32) -> &'static str {
     match code {
-        4 => "A / Confirm", 5 => "B / Cancel", 6 => "C / Confirm", 15 => "L",
-        21 => "R", 27 => "X", 28 => "Y", 29 => "Z", 40 => "Enter / Start",
-        41 => "Escape", 44 => "Space", 68 => "Fast-forward", 79 => "Right",
-        80 => "Left", 81 => "Down", 82 => "Up", 224 => "Ctrl", 225 => "Shift / Run",
-        226 => "Alt", _ => "Other action",
+        4 => "A / Confirm",
+        5 => "B / Cancel",
+        6 => "C / Confirm",
+        15 => "L",
+        21 => "R",
+        27 => "X",
+        28 => "Y",
+        29 => "Z",
+        40 => "Enter / Start",
+        41 => "Escape",
+        44 => "Space",
+        68 => "Fast-forward",
+        79 => "Right",
+        80 => "Left",
+        81 => "Down",
+        82 => "Up",
+        224 => "Ctrl",
+        225 => "Shift / Run",
+        226 => "Alt",
+        _ => "Other action",
     }
 }
 
 fn toolbar_scancode(key: egui::Key) -> Option<i32> {
     use egui::Key::*;
-    Some(match key { A => 4, B => 5, C => 6, D => 7, E => 8, F => 9, G => 10, H => 11, I => 12, J => 13, K => 14, L => 15, M => 16, N => 17, O => 18, P => 19, Q => 20, R => 21, S => 22, T => 23, U => 24, V => 25, W => 26, X => 27, Y => 28, Z => 29, Enter => 40, Escape => 41, Backspace => 42, Space => 44, F1 => 58, F2 => 59, F3 => 60, F4 => 61, F5 => 62, F6 => 63, F7 => 64, F8 => 65, F9 => 66, F10 => 67, F11 => 68, F12 => 69, ArrowRight => 79, ArrowLeft => 80, ArrowDown => 81, ArrowUp => 82, _ => return None })
+    Some(match key {
+        A => 4,
+        B => 5,
+        C => 6,
+        D => 7,
+        E => 8,
+        F => 9,
+        G => 10,
+        H => 11,
+        I => 12,
+        J => 13,
+        K => 14,
+        L => 15,
+        M => 16,
+        N => 17,
+        O => 18,
+        P => 19,
+        Q => 20,
+        R => 21,
+        S => 22,
+        T => 23,
+        U => 24,
+        V => 25,
+        W => 26,
+        X => 27,
+        Y => 28,
+        Z => 29,
+        Enter => 40,
+        Escape => 41,
+        Backspace => 42,
+        Space => 44,
+        F1 => 58,
+        F2 => 59,
+        F3 => 60,
+        F4 => 61,
+        F5 => 62,
+        F6 => 63,
+        F7 => 64,
+        F8 => 65,
+        F9 => 66,
+        F10 => 67,
+        F11 => 68,
+        F12 => 69,
+        ArrowRight => 79,
+        ArrowLeft => 80,
+        ArrowDown => 81,
+        ArrowUp => 82,
+        _ => return None,
+    })
 }
 
 #[cfg(test)]

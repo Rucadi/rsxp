@@ -442,7 +442,7 @@ impl Bitmap {
     /// and forces alpha opaque, matching the original fragment shader.
     pub fn kgl_subtract_rect(&mut self, x: i32, y: i32, src: &Bitmap, src_rect: Rect, opacity: u8) {
         self.touch();
-        let norm = if opacity >= 255 {
+        let norm = if opacity == 255 {
             1.0
         } else {
             f64::from(opacity) / 256.0

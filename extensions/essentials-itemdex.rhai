@@ -1,5 +1,6 @@
 // fanplay:id = essentials-itemdex
 // fanplay:name = Essentials Itemdex
+// fanplay:cores = rgss
 // fanplay:version = 0.1.0
 // fanplay:capabilities = ruby.inject,ruby.unload,ui.webview,pokemon_essentials.read,pokemon_essentials.write
 // fanplay:operation = pokemon_essentials_itemdex

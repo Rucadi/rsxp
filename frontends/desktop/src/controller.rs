@@ -18,8 +18,8 @@
 //! held keys are re-asserted with `key_down` so gameplay input survives a
 //! frame in which the UI suppressed input. When the encoded mapping changes it
 //! is persisted back to the config file.
-use gilrs::{Axis, Button, Gilrs};
 use fanplay_rgss::{controls, input::Input};
+use gilrs::{Axis, Button, Gilrs};
 use std::{collections::HashSet, path::PathBuf};
 
 pub struct Controllers {
@@ -41,13 +41,22 @@ impl Controllers {
         let path = Some(fanplay_provision::root(None).join("config/controls"));
         if let Some(path) = &path {
             if let Ok(text) = std::fs::read_to_string(path).or_else(|error| {
-                legacy.as_ref().map(std::fs::read_to_string).unwrap_or(Err(error))
+                legacy
+                    .as_ref()
+                    .map(std::fs::read_to_string)
+                    .unwrap_or(Err(error))
             }) {
                 controls::decode(&text);
             }
         }
-        if let Ok(encoded) = std::env::var("FANPLAY_CONTROLS") { controls::decode(&encoded); }
-        let path = if std::env::var_os("FANPLAY_CONTROLS").is_some() { None } else { path };
+        if let Ok(encoded) = std::env::var("FANPLAY_CONTROLS") {
+            controls::decode(&encoded);
+        }
+        let path = if std::env::var_os("FANPLAY_CONTROLS").is_some() {
+            None
+        } else {
+            path
+        };
         let backend = Gilrs::new()
             .map_err(|error| eprintln!("Controller backend unavailable: {error}"))
             .ok();
@@ -61,8 +70,14 @@ impl Controllers {
     /// Per-game overrides must never overwrite the user's global mapping.
     pub fn use_game_mapping(&mut self, encoded: Option<&str>) {
         controls::set(controls::Mapping::default());
-        if let Ok(global) = std::fs::read_to_string(fanplay_provision::root(None).join("config/controls")) { controls::decode(&global); }
-        if let Some(encoded) = encoded { controls::decode(encoded); }
+        if let Ok(global) =
+            std::fs::read_to_string(fanplay_provision::root(None).join("config/controls"))
+        {
+            controls::decode(&global);
+        }
+        if let Some(encoded) = encoded {
+            controls::decode(encoded);
+        }
         self.path = None;
         self.saved = controls::encode();
         self.held.clear();

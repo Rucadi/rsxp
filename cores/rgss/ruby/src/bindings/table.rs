@@ -13,8 +13,8 @@
 //! write only bumps the revision when the stored `i16` actually changes.
 //! `_dump`/`_load` provide Marshal serialization, and `initialize_copy` deep
 //! copies the table and bumps the revision.
-use magnus::{function, method, prelude::*, Error, RString, Ruby};
 use fanplay_rgss::table::Table;
+use magnus::{function, method, prelude::*, Error, RString, Ruby};
 use std::cell::{Cell, RefCell};
 
 #[derive(Default)]

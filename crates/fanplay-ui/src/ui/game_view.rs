@@ -41,7 +41,9 @@ impl Workspace {
             egui::CentralPanel::default()
                 .frame(egui::Frame::new().fill(egui::Color32::BLACK))
                 .show(ui, |ui| {
-                    (output.game_rect, output.touch_rect) = self.ds_layout.paint(ui, self.frame_texture, self.controls_visible);
+                    (output.game_rect, output.touch_rect) =
+                        self.ds_layout
+                            .paint(ui, self.frame_texture, self.controls_visible);
                 });
             return;
         }

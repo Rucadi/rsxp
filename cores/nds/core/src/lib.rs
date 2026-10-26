@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Nintendo DS adapter using Dust's interpreter and GPU renderers on desktop.
+mod cheats;
+mod pacing;
 mod renderer;
 mod rtc;
 mod save;
@@ -19,6 +21,7 @@ use fanplay_core::{
     CoreResult, ExitStatus, InputInfo, PcmBuffer, PixelFormat, PlatformError, PresentationSupport,
     ScreenInfo, ScreenRotation, VideoFrame,
 };
+use serde_json::{json, Value};
 use std::{cell::RefCell, num::NonZeroU32, path::Path, rc::Rc, time::Duration};
 
 pub const CORE_ID: &str = "nds";
@@ -67,6 +70,7 @@ pub const INFO: CoreInfo = CoreInfo {
     extensions: &["nds"],
     capabilities: CoreCapabilities::SAVE_STATES
         .union(CoreCapabilities::SAVE_RAM)
+        .union(CoreCapabilities::CHEATS)
         .union(CoreCapabilities::RESET)
         .union(CoreCapabilities::MULTI_SCREEN)
         .union(CoreCapabilities::SCREENSHOTS),
@@ -123,6 +127,7 @@ struct NdsAdapter {
     video: Vec<u8>,
     save_name: String,
     sample_rate: u32,
+    cheats: cheats::ActionReplay,
 }
 fn read(content: &Content, context: &CoreContext) -> CoreResult<Vec<u8>> {
     if content.kind == ContentKind::Directory {
@@ -271,13 +276,19 @@ impl NdsAdapter {
         }
         Ok(())
     }
-    fn report(&mut self, generation: u64, id: u64, outcome: CommandOutcome) {
+    fn report(
+        &mut self,
+        generation: u64,
+        id: u64,
+        outcome: CommandOutcome,
+        response: Option<Vec<u8>>,
+    ) {
         if let Some(context) = self.context.as_mut() {
             context.events.emit(CoreEvent::CommandResult {
                 id,
                 generation,
                 outcome,
-                response: None,
+                response,
             });
         }
     }
@@ -287,7 +298,7 @@ impl NdsAdapter {
             context.audio.reset_pcm();
         }
     }
-    fn command(&mut self, command: CoreCommand) -> CoreResult<CommandOutcome> {
+    fn command(&mut self, command: CoreCommand) -> CoreResult<(CommandOutcome, Option<Vec<u8>>)> {
         Ok(match command {
             CoreCommand::Reset => {
                 self.flush_save(false)?;
@@ -296,11 +307,11 @@ impl NdsAdapter {
                 self.emu = Some(emu);
                 self.gpu_output = gpu_output;
                 self.flush_audio();
-                CommandOutcome::Succeeded
+                (CommandOutcome::Succeeded, None)
             }
             CoreCommand::SaveRam => {
                 self.flush_save(true)?;
-                CommandOutcome::Succeeded
+                (CommandOutcome::Succeeded, None)
             }
             CoreCommand::Screenshot => {
                 self.context
@@ -313,7 +324,7 @@ impl NdsAdapter {
                         format: PixelFormat::Rgba8,
                         pixels: self.video.clone(),
                     });
-                CommandOutcome::Succeeded
+                (CommandOutcome::Succeeded, None)
             }
             CoreCommand::SaveState { slot } => {
                 let data = self.save_state()?;
@@ -322,19 +333,253 @@ impl NdsAdapter {
                     .unwrap()
                     .events
                     .emit(CoreEvent::SaveState { slot, data });
-                CommandOutcome::Succeeded
+                (CommandOutcome::Succeeded, None)
             }
             CoreCommand::LoadState { data, .. } => {
                 self.load_state(&data)?;
                 self.flush_audio();
-                CommandOutcome::Succeeded
+                (CommandOutcome::Succeeded, None)
             }
-            CoreCommand::SetOption { .. } | CoreCommand::Extension { .. } => {
-                CommandOutcome::Unsupported
-            }
+            CoreCommand::SetOption { .. } => (CommandOutcome::Unsupported, None),
+            CoreCommand::Extension { id, payload } => self.extension_command(&id, &payload),
         })
     }
+
+    fn extension_command(&mut self, id: &str, payload: &[u8]) -> (CommandOutcome, Option<Vec<u8>>) {
+        if id != "nds.rhai" {
+            return (CommandOutcome::Unsupported, None);
+        }
+        let request = serde_json::from_slice::<Value>(payload);
+        let request_id = request
+            .as_ref()
+            .ok()
+            .and_then(|request| request.get("request_id"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        let generation = request
+            .as_ref()
+            .ok()
+            .and_then(|request| request.get("generation"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        let response = match request {
+            Ok(request) => {
+                let operation = request
+                    .get("operation")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                let arguments = request.get("arguments").unwrap_or(&Value::Null);
+                match self.handle_extension_operation(operation, arguments) {
+                    Ok(result) => {
+                        json!({"request_id": request_id, "generation": generation, "result": result})
+                    }
+                    Err(error) => {
+                        json!({"request_id": request_id, "generation": generation, "error": {"code": "nds", "message": error}})
+                    }
+                }
+            }
+            Err(error) => {
+                json!({"request_id": request_id, "generation": generation, "error": {"code": "invalid_request", "message": error.to_string()}})
+            }
+        };
+        let body = serde_json::to_vec(&response).unwrap_or_else(|_| b"{}".to_vec());
+        (CommandOutcome::Succeeded, Some(body))
+    }
+
+    fn handle_extension_operation(
+        &mut self,
+        operation: &str,
+        arguments: &Value,
+    ) -> Result<Value, String> {
+        match operation {
+            "read" => {
+                let (space, address, width) = memory_arguments(arguments)?;
+                Ok(json!({
+                    "space": space,
+                    "address": address,
+                    "width": width,
+                    "value": self.read_space(space, address, width)?,
+                }))
+            }
+            "read_bytes" => {
+                let space = arguments
+                    .get("space")
+                    .and_then(Value::as_str)
+                    .ok_or("read_bytes is missing space")?;
+                let address = number_u32(arguments, "address")?;
+                let length = arguments
+                    .get("length")
+                    .and_then(Value::as_u64)
+                    .ok_or("read_bytes is missing length")?;
+                let length =
+                    usize::try_from(length).map_err(|_| "read_bytes length is too large")?;
+                if length > 1_048_576 {
+                    return Err("read_bytes length exceeds 1 MiB".into());
+                }
+                Ok(json!({
+                    "space": space,
+                    "address": address,
+                    "bytes": self.read_bytes(space, address, length)?,
+                }))
+            }
+            "write" => {
+                let (space, address, width) = memory_arguments(arguments)?;
+                let value = arguments
+                    .get("value")
+                    .and_then(Value::as_u64)
+                    .ok_or("write is missing value")?;
+                self.write_space(space, address, width, value)?;
+                Ok(json!({"written": true, "space": space, "address": address, "width": width}))
+            }
+            "cheat_add" => {
+                let code = arguments
+                    .get("code")
+                    .and_then(Value::as_str)
+                    .ok_or("cheat_add is missing code")?;
+                let lines = self.cheats.add(code)?;
+                Ok(json!({"added": true, "lines": lines}))
+            }
+            "cheat_remove" => {
+                let code = arguments
+                    .get("code")
+                    .and_then(Value::as_str)
+                    .ok_or("cheat_remove is missing code")?;
+                let removed = self.cheats.remove(code)?;
+                Ok(json!({"removed": removed}))
+            }
+            "cheat_clear" => {
+                self.cheats.clear();
+                Ok(json!({"cleared": true}))
+            }
+            _ => Err(format!("unknown NDS extension operation {operation:?}")),
+        }
+    }
+
+    fn read_space(&mut self, space: &str, address: u32, width: u32) -> Result<u32, String> {
+        match space {
+            "ram" | "memory" => self
+                .emu
+                .as_mut()
+                .map(|emu| cheats::read_memory(emu, address, width))
+                .ok_or_else(|| "NDS emulator is not running".into()),
+            "cartridge" | "rom" => read_blob(&self.rom, address, width),
+            "save" | "save_ram" => self
+                .emu
+                .as_ref()
+                .map(|emu| read_blob(emu.ds_slot.spi.contents(), address, width))
+                .unwrap_or_else(|| Err("NDS emulator is not running".into())),
+            _ => Err(format!("unknown NDS memory space {space:?}")),
+        }
+    }
+
+    fn read_bytes(&mut self, space: &str, address: u32, length: usize) -> Result<Vec<u8>, String> {
+        match space {
+            "cartridge" | "rom" => read_blob_bytes(&self.rom, address, length),
+            "save" | "save_ram" => self
+                .emu
+                .as_ref()
+                .map(|emu| read_blob_bytes(emu.ds_slot.spi.contents(), address, length))
+                .unwrap_or_else(|| Err("NDS emulator is not running".into())),
+            "ram" | "memory" => self
+                .emu
+                .as_mut()
+                .map(|emu| cheats::read_memory_bytes(emu, address, length))
+                .ok_or_else(|| "NDS emulator is not running".into()),
+            _ => Err(format!("unknown NDS memory space {space:?}")),
+        }
+    }
+
+    fn write_space(
+        &mut self,
+        space: &str,
+        address: u32,
+        width: u32,
+        value: u64,
+    ) -> Result<(), String> {
+        if width != 1 && width != 2 && width != 4 {
+            return Err("memory width must be 1, 2, or 4".into());
+        }
+        let max = (1_u64 << (width * 8)) - 1;
+        if value > max {
+            return Err(format!("value does not fit in {width}-byte write"));
+        }
+        match space {
+            "ram" | "memory" => self
+                .emu
+                .as_mut()
+                .map(|emu| cheats::write_memory(emu, address, width, value as u32))
+                .ok_or_else(|| "NDS emulator is not running".into()),
+            "save" | "save_ram" => {
+                let emu = self
+                    .emu
+                    .as_mut()
+                    .ok_or_else(|| "NDS emulator is not running".to_owned())?;
+                write_blob(emu.ds_slot.spi.contents_mut(), address, width, value as u32)?;
+                emu.ds_slot.spi.mark_contents_dirty();
+                Ok(())
+            }
+            "cartridge" | "rom" => Err("NDS cartridge ROM is read-only".into()),
+            _ => Err(format!("unknown NDS memory space {space:?}")),
+        }
+    }
 }
+
+fn number_u32(arguments: &Value, key: &str) -> Result<u32, String> {
+    arguments
+        .get(key)
+        .and_then(Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok())
+        .ok_or_else(|| format!("{key} is missing or outside the u32 range"))
+}
+
+fn memory_arguments(arguments: &Value) -> Result<(&str, u32, u32), String> {
+    let space = arguments
+        .get("space")
+        .and_then(Value::as_str)
+        .ok_or("memory operation is missing space")?;
+    let address = number_u32(arguments, "address")?;
+    let width = arguments
+        .get("width")
+        .and_then(Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok())
+        .ok_or("memory operation is missing width")?;
+    if !matches!(width, 1 | 2 | 4) {
+        return Err("memory width must be 1, 2, or 4".into());
+    }
+    Ok((space, address, width))
+}
+
+fn read_blob(bytes: &[u8], address: u32, width: u32) -> Result<u32, String> {
+    let data = read_blob_bytes(bytes, address, width as usize)?;
+    Ok(match width {
+        1 => data[0] as u32,
+        2 => u16::from_le_bytes([data[0], data[1]]) as u32,
+        4 => u32::from_le_bytes([data[0], data[1], data[2], data[3]]),
+        _ => unreachable!(),
+    })
+}
+
+fn read_blob_bytes(bytes: &[u8], address: u32, length: usize) -> Result<Vec<u8>, String> {
+    let start = usize::try_from(address).map_err(|_| "address is outside the host range")?;
+    let end = start.checked_add(length).ok_or("memory range overflows")?;
+    bytes
+        .get(start..end)
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| "memory range is outside the selected space".into())
+}
+
+fn write_blob(bytes: &mut [u8], address: u32, width: u32, value: u32) -> Result<(), String> {
+    let start = usize::try_from(address).map_err(|_| "address is outside the host range")?;
+    let end = start
+        .checked_add(width as usize)
+        .ok_or("memory range overflows")?;
+    let target = bytes
+        .get_mut(start..end)
+        .ok_or_else(|| "memory range is outside the selected space".to_owned())?;
+    target.copy_from_slice(&value.to_le_bytes()[..width as usize]);
+    Ok(())
+}
+
 impl Core for NdsAdapter {
     fn info(&self) -> &CoreInfo {
         &INFO
@@ -445,25 +690,26 @@ impl Core for NdsAdapter {
             .clone();
         let mut commands = Vec::with_capacity(16);
         let mut frames = 0u64;
-        let mut deadline = 0.0;
+        let mut pacer = pacing::FramePacer::default();
+        let trace = std::env::var_os("FANPLAY_NDS_TRACE").is_some();
         let mut audio_paused = false;
         while !control.should_stop() && control.frame_limit().is_none_or(|limit| frames < limit) {
             control.take_requests(&mut commands);
             for request in commands.drain(..) {
                 let id = request.id;
                 let generation = request.generation;
-                let outcome = match self.command(request.command) {
-                    Ok(outcome) => outcome,
+                let (outcome, response) = match self.command(request.command) {
+                    Ok(result) => result,
                     Err(error) => {
                         self.context
                             .as_mut()
                             .unwrap()
                             .events
                             .emit(CoreEvent::Error(error.to_string()));
-                        CommandOutcome::Failed(error.to_string())
+                        (CommandOutcome::Failed(error.to_string()), None)
                     }
                 };
-                self.report(generation, id, outcome);
+                self.report(generation, id, outcome, response);
             }
             if control.paused() {
                 if !audio_paused {
@@ -477,7 +723,7 @@ impl Core for NdsAdapter {
                     .unwrap()
                     .platform
                     .sleep(Duration::from_millis(2));
-                deadline = 0.0;
+                pacer.reset();
                 continue;
             }
             if audio_paused {
@@ -486,6 +732,7 @@ impl Core for NdsAdapter {
                 }
                 audio_paused = false;
             }
+            pacer.begin_frame(self.context.as_ref().unwrap().platform.now());
             let emu = self.emu.as_mut().unwrap();
             let input = control.input().snapshot();
             let mut keys = Keys::empty();
@@ -521,6 +768,7 @@ impl Core for NdsAdapter {
             } else {
                 emu.end_touch();
             }
+            self.cheats.apply(emu);
             if emu.run() == RunOutput::Shutdown {
                 break;
             }
@@ -533,17 +781,28 @@ impl Core for NdsAdapter {
                         "Dust wgpu returned an invalid frame size",
                     ));
                 }
-                self.video.copy_from_slice(&pixels);
+                self.video = pixels;
             } else {
-                for (pixel, out) in emu
-                    .gpu
-                    .renderer_2d()
-                    .framebuffer()
-                    .iter()
-                    .flatten()
-                    .zip(self.video.chunks_exact_mut(4))
+                let framebuffer = emu.gpu.renderer_2d().framebuffer();
+                #[cfg(target_endian = "little")]
                 {
-                    out.copy_from_slice(&pixel.to_le_bytes());
+                    let source = unsafe {
+                        std::slice::from_raw_parts(
+                            framebuffer.as_ptr().cast::<u8>(),
+                            self.video.len(),
+                        )
+                    };
+                    self.video.copy_from_slice(source);
+                }
+                #[cfg(not(target_endian = "little"))]
+                {
+                    for (pixel, out) in framebuffer
+                        .iter()
+                        .flatten()
+                        .zip(self.video.chunks_exact_mut(4))
+                    {
+                        out.copy_from_slice(&pixel.to_le_bytes());
+                    }
                 }
             }
             let context = self.context.as_mut().unwrap();
@@ -562,8 +821,12 @@ impl Core for NdsAdapter {
                 }
             }
             frames += 1;
-            if std::env::var_os("FANPLAY_NDS_TRACE").is_some() && frames % 60 == 0 {
-                eprintln!("frame {frames}: arm9={:?} arm7={:?}", self.emu.as_ref().unwrap().arm9.regs(), self.emu.as_ref().unwrap().arm7.regs());
+            if trace && frames % 60 == 0 {
+                eprintln!(
+                    "frame {frames}: arm9={:?} arm7={:?}",
+                    self.emu.as_ref().unwrap().arm9.regs(),
+                    self.emu.as_ref().unwrap().arm7.regs()
+                );
             }
             if control.frame_limit().is_some_and(|limit| frames >= limit) {
                 break;
@@ -572,7 +835,7 @@ impl Core for NdsAdapter {
                 self.flush_save(false)?;
             }
             if control.fast_forward() {
-                deadline = 0.0;
+                pacer.reset();
                 continue;
             }
             let period = control
@@ -583,12 +846,9 @@ impl Core for NdsAdapter {
             if now <= 0.0 {
                 continue;
             }
-            if deadline == 0.0 || deadline < now - period {
-                deadline = now;
-            }
-            deadline += period;
-            if deadline > now {
-                platform.sleep(Duration::from_secs_f64(deadline - now));
+            let sleep = pacer.finish_frame(now, period);
+            if !sleep.is_zero() {
+                platform.sleep(sleep);
             }
         }
         self.flush_save(true)?;

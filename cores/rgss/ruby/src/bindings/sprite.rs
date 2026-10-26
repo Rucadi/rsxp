@@ -14,13 +14,13 @@
 //! is held. Arguments are read straight off the Ruby stack, and `int`/`channel`
 //! are shared with the tilemap binding. The whole conversion runs inside
 //! the RGSS native bridge.
-use magnus::{
-    function, prelude::*, value::LazyId, Error, ExceptionClass, RArray, RString, Ruby, TryConvert,
-    Value,
-};
 use fanplay_rgss::{
     engine::{self, SpriteState},
     graphics::{Color, Rect, Tone},
+};
+use magnus::{
+    function, prelude::*, value::LazyId, Error, ExceptionClass, RArray, RString, Ruby, TryConvert,
+    Value,
 };
 
 macro_rules! get {

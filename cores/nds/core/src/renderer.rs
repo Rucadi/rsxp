@@ -67,6 +67,11 @@ fn new_software() -> (Box<dyn RendererTx>, Box<dyn SoftRendererRx>) {
 
 pub fn new() -> Renderers {
     #[cfg(not(target_arch = "wasm32"))]
+    // The wgpu backend is useful for experimentation, but the current
+    // frontend contract carries CPU frames. Its per-frame GPU readback would
+    // serialize emulation on `device.poll(Wait)` and then upload the same
+    // pixels to the dashboard GPU. Keep the software path as the default
+    // until the frontend can consume a GPU texture directly.
     if std::env::var("FANPLAY_NDS_RENDERER").as_deref() == Ok("wgpu") {
         match new_wgpu() {
             Ok(renderers) => {

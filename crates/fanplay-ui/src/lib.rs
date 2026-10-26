@@ -8,15 +8,15 @@ use fanplay_rgss::graphics::Bitmap;
 /// Shared workspace surface. Frontends should depend on `fanplay-ui` instead of
 /// reaching into the RGSS crate for generic UI, themes, or controller state.
 pub use fanplay_rgss::controls;
-pub mod workspace_services;
 pub mod ui;
-pub use ui::{DsLayout, StateSlot, ViewMode, Workspace, WorkspaceInfo, WorkspaceOutput};
-pub use ui::session;
-pub use ui::theme;
+pub mod workspace_services;
 use fanplay_extension_api::{OperationRequest, OperationResponse, UiDescription};
 use fanplay_extensions::{ExtensionError, ExtensionHost, ExtensionPackage};
 #[cfg(not(target_arch = "wasm32"))]
 use std::{env, fs, path::PathBuf};
+pub use ui::session;
+pub use ui::theme;
+pub use ui::{DsLayout, StateSlot, ViewMode, Workspace, WorkspaceInfo, WorkspaceOutput};
 
 /// Common frontend state. Platform runners update the frame and [`WorkspaceInfo`],
 /// and execute the platform-neutral actions returned by the workspace.
@@ -429,6 +429,15 @@ impl SharedApp {
             .map_err(|error| self.record_extension_error(error))
     }
 
+    /// Activates loaded Rhai packages for a specific emulator core. This is
+    /// used by cartridge sessions so an NDS package can expose memory and
+    /// cheat helpers without waking RGSS-only packages.
+    pub fn activate_plugins_for_core(&mut self, core_id: &str) -> Result<(), String> {
+        self.extensions
+            .activate_for_core(core_id)
+            .map_err(|error| self.record_extension_error(error))
+    }
+
     pub fn activate_extensions(&mut self) -> Result<(), String> {
         self.activate_plugins()
     }
@@ -504,8 +513,11 @@ impl SharedApp {
         bitmap.write_rgba(&mut self.rgba);
         let image = egui::ColorImage::from_rgba_unmultiplied(size, &self.rgba);
         if self.frame_size != Some(size) {
-            self.frame =
-                Some(context.load_texture("fanplay-game-frame", image, egui::TextureOptions::NEAREST));
+            self.frame = Some(context.load_texture(
+                "fanplay-game-frame",
+                image,
+                egui::TextureOptions::NEAREST,
+            ));
             self.frame_size = Some(size);
         } else if let Some(frame) = &mut self.frame {
             frame.set(image, egui::TextureOptions::NEAREST);
@@ -554,10 +566,7 @@ impl SharedApp {
 
     /// Consumes save-state intents emitted by the workspace toolbar.
     pub fn take_state_actions(&mut self) -> (Option<String>, Option<String>) {
-        (
-            self.output.save_state.take(),
-            self.output.load_state.take(),
-        )
+        (self.output.save_state.take(), self.output.load_state.take())
     }
 
     /// Consumes folder-open intents from the last workspace frame.

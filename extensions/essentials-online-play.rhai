@@ -1,5 +1,6 @@
 // fanplay:id = essentials-online-play
 // fanplay:name = Essentials Online Play
+// fanplay:cores = rgss
 // fanplay:version = 0.1.0
 // fanplay:capabilities = pokemon_essentials.read,pokemon_essentials.write
 // fanplay:operation = start_cable_club

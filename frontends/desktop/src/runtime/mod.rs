@@ -23,9 +23,9 @@
 //! `game` and `bridge` submodules.
 #[cfg(feature = "rgss")]
 use crate::host::DesktopHost;
+use fanplay_core::Content;
 #[cfg(feature = "rgss")]
 use fanplay_rgss::engine::{self, RuntimeOptions};
-use fanplay_core::Content;
 use std::ffi::OsStr;
 use std::{error::Error, path::Path};
 #[cfg(feature = "rgss")]
@@ -56,10 +56,16 @@ pub fn validate(args: &[String]) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn run(args: &[String]) -> Result<u8, Box<dyn Error>> {
-    let settings = args.windows(2).find(|a| a[0] == "--game")
+    let settings = args
+        .windows(2)
+        .find(|a| a[0] == "--game")
         .map(|a| fanplay_provision::settings::for_game(Path::new(&a[1])))
-        .transpose().map_err(|e| e.to_string())?.unwrap_or_default();
-    for (key,value) in settings.environment() { set_startup_env(key,value); }
+        .transpose()
+        .map_err(|e| e.to_string())?
+        .unwrap_or_default();
+    for (key, value) in settings.environment() {
+        set_startup_env(key, value);
+    }
     let options::RunOptions {
         renderer,
         script,
@@ -69,7 +75,9 @@ pub fn run(args: &[String]) -> Result<u8, Box<dyn Error>> {
         output,
         mut version,
     } = options::RunOptions::parse(args)?;
-    if version.is_none() { version = settings.rgss; }
+    if version.is_none() {
+        version = settings.rgss;
+    }
     let data_root = fanplay_provision::root(game.as_deref());
     set_startup_env("FANPLAY_HOME", data_root.clone());
     if headless
@@ -122,7 +130,9 @@ pub fn run(args: &[String]) -> Result<u8, Box<dyn Error>> {
         // the workspace UI drives them from here.
         fanplay_rgss::runtime_settings::reset();
         fanplay_rgss::runtime_settings::set_fast_forward(settings.fast_forward);
-        if let Some(fps) = settings.fps { fanplay_rgss::runtime_settings::set_rate_override(fps); }
+        if let Some(fps) = settings.fps {
+            fanplay_rgss::runtime_settings::set_rate_override(fps);
+        }
         // Pre-enable runtime patches so headless runs and CI can exercise them
         // without the workspace UI.
         fanplay_rgss::runtime_patch::reset();
@@ -132,7 +142,9 @@ pub fn run(args: &[String]) -> Result<u8, Box<dyn Error>> {
                 eprintln!("Runtime patch enabled: {id}");
             }
         }
-        for (id,value) in &settings.patch_values { fanplay_rgss::runtime_patch::set_value(id,*value); }
+        for (id, value) in &settings.patch_values {
+            fanplay_rgss::runtime_patch::set_value(id, *value);
+        }
         let ruby = ruby_rgss_core::RubyCore::new().map_err(std::io::Error::other)?;
         let status = ruby.startup_status();
         // Run Ruby finalizers while the Rust resource registry is still available.

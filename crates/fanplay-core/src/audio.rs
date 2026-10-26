@@ -11,7 +11,7 @@
 //! emulation thread.
 
 use std::cell::UnsafeCell;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 /// Logical destination for a decoded stream. Cores may use the named channels
@@ -148,6 +148,7 @@ struct RingShared {
     tail: AtomicUsize,
     underruns: AtomicU64,
     overruns: AtomicU64,
+    overrun_pending: AtomicBool,
 }
 
 // SAFETY: the ring is single-producer/single-consumer. The producer only writes
@@ -171,6 +172,7 @@ impl PcmRing {
             tail: AtomicUsize::new(0),
             underruns: AtomicU64::new(0),
             overruns: AtomicU64::new(0),
+            overrun_pending: AtomicBool::new(false),
         });
         (
             PcmRingProducer(Arc::clone(&shared)),
@@ -195,12 +197,14 @@ impl PcmRingProducer {
         if free == 0 || samples.is_empty() {
             if !samples.is_empty() {
                 ring.overruns.fetch_add(1, Ordering::Relaxed);
+                ring.overrun_pending.store(true, Ordering::Release);
             }
             return 0;
         }
         let count = samples.len().min(free);
         if count < samples.len() {
             ring.overruns.fetch_add(1, Ordering::Relaxed);
+            ring.overrun_pending.store(true, Ordering::Release);
         }
         for (offset, sample) in samples[..count].iter().enumerate() {
             // SAFETY: the slot is in the producer-owned region and no consumer
@@ -247,6 +251,12 @@ impl PcmRingConsumer {
             out[count..].fill(0);
             self.0.underruns.fetch_add(1, Ordering::Relaxed);
         }
+        // Discard stale audio after this callback has consumed its current
+        // block. Otherwise a transient overrun can become a persistent delay.
+        if self.0.overrun_pending.swap(false, Ordering::Acquire) {
+            let tail = self.0.tail.load(Ordering::Acquire);
+            self.0.head.store(tail, Ordering::Release);
+        }
         count
     }
 
@@ -255,6 +265,7 @@ impl PcmRingConsumer {
         let ring = &self.0;
         let tail = ring.tail.load(Ordering::Acquire);
         ring.head.store(tail, Ordering::Release);
+        ring.overrun_pending.store(false, Ordering::Release);
     }
 
     pub fn available_samples(&self) -> usize {
@@ -305,5 +316,18 @@ mod tests {
         assert_eq!(consumer.pop_fill(&mut out), 2);
         assert_eq!(out, [7, 8, 0, 0]);
         assert_eq!(consumer.status(1).underruns, 1);
+    }
+
+    #[test]
+    fn overrun_discards_stale_audio_after_the_current_callback() {
+        let (producer, consumer) = PcmRing::new(4);
+        producer.push(&[1, 2, 3, 4]);
+        assert_eq!(producer.push(&[5]), 0);
+
+        let mut out = [0; 2];
+        assert_eq!(consumer.pop_fill(&mut out), 2);
+        assert_eq!(out, [1, 2]);
+        assert_eq!(consumer.available_samples(), 0);
+        assert_eq!(consumer.status(1).overruns, 1);
     }
 }

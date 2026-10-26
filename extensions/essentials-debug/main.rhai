@@ -1,5 +1,6 @@
 // fanplay:id = pokemon-essentials-debug
 // fanplay:name = Essentials Debug
+// fanplay:cores = rgss
 // fanplay:version = 0.1.0
 // fanplay:capabilities = pokemon_essentials.debug.read,pokemon_essentials.debug.write
 // fanplay:operation = pokemon_essentials_debug

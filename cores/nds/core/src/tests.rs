@@ -177,6 +177,57 @@ fn frames_are_deterministic_and_touch_releases_outside_lower_screen() {
         b.output.lock().unwrap().frames
     );
 }
+
+#[test]
+fn extension_memory_spaces_and_action_replay_codes_work() {
+    let mut f = Fixture::new();
+    f.core.rom[0x100..0x104].copy_from_slice(&0x4433_2211u32.to_le_bytes());
+    f.core.emu.as_mut().unwrap().ds_slot.spi.contents_mut()[0..4]
+        .copy_from_slice(&0x8877_6655u32.to_le_bytes());
+
+    assert_eq!(
+        f.core
+            .handle_extension_operation(
+                "read",
+                &serde_json::json!({"space": "cartridge", "address": 0x100, "width": 4}),
+            )
+            .unwrap()["value"],
+        0x4433_2211u32
+    );
+    assert_eq!(
+        f.core
+            .handle_extension_operation(
+                "read",
+                &serde_json::json!({"space": "save", "address": 0, "width": 4}),
+            )
+            .unwrap()["value"],
+        0x8877_6655u32
+    );
+
+    f.core
+        .handle_extension_operation(
+            "write",
+            &serde_json::json!({"space": "ram", "address": 0x02001000u32, "width": 4, "value": 0x12345678u32}),
+        )
+        .unwrap();
+    assert_eq!(
+        cheats::read_memory(f.core.emu.as_mut().unwrap(), 0x02001000, 4),
+        0x1234_5678
+    );
+
+    f.core
+        .handle_extension_operation(
+            "cheat_add",
+            &serde_json::json!({"code": "02001000 00000099"}),
+        )
+        .unwrap();
+    f.core.cheats.apply(f.core.emu.as_mut().unwrap());
+    assert_eq!(
+        cheats::read_memory(f.core.emu.as_mut().unwrap(), 0x02001000, 4),
+        0x99
+    );
+}
+
 #[test]
 fn rejects_bad_headers_and_bios_sizes() {
     assert!(validate_rom(&[]).is_err());

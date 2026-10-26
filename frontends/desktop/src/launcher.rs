@@ -6,10 +6,10 @@
 //!
 //! The presentation follows the Adventure Journal design system: a calm
 //! library for discovering and returning to RPG adventures.
-use fanplay_ui::theme::{self, ButtonKind, ButtonSize, Tone};
 use fanplay_provision::catalog::CatalogEntry;
 use fanplay_provision::settings::Settings;
 use fanplay_provision::{self as provision, Repository};
+use fanplay_ui::theme::{self, ButtonKind, ButtonSize, Tone};
 use std::{
     path::PathBuf,
     sync::mpsc::{self, Receiver},

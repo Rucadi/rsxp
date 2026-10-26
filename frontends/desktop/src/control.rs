@@ -192,20 +192,20 @@ impl DesktopControl {
         } else {
             format!("{path}?{query}")
         };
-        let (operation, arguments) = match fanplay_rgss::api_bridge::route_http(&invocation.method, &target)
-        {
-            Ok(route) => route,
-            Err((status, message)) => {
-                return ControlResponse::error(
-                    if status == 404 { 409 } else { status },
-                    if status == 404 {
-                        format!("{message} (the game or its plugin is not ready)")
-                    } else {
-                        message
-                    },
-                );
-            }
-        };
+        let (operation, arguments) =
+            match fanplay_rgss::api_bridge::route_http(&invocation.method, &target) {
+                Ok(route) => route,
+                Err((status, message)) => {
+                    return ControlResponse::error(
+                        if status == 404 { 409 } else { status },
+                        if status == 404 {
+                            format!("{message} (the game or its plugin is not ready)")
+                        } else {
+                            message
+                        },
+                    );
+                }
+            };
         let id = match fanplay_rgss::api_bridge::send_from_ui(&operation, arguments) {
             Ok(id) => id,
             Err(error) => return ControlResponse::unavailable(error),
@@ -455,7 +455,8 @@ impl ControlHandler for DesktopControl {
     }
 
     fn dynamic_endpoints(&self) -> Vec<Endpoint> {
-        let Ok(value) = serde_json::from_str::<Value>(&fanplay_rgss::api_bridge::extension_routes_json())
+        let Ok(value) =
+            serde_json::from_str::<Value>(&fanplay_rgss::api_bridge::extension_routes_json())
         else {
             return Vec::new();
         };
@@ -661,8 +662,7 @@ impl DesktopControl {
                         ["gb", "gbc", "gba", "nds"]
                             .iter()
                             .any(|wanted| extension.eq_ignore_ascii_case(wanted))
-                    })
-                {
+                    }) {
                     path_buf
                         .file_stem()
                         .map(|stem| stem.to_string_lossy().into_owned())
@@ -675,9 +675,10 @@ impl DesktopControl {
                     .is_some_and(|e| e.eq_ignore_ascii_case("gba"))
                 {
                     "gba"
-                } else if path_buf.extension().is_some_and(|e| {
-                    e.eq_ignore_ascii_case("gb") || e.eq_ignore_ascii_case("gbc")
-                }) {
+                } else if path_buf
+                    .extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("gb") || e.eq_ignore_ascii_case("gbc"))
+                {
                     "gbc"
                 } else if path_buf
                     .extension()

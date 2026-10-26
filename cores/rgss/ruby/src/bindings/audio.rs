@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Magnus implementation of the RGSS Audio module for the desktop VM.
-use magnus::{function, prelude::*, Error, ExceptionClass, RString, Ruby, Value};
 use fanplay_rgss::engine;
+use magnus::{function, prelude::*, Error, ExceptionClass, RString, Ruby, Value};
 
 pub(super) fn bind(ruby: &Ruby) -> Result<(), Error> {
     let audio = ruby.define_module("Audio")?;

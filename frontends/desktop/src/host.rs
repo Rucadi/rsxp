@@ -118,8 +118,9 @@ impl DesktopHost {
                 let surface = instance
                     .create_surface(window.native())
                     .map_err(|error| error.to_string())?;
-                let gpu =
-                    fanplay_rgss::gpu::GpuRenderer::new_for_surface(width, height, instance, &surface)?;
+                let gpu = fanplay_rgss::gpu::GpuRenderer::new_for_surface(
+                    width, height, instance, &surface,
+                )?;
                 let display =
                     crate::gpu_present::GpuDisplay::new(&gpu, surface, window.physical_size())?;
                 eprintln!("Renderer: wgpu ({})", gpu.adapter_name);

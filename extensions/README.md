@@ -81,6 +81,63 @@ Plugin routes are intentionally not compiled into the host OpenAPI document;
 the live `/v1/extensions/routes` discovery endpoint is the source of truth for
 Rhai-owned API routes.
 
+## NDS memory and cheats
+
+An NDS plugin opts into the NDS session with:
+
+```rhai
+// fanplay:cores = nds
+```
+
+NDS memory helpers are asynchronous and return a request ID. Results arrive in
+the normal `on_operation_result(id, result)` callback. `nds_read` reads a
+little-endian 1-, 2-, or 4-byte value; `nds_read_bytes` reads up to 1 MiB;
+`nds_write` writes RAM or save RAM. The `space` argument may be
+`"cartridge"`/`"rom"`, `"ram"`/`"memory"`, or `"save"`/`"save_ram"`.
+Cartridge addresses are byte offsets into the ROM. RAM addresses use the DS CPU
+address space, so ARM9 main RAM and ARM7 work RAM can both be inspected.
+
+```rhai
+// fanplay:cores = nds
+
+fn on_activate() {
+    nds_read("cartridge", 0x100, 4);
+    nds_read("ram", 0x02000000, 4);
+    nds_read_bytes("cartridge", 0, 16);
+}
+
+fn on_operation_result(id, result) {
+    state_set("last_nds_request", id);
+    state_set("last_nds_result", result);
+}
+```
+
+`nds_add_cheat(code)` and `nds_remove_cheat(code)` accept standard Action
+Replay DS lines (`XXXXXXXX YYYYYYYY`, with optional spaces or hyphens),
+including multi-line conditional and repeat codes. `nds_clear_cheats()` removes
+all active codes. Cheats are applied once per emulated frame; cartridge ROM is
+read-only, while RAM and save RAM are the writable spaces.
+
+### Pokémon White Spain/EUR example
+
+[`pokemon-white-cheats.rhai`](pokemon-white-cheats.rhai) is a complete NDS
+plugin with a small UI for Pokémon White (Spain/EUR). It applies the confirmed
+max-money code at `0x0223CD6C` and removes all active cheats when disabled or
+when the plugin shuts down. The code is intentionally kept as a dynamically
+loaded example instead of being bundled into every session.
+
+Load it from the repository root with:
+
+```sh
+FANPLAY_EXTENSIONS_DIR="$PWD/extensions/pokemon-white-cheats.rhai" \
+  cargo run -p fanplay-desktop --bin fanplay
+```
+
+It can also be loaded through Runtime tools → Import plugin. After Pokémon
+White (Spain/EUR) is running, open the plugin panel and select **Enable max
+money**. This address is region-specific; do not use it for the US/NA release
+or Pokémon White 2.
+
 ## HTML plugin views
 
 A plugin that declares `ui.webview` can open an HTML GUI from its Rhai event

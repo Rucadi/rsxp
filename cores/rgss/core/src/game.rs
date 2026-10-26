@@ -6,8 +6,8 @@
 //! its own process. In-process use must therefore keep the RGSS core in a
 //! dedicated worker process until the shim is made cwd-independent.
 
-use fanplay_rgss::archive::Archive;
 use fanplay_core::{Content, ContentKind, CoreError, CoreResult, Platform};
+use fanplay_rgss::archive::Archive;
 use std::ffi::OsStr;
 use std::path::Path;
 

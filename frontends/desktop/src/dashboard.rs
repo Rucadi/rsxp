@@ -28,17 +28,18 @@
 //!
 //! Protocol notes enforced here: TCP sessions use a handshake, 30 s connect
 //! timeout, token check, and 5 s write timeout. Poll replies carry `control`;
-//! frame messages carry `width`/`height` plus either a
+//! frame messages carry `width`/`height` plus either a shared NDS frame slot, a
 //! `gpu_bytes` packet (bounded to 512 MiB, decoded via `GpuFrame::decode`) or
-//! raw ARGB pixels (bounded to 16,777,216 pixels per frame). GPU packets are
+//! raw RGBA pixels (bounded to 16,777,216 pixels per frame). GPU packets are
 //! merged into a pending frame and, once queued upload bytes exceed 64 MiB,
 //! the I/O thread throttles to apply backpressure; ordered atlas deltas mean
 //! non-draw-list data must not be dropped.
 use crate::gpu_callback::{GameCallback, GameGpu};
 use crate::session::{read_message, write_message};
+use crate::shared_frames::SharedFrames;
 use base64::Engine as _;
-use fanplay_rgss::{graphics::Bitmap, input::Input};
 use fanplay_extension_api::{OperationError, OperationRequest, OperationResponse};
+use fanplay_rgss::{graphics::Bitmap, input::Input};
 use serde_json::{json, Value};
 #[cfg(not(windows))]
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -90,6 +91,7 @@ struct Exchange {
     frames: u64,
     text_input: bool,
     cursor: bool,
+    extension_responses: Vec<OperationResponse>,
 }
 struct Session {
     core_id: &'static str,
@@ -98,6 +100,7 @@ struct Session {
     stopping: Arc<AtomicBool>,
     transport: Arc<PlatformTransport>,
     output_threads: Vec<std::thread::JoinHandle<()>>,
+    shared_frame_path: Option<PathBuf>,
 }
 impl Drop for Session {
     fn drop(&mut self) {
@@ -105,6 +108,9 @@ impl Drop for Session {
         self.transport.wake();
         let _ = self.child.kill();
         let _ = self.child.wait();
+        if let Some(path) = &self.shared_frame_path {
+            let _ = std::fs::remove_file(path);
+        }
     }
 }
 // Forward the original bytes to the launch terminal while retaining a bounded,
@@ -439,6 +445,7 @@ impl Session {
         args: &[String],
         jit: fanplay_ui::session::RubyJit,
         gpu_available: bool,
+        repaint: egui::Context,
     ) -> Result<Self, String> {
         let transport = Arc::new(PlatformTransport::new()?);
         let executable = std::env::current_exe()
@@ -452,11 +459,28 @@ impl Session {
         });
         let is_gbc = args.windows(2).any(|pair| {
             pair[0] == "--game"
-                && PathBuf::from(&pair[1]).extension().is_some_and(|extension| {
-                    extension.eq_ignore_ascii_case("gb")
-                        || extension.eq_ignore_ascii_case("gbc")
-                })
+                && PathBuf::from(&pair[1])
+                    .extension()
+                    .is_some_and(|extension| {
+                        extension.eq_ignore_ascii_case("gb")
+                            || extension.eq_ignore_ascii_case("gbc")
+                    })
         });
+        let shared_frame_path = if is_nds {
+            let path = std::env::temp_dir().join(format!(
+                "fanplay-frames-{}-{}.bin",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |duration| duration.as_nanos())
+            ));
+            let shared = SharedFrames::create(&path)?;
+            command.env("FANPLAY_FRAME_SHM", &path);
+            drop(shared);
+            Some(path)
+        } else {
+            None
+        };
         command
             .arg("run")
             .args(args)
@@ -465,11 +489,9 @@ impl Session {
                 "FANPLAY_RENDERER",
                 if gpu_available { "wgpu" } else { "software" },
             )
-            .env(
-                "FANPLAY_NDS_RENDERER",
-                if is_nds { "wgpu" } else { "software" },
-            )
             .env("FANPLAY_JIT", jit.as_str());
+        // Let the NDS core select its software default. Explicit environment
+        // and per-game overrides may still opt into experimental GPU readback.
         if !gpu_available {
             command.args(["--renderer", "software"]);
         }
@@ -478,7 +500,8 @@ impl Session {
             .find(|a| a[0] == "--game")
             .map(|a| PathBuf::from(&a[1]))
         {
-            let settings = fanplay_provision::settings::for_game(&path).map_err(|e| e.to_string())?;
+            let settings =
+                fanplay_provision::settings::for_game(&path).map_err(|e| e.to_string())?;
             for (key, value) in settings.environment() {
                 command.env(key, value);
             }
@@ -498,6 +521,10 @@ impl Session {
         let shared = exchange.clone();
         let stop = stopping.clone();
         let io_transport = Arc::clone(&transport);
+        let shared_frames = shared_frame_path
+            .as_ref()
+            .map(|path| SharedFrames::open(path))
+            .transpose()?;
         std::thread::spawn(move || {
             let result = (|| -> Result<(), String> {
                 let Some((mut stream, mut control_stream)) = io_transport.streams(&stop)? else {
@@ -515,6 +542,7 @@ impl Session {
                             state.control["scroll"] = json!(0);
                             state.control["text"] = json!("");
                             state.control["api"] = json!("");
+                            state.control["nds_requests"] = json!([]);
                             // Save/load state requests are one-shot commands.
                             // Clear them in the transport thread immediately
                             // after cloning so a fast runner cannot apply the
@@ -532,8 +560,20 @@ impl Session {
                         if w == 0 || h == 0 || u64::from(w) * u64::from(h) > 16_777_216 {
                             return Err("Invalid runner frame".into());
                         }
-                        let (frame, gpu_frame) = if let Some(length) = header["gpu_bytes"].as_u64()
+                        let (frame, gpu_frame) = if let Some(slot) = header["shared_slot"].as_u64()
                         {
+                            let length = w as usize * h as usize * 4;
+                            let Some(shared) = &shared_frames else {
+                                return Err("runner sent a shared frame without a mapping".into());
+                            };
+                            let Some(bytes) = shared.read(slot as usize, length) else {
+                                return Err("runner sent an invalid shared frame slot".into());
+                            };
+                            let frame =
+                                Bitmap::from_rgba(w, h, bytes).map_err(|e| e.to_string())?;
+                            shared.release(slot as usize);
+                            (Some(frame), None)
+                        } else if let Some(length) = header["gpu_bytes"].as_u64() {
                             if length > 512 * 1024 * 1024 {
                                 return Err("GPU packet exceeds transport limit".into());
                             }
@@ -547,15 +587,8 @@ impl Session {
                             std::io::Read::read_exact(&mut *stream, &mut bytes).map_err(
                                 |error| format!("dashboard IPC frame read failed: {error}"),
                             )?;
-                            let pixels = bytes
-                                .chunks_exact(4)
-                                .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
-                                .collect();
                             (
-                                Some(
-                                    Bitmap::from_argb_owned(w, h, pixels)
-                                        .map_err(|e| e.to_string())?,
-                                ),
+                                Some(Bitmap::from_rgba(w, h, &bytes).map_err(|e| e.to_string())?),
                                 None,
                             )
                         };
@@ -569,6 +602,30 @@ impl Session {
                             }
                         }
                         let mut state = shared.lock().unwrap();
+                        if let Some(replies) = header["extension_replies"].as_array() {
+                            for reply in replies {
+                                let (Some(id), Some(generation), Some(body)) =
+                                    (reply[0].as_u64(), reply[1].as_u64(), reply[2].as_str())
+                                else {
+                                    continue;
+                                };
+                                let body =
+                                    serde_json::from_str::<Value>(body).unwrap_or(Value::Null);
+                                let result = if let Some(error) = body.get("error") {
+                                    Err(OperationError::new(
+                                        error["code"].as_str().unwrap_or("nds"),
+                                        error["message"].as_str().unwrap_or("NDS operation failed"),
+                                    ))
+                                } else {
+                                    Ok(body.get("result").cloned().unwrap_or(Value::Null))
+                                };
+                                state.extension_responses.push(OperationResponse {
+                                    id,
+                                    generation,
+                                    result,
+                                });
+                            }
+                        }
                         state.fps = header["fps"].as_f64().unwrap_or(0.0);
                         state.frames = header["frames"].as_u64().unwrap_or(0);
                         state.text_input = header["text_input"].as_bool().unwrap_or(false);
@@ -606,6 +663,10 @@ impl Session {
                         }
                         let mut state = shared.lock().unwrap();
                         state.rate = header["rate"].as_u64().unwrap_or(0) as u32;
+                        drop(state);
+                        // Wake presentation when a frame arrives instead of waiting
+                        // for the next periodic UI poll to discover it.
+                        repaint.request_repaint();
                     }
                 }
             })();
@@ -614,12 +675,19 @@ impl Session {
             }
         });
         Ok(Self {
-            core_id: if is_nds { "nds" } else if is_gbc { "gbc" } else { "rgss" },
+            core_id: if is_nds {
+                "nds"
+            } else if is_gbc {
+                "gbc"
+            } else {
+                "rgss"
+            },
             child,
             exchange,
             stopping,
             transport,
             output_threads,
+            shared_frame_path,
         })
     }
 }
@@ -770,7 +838,8 @@ impl DesktopApp {
     fn stop_session(&mut self) {
         self.session.take();
         if self.shift_forwarded {
-            self.input.key_up(fanplay_ui::controls::keyboard_binding(225));
+            self.input
+                .key_up(fanplay_ui::controls::keyboard_binding(225));
             self.shift_forwarded = false;
         }
         fanplay_rgss::api_bridge::end_session();
@@ -1045,11 +1114,14 @@ impl DesktopApp {
         };
         let mut slots = std::collections::BTreeMap::new();
         for slot in ["1", "2", "3"] {
-            slots.insert(slot.to_owned(), fanplay_frontend::StateSnapshot {
-                slot: slot.to_owned(),
-                saved_at: None,
-                bytes: 0,
-            });
+            slots.insert(
+                slot.to_owned(),
+                fanplay_frontend::StateSnapshot {
+                    slot: slot.to_owned(),
+                    saved_at: None,
+                    bytes: 0,
+                },
+            );
         }
         if let Ok(snapshots) = store.list_state_snapshots() {
             for snapshot in snapshots {
@@ -1082,24 +1154,32 @@ impl DesktopApp {
                         }
                     }));
                 }
-                Err(error) => self.shared.workspace.session.as_mut().unwrap().error =
-                    Some(format!("Could not encode state: {error}")),
+                Err(error) => {
+                    self.shared.workspace.session.as_mut().unwrap().error =
+                        Some(format!("Could not encode state: {error}"))
+                }
             },
-            Ok(None) => self.shared.workspace.session.as_mut().unwrap().error =
-                Some(format!("State slot {slot} is empty")),
-            Err(error) => self.shared.workspace.session.as_mut().unwrap().error =
-                Some(format!("Could not load state {slot}: {error}")),
+            Ok(None) => {
+                self.shared.workspace.session.as_mut().unwrap().error =
+                    Some(format!("State slot {slot} is empty"))
+            }
+            Err(error) => {
+                self.shared.workspace.session.as_mut().unwrap().error =
+                    Some(format!("Could not load state {slot}: {error}"))
+            }
         }
     }
 
     fn start_game(&mut self, args: Vec<String>, ctx: &egui::Context) {
         let cartridge_game = args.windows(2).any(|pair| {
             pair[0] == "--game"
-                && PathBuf::from(&pair[1]).extension().is_some_and(|extension| {
-                    ["gb", "gbc", "gba", "nds"]
-                        .iter()
-                        .any(|wanted| extension.eq_ignore_ascii_case(wanted))
-                })
+                && PathBuf::from(&pair[1])
+                    .extension()
+                    .is_some_and(|extension| {
+                        ["gb", "gbc", "gba", "nds"]
+                            .iter()
+                            .any(|wanted| extension.eq_ignore_ascii_case(wanted))
+                    })
         });
         let settings = args
             .windows(2)
@@ -1123,9 +1203,7 @@ impl DesktopApp {
         // intended for RGSS. Cartridge speed is selected explicitly through
         // the workspace presets, so do not accidentally throttle an NDS/GBA/
         // GB session with an RGSS setting such as 40 FPS.
-        if !cartridge_game
-            && let Some(fps) = self.active_settings.fps
-        {
+        if !cartridge_game && let Some(fps) = self.active_settings.fps {
             fanplay_rgss::runtime_settings::set_rate_override(fps);
         }
         fanplay_rgss::runtime_patch::reset();
@@ -1173,8 +1251,9 @@ impl DesktopApp {
         for (patch, value) in &self.active_settings.patch_values {
             fanplay_rgss::runtime_patch::set_value(patch, *value);
         }
-        self.shared.workspace.backend =
-            Box::new(fanplay_ui::workspace_services::LocalServices::new(root.clone()));
+        self.shared.workspace.backend = Box::new(
+            fanplay_ui::workspace_services::LocalServices::new(root.clone()),
+        );
         let jit = self.shared.workspace.session.as_ref().unwrap().ruby_jit;
         // Cartridge cores currently produce CPU bitmaps. Keep those frames on
         // the shared eframe texture path instead of starting an unused RGSS
@@ -1184,6 +1263,7 @@ impl DesktopApp {
             &args,
             jit,
             self.gpu_callback.is_some() && game_uses_rgss_compositor,
+            ctx.clone(),
         ) {
             Ok(session) => {
                 self.session = Some(session);
@@ -1195,8 +1275,8 @@ impl DesktopApp {
                     panel.status = "Starting…".into();
                     panel.error = None;
                 }
-                if game_uses_rgss_compositor {
-                    if let Err(error) = self.shared.activate_plugins() {
+                if let Some(core_id) = self.session.as_ref().map(|session| session.core_id) {
+                    if let Err(error) = self.shared.activate_plugins_for_core(core_id) {
                         self.shared.workspace.session.as_mut().unwrap().error = Some(error);
                     }
                 }
@@ -1249,10 +1329,12 @@ impl DesktopApp {
         self.input.begin_frame();
         let shift = ctx.input(|input| input.modifiers.shift);
         if self.session.is_some() && shift && !self.shift_forwarded {
-            self.input.key_down(fanplay_ui::controls::keyboard_binding(225));
+            self.input
+                .key_down(fanplay_ui::controls::keyboard_binding(225));
             self.shift_forwarded = true;
         } else if (!shift || self.session.is_none()) && self.shift_forwarded {
-            self.input.key_up(fanplay_ui::controls::keyboard_binding(225));
+            self.input
+                .key_up(fanplay_ui::controls::keyboard_binding(225));
             self.shift_forwarded = false;
         }
         if ctx.egui_wants_keyboard_input() {
@@ -1300,7 +1382,10 @@ impl DesktopApp {
                             if self
                                 .session
                                 .as_ref()
-                                .is_some_and(|session| session.core_id == "nds") => 1,
+                                .is_some_and(|session| session.core_id == "nds") =>
+                        {
+                            1
+                        }
                         egui::PointerButton::Primary => -1,
                         egui::PointerButton::Middle => -2,
                         egui::PointerButton::Secondary => -3,
@@ -1367,6 +1452,34 @@ impl DesktopApp {
                     generation: request.generation,
                     result: Ok(json!({"closed": true})),
                 });
+                continue;
+            }
+            if let Some(operation) = request
+                .operation
+                .split_once(".__nds.")
+                .map(|(_, operation)| operation)
+            {
+                if let Some(session) = &self.session {
+                    let mut state = session.exchange.lock().unwrap();
+                    if !state.control["nds_requests"].is_array() {
+                        state.control["nds_requests"] = json!([]);
+                    }
+                    let requests = state.control["nds_requests"]
+                        .as_array_mut()
+                        .expect("NDS request queue must be an array");
+                    requests.push(json!({
+                        "id": request.id,
+                        "generation": request.generation,
+                        "operation": operation,
+                        "arguments": request.arguments,
+                    }));
+                } else {
+                    let _ = self.shared.dispatch_plugin_response(OperationResponse {
+                        id: request.id,
+                        generation: request.generation,
+                        result: Err(OperationError::new("no_session", "no active NDS session")),
+                    });
+                }
                 continue;
             }
             if let Some(result) = self
@@ -1483,11 +1596,14 @@ impl DesktopApp {
                         }
                         continue;
                     }
-                    match fanplay_rgss::api_bridge::route_http(&method.to_ascii_uppercase(), &target)
-                        .and_then(|(operation, args)| {
-                            fanplay_rgss::api_bridge::send_from_ui(&operation, args)
-                                .map_err(|error| (500, error))
-                        }) {
+                    match fanplay_rgss::api_bridge::route_http(
+                        &method.to_ascii_uppercase(),
+                        &target,
+                    )
+                    .and_then(|(operation, args)| {
+                        fanplay_rgss::api_bridge::send_from_ui(&operation, args)
+                            .map_err(|error| (500, error))
+                    }) {
                         Ok(bridge_id) => {
                             self.plugin_webview_api_bridge.insert(bridge_id, id);
                         }
@@ -1562,6 +1678,12 @@ impl DesktopApp {
         let Some(session) = &mut self.session else {
             return;
         };
+        let mut state = session.exchange.lock().unwrap();
+        let extension_responses = std::mem::take(&mut state.extension_responses);
+        drop(state);
+        for response in extension_responses {
+            let _ = self.shared.dispatch_plugin_response(response);
+        }
         let mut state = session.exchange.lock().unwrap();
         self.shared.workspace.logs = state.logs.iter().cloned().collect();
         if let Some(frame) = state.frame.take() {
@@ -1659,11 +1781,13 @@ impl DesktopApp {
         if paused {
             self.shared.workspace.session.as_mut().unwrap().status = "Paused".into();
         }
+        let nds_requests = std::mem::take(&mut state.control["nds_requests"]);
         state.control = json!({"paused":paused,"performance":self.shared.workspace.performance_visible(),
             "downs":downs,"ups":ups,"keys":(-8..640).filter(|key| ![58,59,60,61,67,68].contains(key) && self.input.pressed(*key)).collect::<Vec<_>>(),
             "x":mouse.x as i32,"y":mouse.y as i32,"inside":self.input.mouse_inside,
             "scroll":self.input.scroll_v,"text":std::mem::take(&mut self.input.text),"fast":fanplay_rgss::runtime_settings::fast_forward(),
             "rate":fanplay_rgss::runtime_settings::rate_override(),"api":old_api+api.as_str(),
+            "nds_requests":nds_requests,
             "state":self.pending_state.take().unwrap_or(Value::Null),
             "patches":fanplay_rgss::runtime_patch::patches().iter().map(|patch|json!([patch.id,fanplay_rgss::runtime_patch::is_enabled(&patch.id),fanplay_rgss::runtime_patch::value(&patch.id)])).collect::<Vec<_>>()});
         if let Some(error) = state.error.take() {
@@ -1763,12 +1887,22 @@ impl eframe::App for DesktopApp {
         }
         let (supports_save_states, state_slots) = self.state_slots();
         let info = fanplay_ui::WorkspaceInfo {
-            core_id: self.session.as_ref().map_or("rgss", |session| session.core_id),
+            core_id: self
+                .session
+                .as_ref()
+                .map_or("rgss", |session| session.core_id),
             logical_size: self.logical_size,
             fps: self.fps,
-            base_fps: if self.session.as_ref().is_some_and(|session| session.core_id == "rgss")
+            base_fps: if self
+                .session
+                .as_ref()
+                .is_some_and(|session| session.core_id == "rgss")
             {
-                if self.active_settings.rgss == Some(1) { 40 } else { 60 }
+                if self.active_settings.rgss == Some(1) {
+                    40
+                } else {
+                    60
+                }
             } else {
                 60
             },
@@ -1826,7 +1960,7 @@ impl eframe::App for DesktopApp {
         let output_open_patches = output.open_patches_folder;
         self.gpu_state.lock().unwrap().rect = self.game_rect;
         if self.session.is_some() {
-            ctx.request_repaint_after(Duration::from_millis(16));
+            ctx.request_repaint_after(session_repaint_interval(self.session.as_ref()));
         }
         let actions = std::mem::take(&mut self.shared.workspace.session_actions);
         if let Some(port) = actions.start_api {
@@ -1994,7 +2128,18 @@ impl eframe::App for DesktopApp {
                 self.save_task = Some(receiver);
             }
         }
-        ctx.request_repaint_after(Duration::from_millis(16));
+        ctx.request_repaint_after(session_repaint_interval(self.session.as_ref()));
+    }
+}
+
+fn session_repaint_interval(session: Option<&Session>) -> Duration {
+    // The DS runs at 33,513,982 / 560,190 ≈ 59.826 Hz. Matching that
+    // cadence avoids periodically presenting the same frame twice while
+    // waiting for the next IPC frame. Other cores retain the 60 Hz UI tick.
+    if session.is_some_and(|session| session.core_id == "nds") {
+        Duration::from_micros(16_715)
+    } else {
+        Duration::from_millis(16)
     }
 }
 

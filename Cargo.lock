@@ -1750,6 +1750,7 @@ dependencies = [
  "gtk",
  "image",
  "kira",
+ "memmap2",
  "pollster 1.0.1",
  "rfd",
  "serde",

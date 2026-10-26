@@ -1,6 +1,7 @@
 // fanplay:id = essentials-encounters
 // fanplay:name = Essentials Map Encounters
 // fanplay:version = 0.1.0
+// fanplay:cores = rgss
 // fanplay:capabilities = ruby.inject,ruby.unload,ui.webview,pokemon_essentials.read
 // fanplay:panel = encounters,Current Map Encounters
 

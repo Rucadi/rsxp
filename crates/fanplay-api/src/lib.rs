@@ -10,7 +10,7 @@ use fanplay_extension_api::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -31,42 +31,66 @@ impl OperationRegistry {
         manifest
             .validate()
             .map_err(|error| ApiError::InvalidManifest(error.to_string()))?;
-        self.remove_extension(&manifest.id);
+
+        // Build and validate the replacement off to the side. A route
+        // collision must not remove the currently registered extension or
+        // leave only a prefix of the new manifest installed.
+        let replaced: HashSet<_> = self
+            .operations
+            .iter()
+            .filter(|(_, operation)| operation.extension_id == manifest.id)
+            .map(|(name, _)| name.clone())
+            .collect();
+        let mut names = HashSet::with_capacity(manifest.operations.len());
+        let mut routes = HashSet::new();
+        let mut operations = Vec::with_capacity(manifest.operations.len());
+        let mut aliases = Vec::new();
+
         for declaration in &manifest.operations {
             let name = format!("{}.{}", manifest.id, declaration.id);
-            if self.operations.contains_key(&name) {
+            if !names.insert(name.clone())
+                || (self.operations.contains_key(&name) && !replaced.contains(&name))
+            {
                 return Err(ApiError::DuplicateOperation(name));
             }
             for alias in &declaration.route_aliases {
                 let key = route_key(&alias.method, &alias.path);
-                if self.aliases.contains_key(&key) {
+                if !routes.insert(key.clone())
+                    || self
+                        .aliases
+                        .get(&key)
+                        .is_some_and(|existing| !replaced.contains(existing))
+                {
                     return Err(ApiError::DuplicateRoute(key));
                 }
-                self.aliases.insert(key, name.clone());
+                aliases.push((key, name.clone()));
             }
-            self.operations.insert(
+            operations.push((
                 name.clone(),
                 RegisteredOperation {
                     name,
                     extension_id: manifest.id.clone(),
                     declaration: declaration.clone(),
                 },
-            );
+            ));
         }
+
+        self.remove_extension(&manifest.id);
+        self.operations.extend(operations);
+        self.aliases.extend(aliases);
         Ok(())
     }
 
     pub fn remove_extension(&mut self, extension_id: &str) {
-        let names: Vec<_> = self
+        let names: HashSet<_> = self
             .operations
             .iter()
             .filter(|(_, operation)| operation.extension_id == extension_id)
             .map(|(name, _)| name.clone())
             .collect();
-        for name in names {
-            self.operations.remove(&name);
-            self.aliases.retain(|_, operation| operation != &name);
-        }
+        self.operations.retain(|name, _| !names.contains(name));
+        self.aliases
+            .retain(|_, operation| !names.contains(operation));
     }
 
     pub fn get(&self, name: &str) -> Option<&RegisteredOperation> {
@@ -106,7 +130,10 @@ pub struct ApiRouter {
     generation: u64,
     next_id: u64,
     max_pending: usize,
-    pending: HashMap<u64, OperationRequest>,
+    // The pending request payload is returned to the caller by `invoke`; only
+    // its id is needed to validate completion. Keeping the full request here
+    // would deep-clone its JSON arguments on every invocation.
+    pending: HashSet<u64>,
     completed: HashMap<u64, OperationResponse>,
 }
 
@@ -117,7 +144,7 @@ impl Default for ApiRouter {
             generation: 1,
             next_id: 0,
             max_pending: 256,
-            pending: HashMap::new(),
+            pending: HashSet::new(),
             completed: HashMap::new(),
         }
     }
@@ -165,7 +192,7 @@ impl ApiRouter {
             operation: invocation.operation,
             arguments: invocation.arguments,
         };
-        self.pending.insert(request.id, request.clone());
+        self.pending.insert(request.id);
         Ok(request)
     }
 
@@ -173,7 +200,7 @@ impl ApiRouter {
         if response.generation != self.generation {
             return Ok(());
         }
-        if self.pending.remove(&response.id).is_none() {
+        if !self.pending.remove(&response.id) {
             return Err(ApiError::UnknownRequest(response.id));
         }
         self.completed.insert(response.id, response);

@@ -8,12 +8,11 @@
 //! channel. If no dashboard transport is configured, connect returns `Ok(None)`.
 //!
 //! Frames are sent one-way: a JSON header from [`Runner::frame_header`] (fps/frame
-//! counters, input/rate state and relay
-//! replies) followed by the pixel payload. [`Runner::frame`] writes little-endian
-//! pixel bytes (zero-copy `bytemuck` cast when the `gpu` feature is on and the target
-//! is little-endian); with the `gpu` feature, [`Runner::gpu_frame`] instead writes an
-//! encoded GPU frame and records `gpu_bytes`. [`write_message`]/[`read_message`] use a
-//! 4-byte little-endian length prefix with a 16 MiB cap.
+//! counters, input/rate state and relay replies) followed by the pixel payload.
+//! Cartridge NDS sessions use a shared-memory slot and send only `shared_slot`;
+//! RGSS software sessions use tightly packed RGBA bytes, while GPU sessions use
+//! [`Runner::gpu_frame`]. [`write_message`]/[`read_message`] use a 4-byte
+//! little-endian length prefix with a 16 MiB cap.
 //!
 //! [`Runner::poll`] sends a poll request and applies queued controls. Only the first
 //! poll waits (up to 30s) for the handshake; afterward controls are drained without
@@ -21,14 +20,51 @@
 //! [`Runner::apply_control`] maps JSON fields onto `Input` (keys, mouse, scroll, text),
 //! runtime settings (fast-forward, rate override) and runtime patches, returning
 //! `false` on a `stop` request or when the stream/peer is lost.
-use serde_json::{json, Value};
 use base64::Engine as _;
+use serde_json::{json, Value};
 use std::io::{Read, Write};
 #[cfg(any(not(windows), test))]
 use std::net::TcpStream;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 pub trait WriteStream: Write + Send {}
 impl<T: Write + Send> WriteStream for T {}
+
+pub struct ExtensionReplyQueue {
+    pending: AtomicUsize,
+    replies: Mutex<Vec<(u64, u64, String)>>,
+}
+
+impl ExtensionReplyQueue {
+    pub fn new() -> Self {
+        Self {
+            pending: AtomicUsize::new(0),
+            replies: Mutex::new(Vec::new()),
+        }
+    }
+
+    pub fn push(&self, reply: (u64, u64, String)) {
+        let mut replies = self
+            .replies
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        replies.push(reply);
+        self.pending.fetch_add(1, Ordering::Release);
+    }
+
+    fn drain(&self) -> Vec<(u64, u64, String)> {
+        if self.pending.load(Ordering::Acquire) == 0 {
+            return Vec::new();
+        }
+        let mut replies = self
+            .replies
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        self.pending.store(0, Ordering::Release);
+        std::mem::take(&mut *replies)
+    }
+}
 
 /// Input surface understood by the transport. The RGSS host implements this
 /// for its engine input buffer; cartridge hosts use the same mapping without
@@ -46,6 +82,14 @@ pub trait TransportInput {
     fn load_state(&mut self, _slot: &str, _data: &[u8]) {}
     fn patch(&mut self, _id: &str, _enabled: bool, _value: Option<f64>) {}
     fn relay_api(&mut self, _request: &str) {}
+    fn extension_request(
+        &mut self,
+        _id: u64,
+        _generation: u64,
+        _operation: &str,
+        _arguments: &Value,
+    ) {
+    }
 }
 
 #[cfg(feature = "rgss")]
@@ -121,6 +165,7 @@ pub struct Runner {
     fps: f64,
     fps_frames: u32,
     fps_start: std::time::Instant,
+    extension_replies: Option<Arc<ExtensionReplyQueue>>,
 }
 impl Runner {
     pub fn connect() -> Result<Option<Self>, String> {
@@ -141,7 +186,8 @@ impl Runner {
             stream
                 .set_nodelay(true)
                 .map_err(|e| format!("dashboard IPC set_nodelay failed: {e}"))?;
-            let token = json!({"token": std::env::var("FANPLAY_SESSION_TOKEN").unwrap_or_default()});
+            let token =
+                json!({"token": std::env::var("FANPLAY_SESSION_TOKEN").unwrap_or_default()});
             write_message(&mut stream, &token)
                 .map_err(|error| format!("dashboard IPC handshake write failed: {error}"))?;
             let mut control_stream = TcpStream::connect(&address)
@@ -184,8 +230,14 @@ impl Runner {
             fps: 0.0,
             fps_frames: 0,
             fps_start: std::time::Instant::now(),
+            extension_replies: None,
         }))
     }
+
+    pub fn set_extension_replies(&mut self, replies: Arc<ExtensionReplyQueue>) {
+        self.extension_replies = Some(replies);
+    }
+
     fn frame_header(&mut self, width: u32, height: u32) -> Value {
         self.frames += 1;
         self.fps_frames += 1;
@@ -206,31 +258,41 @@ impl Runner {
         };
         #[cfg(not(feature = "rgss"))]
         let reported_rate = self.reported_rate;
-        json!({"fps":self.fps,"frames":self.frames,"text_input":self.text_input,"cursor":self.cursor,"width":width,"height":height,"rate":reported_rate,"replies":replies})
+        let extension_replies = self
+            .extension_replies
+            .as_ref()
+            .map(|replies| replies.drain())
+            .unwrap_or_default();
+        let mut header = json!({"fps":self.fps,"frames":self.frames,"text_input":self.text_input,"cursor":self.cursor,"width":width,"height":height,"rate":reported_rate,"replies":replies});
+        if !extension_replies.is_empty() {
+            header["extension_replies"] = json!(extension_replies
+                .into_iter()
+                .map(|(id, generation, body)| json!([id, generation, body]))
+                .collect::<Vec<_>>());
+        }
+        header
     }
 
-    /// Writes a frame already converted to packed ARGB (native-endian `u32`).
-    pub fn frame_argb(&mut self, width: u32, height: u32, pixels: &[u32]) -> Result<(), String> {
+    /// Writes a frame already converted to tightly packed RGBA bytes.
+    pub fn frame_rgba(&mut self, width: u32, height: u32, pixels: &[u8]) -> Result<(), String> {
         let header = self.frame_header(width, height);
         write_message(&mut self.stream, &header)?;
-        #[cfg(target_endian = "little")]
-        self.stream
-            .write_all(bytemuck::cast_slice(pixels))
-            .map_err(|e| e.to_string())?;
-        #[cfg(not(target_endian = "little"))]
-        {
-            let mut bytes = Vec::with_capacity(pixels.len() * 4);
-            for pixel in pixels {
-                bytes.extend_from_slice(&pixel.to_le_bytes());
-            }
-            self.stream.write_all(&bytes).map_err(|e| e.to_string())?;
-        }
+        self.stream.write_all(pixels).map_err(|e| e.to_string())?;
         self.stream.flush().map_err(|e| e.to_string())
+    }
+
+    /// Announces a frame already written to the shared cartridge ring.
+    pub fn frame_shared(&mut self, width: u32, height: u32, slot: usize) -> Result<(), String> {
+        let header = self.frame_header(width, height);
+        let mut header = header;
+        header["shared_slot"] = json!(slot);
+        write_message(&mut self.stream, &header)
     }
 
     #[cfg(feature = "rgss")]
     pub fn frame(&mut self, frame: &fanplay_rgss::graphics::Bitmap) -> Result<(), String> {
-        self.frame_argb(frame.width(), frame.height(), frame.pixels())
+        let pixels = frame.to_rgba();
+        self.frame_rgba(frame.width(), frame.height(), &pixels)
     }
 
     #[cfg(all(feature = "gpu", feature = "rgss"))]
@@ -328,7 +390,8 @@ impl Runner {
         if let (Some(slot), Some(data)) = (
             value["state"]["load_state"]["slot"].as_str(),
             value["state"]["load_state"]["data"].as_str(),
-        ) && let Ok(data) = base64::engine::general_purpose::STANDARD.decode(data) {
+        ) && let Ok(data) = base64::engine::general_purpose::STANDARD.decode(data)
+        {
             input.load_state(slot, &data);
         }
         if let Some(patches) = value["patches"].as_array() {
@@ -340,6 +403,18 @@ impl Runner {
         }
         if let Some(api) = value["api"].as_str() {
             input.relay_api(api);
+        }
+        if let Some(requests) = value["nds_requests"].as_array() {
+            for request in requests {
+                let (Some(id), Some(generation), Some(operation)) = (
+                    request["id"].as_u64(),
+                    request["generation"].as_u64(),
+                    request["operation"].as_str(),
+                ) else {
+                    continue;
+                };
+                input.extension_request(id, generation, operation, &request["arguments"]);
+            }
         }
         true
     }
@@ -373,6 +448,7 @@ mod tests {
             fps: 0.0,
             fps_frames: 0,
             fps_start: std::time::Instant::now(),
+            extension_replies: None,
         };
         let mut input = Input::default();
         assert!(runner.poll(&mut input));

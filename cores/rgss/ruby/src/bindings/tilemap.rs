@@ -13,11 +13,11 @@
 //! `engine::with_runtime_mut` call applies the updates; the whole call runs under
 //! the native `tilemap_sync_native` bridge. Returns
 //! `false` (game fallback) on any unsupported sprite.
-use magnus::{function, prelude::*, Error, RArray, RModule, RObject, Ruby, TryConvert, Value};
 use fanplay_rgss::{
     engine::{self, NativeTileUpdate},
     graphics::{Color, Rect, Tone},
 };
+use magnus::{function, prelude::*, Error, RArray, RModule, RObject, Ruby, TryConvert, Value};
 
 fn apply(
     ruby: &Ruby,

@@ -137,7 +137,11 @@ impl crate::ui::backend::Backend for LocalServices {
         operation: &str,
         arguments: &serde_json::Value,
     ) -> Option<Result<serde_json::Value, String>> {
-        fanplay_rgss::cable_club::handle_plugin_operation(operation, arguments, self.game_root.as_deref())
+        fanplay_rgss::cable_club::handle_plugin_operation(
+            operation,
+            arguments,
+            self.game_root.as_deref(),
+        )
     }
 }
 

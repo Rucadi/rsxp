@@ -406,7 +406,7 @@ fn dispatch(state: &ServerState, request: ParsedRequest, remote: String) -> Cont
     };
 
     let parameters = match parse_parameters(
-        &matched.endpoint,
+        matched.endpoint,
         matched
             .path_parameters
             .into_iter()
@@ -496,13 +496,15 @@ fn split_target(target: &str) -> (String, BTreeMap<String, String>) {
 }
 
 fn same_path(template: &str, path: &str) -> bool {
-    let template = template.split('/').collect::<Vec<_>>();
-    let path = path.split('/').collect::<Vec<_>>();
-    template.len() == path.len()
-        && template
-            .iter()
-            .zip(path)
-            .all(|(template, value)| template.starts_with('{') || *template == value)
+    let mut template = template.split('/');
+    let mut path = path.split('/');
+    loop {
+        match (template.next(), path.next()) {
+            (Some(template), Some(value)) if template.starts_with('{') || template == value => {}
+            (None, None) => return true,
+            _ => return false,
+        }
+    }
 }
 
 fn parse_parameters(

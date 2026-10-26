@@ -1,5 +1,6 @@
 // fanplay:id = essentials-inventory
 // fanplay:name = Essentials Inventory
+// fanplay:cores = rgss
 // fanplay:version = 0.1.0
 // fanplay:capabilities = pokemon_essentials.inventory.read,pokemon_essentials.inventory.write
 // fanplay:operation = pokemon_essentials_add_item

@@ -3,8 +3,8 @@
 //! The editor is deliberately a single resizable window so it works the same
 //! from the library and the running workspace. Controls follow the ArcadeNeon
 //! design system and the window itself is safe to open before a game starts.
-use fanplay_ui::theme::{self, ButtonKind, ButtonSize};
 use fanplay_provision::settings::{Preferences, Settings};
+use fanplay_ui::theme::{self, ButtonKind, ButtonSize};
 use std::path::PathBuf;
 pub struct Editor {
     pub key: String,
@@ -35,13 +35,27 @@ impl Editor {
                 self.settings.keyboard.insert(target, 225);
                 self.capturing_key = None;
             }
-            let captured = ctx.input(|input| input.events.iter().find_map(|event| {
-                let egui::Event::Key { key, physical_key, pressed: true, repeat: false, .. } = event else { return None; };
-                egui_scancode(physical_key.unwrap_or(*key)).map(|code| (target, code))
-            }));
+            let captured = ctx.input(|input| {
+                input.events.iter().find_map(|event| {
+                    let egui::Event::Key {
+                        key,
+                        physical_key,
+                        pressed: true,
+                        repeat: false,
+                        ..
+                    } = event
+                    else {
+                        return None;
+                    };
+                    egui_scancode(physical_key.unwrap_or(*key)).map(|code| (target, code))
+                })
+            });
             if let Some((target, code)) = captured {
-                if code == 41 || code == target { self.settings.keyboard.remove(&target); }
-                else { self.settings.keyboard.insert(target, code); }
+                if code == 41 || code == target {
+                    self.settings.keyboard.remove(&target);
+                } else {
+                    self.settings.keyboard.insert(target, code);
+                }
                 self.capturing_key = None;
             }
         }
@@ -533,14 +547,53 @@ fn key_name(code: i32) -> String {
 fn egui_scancode(key: egui::Key) -> Option<i32> {
     use egui::Key::*;
     Some(match key {
-        A => 4, B => 5, C => 6, D => 7, E => 8, F => 9, G => 10, H => 11,
-        I => 12, J => 13, K => 14, L => 15, M => 16, N => 17, O => 18,
-        P => 19, Q => 20, R => 21, S => 22, T => 23, U => 24, V => 25,
-        W => 26, X => 27, Y => 28, Z => 29,
-        Enter => 40, Escape => 41, Backspace => 42, Tab => 43, Space => 44,
-        F1 => 58, F2 => 59, F3 => 60, F4 => 61, F5 => 62, F6 => 63,
-        F7 => 64, F8 => 65, F9 => 66, F10 => 67, F11 => 68, F12 => 69,
-        ArrowRight => 79, ArrowLeft => 80, ArrowDown => 81, ArrowUp => 82,
+        A => 4,
+        B => 5,
+        C => 6,
+        D => 7,
+        E => 8,
+        F => 9,
+        G => 10,
+        H => 11,
+        I => 12,
+        J => 13,
+        K => 14,
+        L => 15,
+        M => 16,
+        N => 17,
+        O => 18,
+        P => 19,
+        Q => 20,
+        R => 21,
+        S => 22,
+        T => 23,
+        U => 24,
+        V => 25,
+        W => 26,
+        X => 27,
+        Y => 28,
+        Z => 29,
+        Enter => 40,
+        Escape => 41,
+        Backspace => 42,
+        Tab => 43,
+        Space => 44,
+        F1 => 58,
+        F2 => 59,
+        F3 => 60,
+        F4 => 61,
+        F5 => 62,
+        F6 => 63,
+        F7 => 64,
+        F8 => 65,
+        F9 => 66,
+        F10 => 67,
+        F11 => 68,
+        F12 => 69,
+        ArrowRight => 79,
+        ArrowLeft => 80,
+        ArrowDown => 81,
+        ArrowUp => 82,
         _ => return None,
     })
 }

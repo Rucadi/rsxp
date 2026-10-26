@@ -1,5 +1,6 @@
 // fanplay:id = pokeapi
 // fanplay:name = PokeAPI Explorer
+// fanplay:cores = rgss
 // fanplay:version = 0.1.0
 // fanplay:capabilities = ui.webview
 // The generic game/input operations are declared here so the explorer is also

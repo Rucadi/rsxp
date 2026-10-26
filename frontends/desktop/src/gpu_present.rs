@@ -51,7 +51,6 @@ pub struct GpuDisplay {
     fps_start: Instant,
     fps_frames: u32,
     fps: f64,
-    game_metrics: Option<(f64, u64)>,
     frames: u64,
     bound_frame: Option<(wgpu::Buffer, wgpu::BindGroup)>,
     previous_dimensions: [f32; 8],
@@ -62,12 +61,6 @@ pub struct GpuDisplay {
 }
 
 impl GpuDisplay {
-    pub fn set_game_metrics(&mut self, fps: f64, frames: u64) {
-        self.game_metrics = Some((fps, frames));
-    }
-    pub fn workspace_mut(&mut self) -> &mut fanplay_ui::Workspace {
-        &mut self.workspace
-    }
     pub fn performance_visible(&self) -> bool {
         self.workspace.performance_visible()
     }
@@ -207,7 +200,6 @@ impl GpuDisplay {
             fps_start: Instant::now(),
             fps_frames: 0,
             fps: 0.0,
-            game_metrics: None,
             frames: 0,
             bound_frame: None,
             previous_dimensions: [0.0; 8],
@@ -305,9 +297,9 @@ impl GpuDisplay {
         let workspace_info = fanplay_ui::WorkspaceInfo {
             core_id: "rgss",
             logical_size,
-            fps: self.game_metrics.map_or(self.fps, |m| m.0),
+            fps: self.fps,
             base_fps: 60,
-            frames: self.game_metrics.map_or(self.frames, |m| m.1),
+            frames: self.frames,
             supports_save_states: false,
             state_slots: Vec::new(),
             global_fullscreen,
@@ -324,7 +316,11 @@ impl GpuDisplay {
             fullscreen_request = result.fullscreen_request;
         });
         self.global_fullscreen_request = fullscreen_request;
-        self.game_pointer_rect = if touch_rect != egui::Rect::ZERO { touch_rect } else { game_rect };
+        self.game_pointer_rect = if touch_rect != egui::Rect::ZERO {
+            touch_rect
+        } else {
+            game_rect
+        };
         let pixels_per_point = output.pixels_per_point;
         let x = (game_rect.min.x * pixels_per_point).clamp(0.0, size.0 as f32);
         let y = (game_rect.min.y * pixels_per_point).clamp(0.0, size.1 as f32);

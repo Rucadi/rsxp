@@ -274,7 +274,8 @@ mod tests {
     #[test]
     fn user_patches_join_the_runtime_catalog_and_reset_between_games() {
         reset();
-        let root = std::env::temp_dir().join(format!("fanplay-user-patches-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("fanplay-user-patches-{}", std::process::id()));
         std::fs::create_dir_all(root.join("patches")).unwrap();
         let source = "{ apply: proc {}, revert: proc {} }";
         std::fs::write(root.join("patches/test_patch.rb"), source).unwrap();

@@ -20,8 +20,8 @@
 //! borrows happen outside the `RefCell` borrows; an uninitialized `Table` raises
 //! `RuntimeError` and engine limits raise `ArgumentError`.
 use super::table::RubyTable;
-use magnus::{method, prelude::*, Error, RArray, Ruby};
 use fanplay_rgss::engine::retained_map::{MapView, RetainedMap};
+use magnus::{method, prelude::*, Error, RArray, Ruby};
 use std::cell::RefCell;
 
 #[magnus::wrap(class = "FANPLAYRetainedMap", free_immediately, size)]

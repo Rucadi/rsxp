@@ -67,12 +67,20 @@ fn run() -> Result<(), String> {
             .map(|base| {
                 let current = base.join("fanplay/saves");
                 let legacy = base.join("rsxp/saves");
-                if !current.is_dir() && legacy.is_dir() { legacy } else { current }
+                if !current.is_dir() && legacy.is_dir() {
+                    legacy
+                } else {
+                    current
+                }
             })
             .unwrap_or_else(|| {
                 let current = root.join(".fanplay-saves");
                 let legacy = root.join(".rsxp-saves");
-                if !current.is_dir() && legacy.is_dir() { legacy } else { current }
+                if !current.is_dir() && legacy.is_dir() {
+                    legacy
+                } else {
+                    current
+                }
             })
     });
     let content_id = ContentId::of(&content)

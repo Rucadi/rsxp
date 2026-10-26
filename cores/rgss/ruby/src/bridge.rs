@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Serialized native callbacks exposed to RGSS Ruby as `__fanplay_native` and
 //! the legacy `__mkxp_native` alias.
-use magnus::{RString, Ruby};
 use fanplay_rgss::engine;
+use magnus::{RString, Ruby};
 
 pub(crate) fn native_call(ruby: &Ruby, request: RString) -> Result<Option<RString>, magnus::Error> {
     // SAFETY: copy the Ruby bytes before calling back into Rust; the borrowed

@@ -12,7 +12,10 @@
 //! [`decode`] persist a mapping as `deadzone;b0,b1,…,b19`; `decode` rejects a
 //! non-finite or out-of-range deadzone and any malformed button list, leaving
 //! the existing value unchanged. The active mapping lives in a thread-local.
-use std::{cell::RefCell, collections::{BTreeMap, HashSet}};
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, HashSet},
+};
 pub const ACTIONS: [&str; 13] = [
     "Unbound",
     "Down",
@@ -80,8 +83,11 @@ pub fn keyboard_binding(action: i32) -> i32 {
 }
 pub fn set_keyboard_binding(action: i32, physical: i32) {
     KEYBOARD.with(|mapping| {
-        if action == physical { mapping.borrow_mut().remove(&action); }
-        else { mapping.borrow_mut().insert(action, physical); }
+        if action == physical {
+            mapping.borrow_mut().remove(&action);
+        } else {
+            mapping.borrow_mut().insert(action, physical);
+        }
     });
 }
 pub fn load_keyboard(bindings: &BTreeMap<i32, i32>) {

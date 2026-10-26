@@ -446,8 +446,8 @@ fn placeholder_value(parameter: &Parameter) -> Value {
 
 /// Deterministic path match, including decoded path parameters.
 #[derive(Clone, Debug, PartialEq)]
-pub struct EndpointMatch {
-    pub endpoint: Endpoint,
+pub struct EndpointMatch<'a> {
+    pub endpoint: &'a Endpoint,
     pub path_parameters: BTreeMap<String, String>,
 }
 
@@ -519,14 +519,14 @@ impl Catalog {
     /// Path matching is case-sensitive and treats `{name}` segments as single
     /// non-empty path components. The returned path parameters are already
     /// percent-decoded by the server before this is called.
-    pub fn match_path(&self, method: &str, path: &str) -> Option<EndpointMatch> {
+    pub fn match_path(&self, method: &str, path: &str) -> Option<EndpointMatch<'_>> {
         let path = normalize_path(path);
         self.endpoints.iter().find_map(|endpoint| {
             if !endpoint.method.eq_ignore_ascii_case(method) {
                 return None;
             }
-            match_template(&endpoint.path, &path).map(|parameters| EndpointMatch {
-                endpoint: endpoint.clone(),
+            match_template(&endpoint.path, path).map(|parameters| EndpointMatch {
+                endpoint,
                 path_parameters: parameters,
             })
         })
@@ -603,39 +603,41 @@ impl Catalog {
     }
 }
 
-fn normalize_path(path: &str) -> String {
+fn normalize_path(path: &str) -> &str {
     let path = path.split('?').next().unwrap_or(path);
     if path.len() > 1 && path.ends_with('/') {
-        path.trim_end_matches('/').to_owned()
+        path.trim_end_matches('/')
     } else if path.is_empty() {
-        "/".into()
+        "/"
     } else {
-        path.to_owned()
+        path
     }
 }
 
 fn match_template(template: &str, path: &str) -> Option<BTreeMap<String, String>> {
     let template = normalize_path(template);
-    let template_parts = template.split('/').collect::<Vec<_>>();
-    let path_parts = path.split('/').collect::<Vec<_>>();
-    if template_parts.len() != path_parts.len() {
-        return None;
-    }
+    let mut template_parts = template.split('/');
+    let mut path_parts = path.split('/');
     let mut values = BTreeMap::new();
-    for (template, value) in template_parts.iter().zip(path_parts) {
-        if let Some(name) = template
-            .strip_prefix('{')
-            .and_then(|value| value.strip_suffix('}'))
-        {
-            if name.is_empty() || value.is_empty() {
-                return None;
+    loop {
+        match (template_parts.next(), path_parts.next()) {
+            (Some(template), Some(value)) => {
+                if let Some(name) = template
+                    .strip_prefix('{')
+                    .and_then(|value| value.strip_suffix('}'))
+                {
+                    if name.is_empty() || value.is_empty() {
+                        return None;
+                    }
+                    values.insert(name.to_owned(), value.to_owned());
+                } else if template != value {
+                    return None;
+                }
             }
-            values.insert(name.to_owned(), value.to_owned());
-        } else if *template != value {
-            return None;
+            (None, None) => return Some(values),
+            _ => return None,
         }
     }
-    Some(values)
 }
 
 fn server_endpoints() -> Vec<Endpoint> {

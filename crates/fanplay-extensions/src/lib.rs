@@ -11,13 +11,13 @@
 //! never evaluate Ruby on the UI thread. Plugins with `ui.webview` can also
 //! enqueue `webview_open(view_id, title, html)` and `webview_close(view_id)`.
 
-use rhai::{Array, Dynamic, Engine, ImmutableString, Map, Scope, AST};
 use fanplay_api::OperationRegistry;
 use fanplay_extension_api::{
     ExtensionEvent, ExtensionLimits, ExtensionManifest, ManifestError, OperationDeclaration,
     OperationError, OperationRequest, OperationResponse, PanelDeclaration, RouteAlias,
     UiDescription, UiEvent, UiNode,
 };
+use rhai::{Array, Dynamic, Engine, ImmutableString, Map, Scope, AST};
 use serde_json::{Map as JsonMap, Value};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fmt;
@@ -180,6 +180,14 @@ fn rhai_manifest(fallback_id: &str, source: &str) -> Result<ExtensionManifest, E
                     .map(str::to_owned)
                     .collect();
             }
+            "cores" | "core" => {
+                manifest.compatibility.cores = value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_owned)
+                    .collect();
+            }
             "operation" => manifest.operations.push(OperationDeclaration {
                 id: value.to_owned(),
                 ..Default::default()
@@ -288,6 +296,7 @@ struct ScriptState {
     values: Map,
     requests: QueuedRequests,
     last_error: Option<String>,
+    core_id: Option<String>,
 }
 
 /// An active script and its package-owned state.
@@ -333,6 +342,7 @@ impl ExtensionInstance {
                 max_requests: limits.max_requests,
                 ..Default::default()
             },
+            core_id: None,
             ..Default::default()
         }));
         let ruby_inject = package
@@ -398,6 +408,13 @@ impl ExtensionInstance {
         state.requests.queue.clear();
     }
 
+    fn set_core(&mut self, core_id: Option<&str>) {
+        self.state
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .core_id = core_id.map(str::to_owned);
+    }
+
     fn set_request_prefix(&mut self, prefix: u64) {
         self.state
             .lock()
@@ -412,7 +429,9 @@ impl ExtensionInstance {
     }
 
     pub fn shutdown(&mut self) -> Result<(), ExtensionError> {
-        self.call_unit("on_shutdown", ())
+        let result = self.call_unit("on_shutdown", ());
+        self.ui = None;
+        result
     }
 
     pub fn rebuild_ui(&mut self) -> Result<(), ExtensionError> {
@@ -520,6 +539,7 @@ pub struct ExtensionHost {
     request_owners: HashMap<u64, String>,
     shutdown_requests: Vec<OperationRequest>,
     activated: bool,
+    active_core: Option<String>,
     capabilities: Option<std::collections::BTreeSet<String>>,
     next_request_prefix: u64,
 }
@@ -579,7 +599,14 @@ impl ExtensionHost {
         instance.set_request_prefix(self.next_request_prefix);
         self.next_request_prefix = self.next_request_prefix.saturating_add(1_000_000);
         if self.activated {
-            instance.activate()?;
+            instance.set_core(self.active_core.as_deref());
+            if self
+                .active_core
+                .as_deref()
+                .is_none_or(|core| instance.manifest.supports_core(core))
+            {
+                instance.activate()?;
+            }
         }
         self.load_order.push(id.clone());
         self.instances.insert(id, instance);
@@ -615,9 +642,35 @@ impl ExtensionHost {
     }
 
     pub fn activate_all(&mut self) -> Result<(), ExtensionError> {
+        self.active_core = None;
         let load_order = self.load_order.clone();
         for id in load_order {
             if let Some(instance) = self.instances.get_mut(&id) {
+                instance.set_core(None);
+                instance.activate()?;
+            }
+        }
+        self.activated = true;
+        Ok(())
+    }
+
+    /// Activates packages for one emulator core. Packages without a core
+    /// restriction remain portable; restricted packages are skipped and any
+    /// package active for the previous core is shut down first.
+    pub fn activate_for_core(&mut self, core_id: &str) -> Result<(), ExtensionError> {
+        self.active_core = Some(core_id.to_owned());
+        let load_order = self.load_order.clone();
+        for id in load_order {
+            if let Some(instance) = self.instances.get_mut(&id) {
+                let compatible = instance.manifest.supports_core(core_id);
+                if !compatible {
+                    if instance.ui().is_some() {
+                        instance.shutdown()?;
+                    }
+                    instance.set_core(None);
+                    continue;
+                }
+                instance.set_core(Some(core_id));
                 instance.activate()?;
             }
         }
@@ -742,6 +795,8 @@ fn register_host_functions(
     ruby_source: Option<String>,
     text_sources: BTreeMap<String, String>,
 ) {
+    register_nds_host_functions(engine, state, extension_id);
+
     let state_for_request = Arc::clone(state);
     let extension_id_for_request = extension_id.to_owned();
     engine.register_fn(
@@ -1021,6 +1076,156 @@ fn register_host_functions(
     engine.register_fn("ui_row", |id: ImmutableString, children: Array| -> Map {
         node_map("row", id, [("children", Dynamic::from(children))])
     });
+}
+
+/// Host functions for NDS-focused Rhai packages. The calls are deliberately
+/// asynchronous: the script host lives on the UI thread while the emulator
+/// owns its memory on the cartridge thread.
+fn register_nds_host_functions(
+    engine: &mut Engine,
+    state: &Arc<Mutex<ScriptState>>,
+    extension_id: &str,
+) {
+    let state_for_read = Arc::clone(state);
+    let extension_for_read = extension_id.to_owned();
+    engine.register_fn(
+        "nds_read",
+        move |space: ImmutableString, address: i64, width: i64| -> i64 {
+            let mut state = state_for_read
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if address < 0 || !matches!(width, 1 | 2 | 4) {
+                state.last_error =
+                    Some("nds_read expects a non-negative address and width 1, 2, or 4".into());
+                return -1;
+            }
+            enqueue_nds_request(
+                &mut state,
+                &extension_for_read,
+                "read",
+                serde_json::json!({
+                    "space": space.to_string(),
+                    "address": address,
+                    "width": width,
+                }),
+            )
+        },
+    );
+
+    let state_for_bytes = Arc::clone(state);
+    let extension_for_bytes = extension_id.to_owned();
+    engine.register_fn(
+        "nds_read_bytes",
+        move |space: ImmutableString, address: i64, length: i64| -> i64 {
+            let mut state = state_for_bytes
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if address < 0 || !(0..=1_048_576).contains(&length) {
+                state.last_error =
+                    Some("nds_read_bytes expects a valid address and length up to 1 MiB".into());
+                return -1;
+            }
+            enqueue_nds_request(
+                &mut state,
+                &extension_for_bytes,
+                "read_bytes",
+                serde_json::json!({
+                    "space": space.to_string(),
+                    "address": address,
+                    "length": length,
+                }),
+            )
+        },
+    );
+
+    let state_for_write = Arc::clone(state);
+    let extension_for_write = extension_id.to_owned();
+    engine.register_fn(
+        "nds_write",
+        move |space: ImmutableString, address: i64, width: i64, value: i64| -> i64 {
+            let mut state = state_for_write
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if address < 0 || !matches!(width, 1 | 2 | 4) || value < 0 {
+                state.last_error = Some(
+                    "nds_write expects a non-negative address/value and width 1, 2, or 4".into(),
+                );
+                return -1;
+            }
+            enqueue_nds_request(
+                &mut state,
+                &extension_for_write,
+                "write",
+                serde_json::json!({
+                    "space": space.to_string(),
+                    "address": address,
+                    "width": width,
+                    "value": value,
+                }),
+            )
+        },
+    );
+
+    let state_for_add_cheat = Arc::clone(state);
+    let extension_for_add_cheat = extension_id.to_owned();
+    engine.register_fn("nds_add_cheat", move |code: ImmutableString| -> i64 {
+        let mut state = state_for_add_cheat
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        enqueue_nds_request(
+            &mut state,
+            &extension_for_add_cheat,
+            "cheat_add",
+            serde_json::json!({ "code": code.to_string() }),
+        )
+    });
+
+    let state_for_remove_cheat = Arc::clone(state);
+    let extension_for_remove_cheat = extension_id.to_owned();
+    engine.register_fn("nds_remove_cheat", move |code: ImmutableString| -> i64 {
+        let mut state = state_for_remove_cheat
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        enqueue_nds_request(
+            &mut state,
+            &extension_for_remove_cheat,
+            "cheat_remove",
+            serde_json::json!({ "code": code.to_string() }),
+        )
+    });
+
+    let state_for_clear_cheats = Arc::clone(state);
+    let extension_for_clear_cheats = extension_id.to_owned();
+    engine.register_fn("nds_clear_cheats", move || -> i64 {
+        let mut state = state_for_clear_cheats
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        enqueue_nds_request(
+            &mut state,
+            &extension_for_clear_cheats,
+            "cheat_clear",
+            Value::Null,
+        )
+    });
+}
+
+fn enqueue_nds_request(
+    state: &mut ScriptState,
+    extension_id: &str,
+    operation: &str,
+    arguments: Value,
+) -> i64 {
+    if state.core_id.as_deref() != Some("nds") {
+        state.last_error = Some("NDS functions are only available in an NDS session".into());
+        return -1;
+    }
+    enqueue_request(
+        state,
+        extension_id,
+        &format!("__nds.{operation}"),
+        arguments,
+    )
+    .map_or(-1, |id| id as i64)
 }
 
 fn enqueue_request(
@@ -1346,6 +1551,23 @@ fn on_shutdown() { }
         .unwrap()
     }
 
+    fn nds_package() -> ExtensionPackage {
+        ExtensionPackage::from_rhai(
+            "nds-test",
+            r#"// fanplay:cores = nds
+fn build_ui() { [] }
+fn on_activate() {
+    nds_read("cartridge", 0x100, 4);
+}
+fn on_ui_event(_id, _value) {}
+fn on_operation_result(_id, _result) {}
+fn on_shutdown() {}
+"#
+            .into(),
+        )
+        .unwrap()
+    }
+
     fn pokedex_package() -> ExtensionPackage {
         ExtensionPackage::load(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -1643,14 +1865,8 @@ fn on_shutdown() { }
 
         let requests = host.take_requests();
         assert_eq!(requests.len(), 2);
-        assert_eq!(
-            requests[0].operation,
-            "essentials-game-api.__ruby.inject"
-        );
-        assert_eq!(
-            requests[1].operation,
-            "essentials-encounters.__ruby.inject"
-        );
+        assert_eq!(requests[0].operation, "essentials-game-api.__ruby.inject");
+        assert_eq!(requests[1].operation, "essentials-encounters.__ruby.inject");
     }
 
     #[test]
@@ -1672,6 +1888,22 @@ fn on_shutdown() { }
         assert!(ui.nodes.iter().any(
             |node| matches!(node, UiNode::Label { id, text } if id == "dynamic-demo.count" && text.contains("1"))
         ));
+    }
+
+    #[test]
+    fn nds_plugins_queue_core_memory_requests_only_for_nds_sessions() {
+        let mut host = ExtensionHost::new();
+        host.load(nds_package()).unwrap();
+        host.activate_for_core("rgss").unwrap();
+        assert!(host.take_requests().is_empty());
+        assert!(host.get("nds-test").unwrap().ui().is_none());
+
+        host.activate_for_core("nds").unwrap();
+        let request = host.take_requests().pop().unwrap();
+        assert_eq!(request.operation, "nds-test.__nds.read");
+        assert_eq!(request.arguments["space"], "cartridge");
+        assert_eq!(request.arguments["address"], 0x100);
+        assert_eq!(request.arguments["width"], 4);
     }
 
     #[test]
@@ -1755,7 +1987,9 @@ fn on_shutdown() { }
                 && ruby.contains("def self.pokemon_essentials_movedex")
                 && ruby.contains("legacy_catalog")
         }));
-        assert!(package.main_source.contains("FANPLAY::MovedexPlugin.install"));
+        assert!(package
+            .main_source
+            .contains("FANPLAY::MovedexPlugin.install"));
         assert!(package.text_sources.get("html").is_some_and(|html| {
             html.contains("Essentials Movedex")
                 && html.contains("id=\"search\"")
@@ -1894,7 +2128,9 @@ fn on_shutdown() { }
             .operations
             .iter()
             .any(|operation| operation.id == "map_preview"));
-        assert!(package.main_source.contains("FANPLAY::WorldMapPlugin.install"));
+        assert!(package
+            .main_source
+            .contains("FANPLAY::WorldMapPlugin.install"));
         assert!(package.text_sources.get("ruby").is_some_and(|ruby| {
             ruby.contains("module WorldMapPlugin")
                 && ruby.contains("def self.world_map")

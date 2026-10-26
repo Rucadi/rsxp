@@ -12,7 +12,7 @@ commercial ROMs are not included. Compatibility varies by game.
 | RPG Maker | Rust RGSS runtime, Ruby compatibility scripts, and native MRI bindings for RGSS 1–3; incomplete compatibility |
 | GB / GBC | `mvdnes/rboy` Rust core, DMG/CGB mode detection, input, audio, cartridge saves and save states |
 | GBA | RustBoyAdvance-NG adapter, embedded open-source BIOS, input, audio, battery saves and save states |
-| DS | Dust adapter, dual screens, touch, audio, cartridge saves and save states; software renderer by default |
+| DS | Dust adapter, dual screens, touch, audio, cartridge saves and save states; wgpu renderer by default with software fallback |
 | Desktop | Game library, repositories, isolated game processes, shared egui workspace, settings, backups and local control API |
 | Browser | Shared Rust workspace, ruby.wasm for RGSS, cooperative cartridge execution, folder/ZIP/torrent/ROM imports |
 | Plugins | Rhai plugins with declarative metadata, game operations, optional Ruby injection and HTML tools |
@@ -56,8 +56,9 @@ cargo run -p fanplay-core-runner -- --content /path/to/game.gba \
 
 The headless core runner enables GB/GBC, GBA and DS by default; RGSS is opt-in and needs
 MRI. Desktop `--renderer auto|wgpu|software` selects RGSS composition, not the
-DS renderer. `FANPLAY_NDS_RENDERER=wgpu` opts into native DS GPU rendering with a
-software fallback. See [development and validation](docs/development.md).
+DS renderer. Desktop NDS rendering uses the optimized software path by default;
+set `FANPLAY_NDS_RENDERER=wgpu` to opt into the experimental wgpu path. See
+[development and validation](docs/development.md).
 
 Gameplay starts with the workspace hidden. F1 reveals it; F2 toggles tools,
 F3 output, F4 fullscreen, F10 performance and F11 uncapped execution. Runtime

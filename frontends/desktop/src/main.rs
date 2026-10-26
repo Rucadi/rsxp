@@ -58,6 +58,7 @@ mod runtime;
 #[cfg(feature = "rgss")]
 mod saves;
 mod session;
+mod shared_frames;
 #[cfg(feature = "rgss")]
 mod webview;
 #[cfg(feature = "rgss")]
@@ -228,7 +229,8 @@ fn demo(args: &[String]) -> Result<(), Box<dyn Error>> {
             Box::new(window.native()),
         ));
         let surface = instance.create_surface(window.native())?;
-        let gpu = fanplay_rgss::gpu::GpuRenderer::new_for_surface(width, height, instance, &surface)?;
+        let gpu =
+            fanplay_rgss::gpu::GpuRenderer::new_for_surface(width, height, instance, &surface)?;
         let display = crate::gpu_present::GpuDisplay::new(&gpu, surface, window.physical_size())?;
         (Some(gpu), Some(display))
     } else {

@@ -1,5 +1,6 @@
 // fanplay:id = essentials-game-api
 // fanplay:name = Essentials Game API
+// fanplay:cores = rgss
 // fanplay:version = 0.1.0
 // fanplay:capabilities = ruby.inject,ruby.unload,pokemon_essentials.read,pokemon_essentials.write
 // fanplay:operation = pokemon_essentials_add_item

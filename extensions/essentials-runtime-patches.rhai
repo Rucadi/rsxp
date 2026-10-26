@@ -1,5 +1,6 @@
 // fanplay:id = essentials-runtime-patches
 // fanplay:name = Essentials Runtime Patches
+// fanplay:cores = rgss
 // fanplay:version = 0.1.0
 // fanplay:capabilities = ruby.inject,ruby.unload
 // fanplay:operation = essentials_runtime_patch

@@ -5,7 +5,9 @@
 //! `nix-shell --run 'cargo test -p fanplay-core-rgss --test headless'`.
 
 use fanplay_core::audio::NullAudioSink;
-use fanplay_core::{Content, CoreContext, CoreEvent, CoreLoadInfo, CoreResult, EventSink, Platform};
+use fanplay_core::{
+    Content, CoreContext, CoreEvent, CoreLoadInfo, CoreResult, EventSink, Platform,
+};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};

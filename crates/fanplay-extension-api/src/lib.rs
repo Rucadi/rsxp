@@ -47,6 +47,19 @@ impl ExtensionManifest {
         }
         Ok(())
     }
+
+    /// Returns whether this package may be activated for a core.
+    ///
+    /// An empty compatibility list keeps the historical "all cores" behavior;
+    /// packages that need a particular runtime can opt into a strict list.
+    pub fn supports_core(&self, core_id: &str) -> bool {
+        self.compatibility.cores.is_empty()
+            || self
+                .compatibility
+                .cores
+                .iter()
+                .any(|candidate| candidate == core_id)
+    }
 }
 
 fn valid_id(value: &str) -> bool {

@@ -4,7 +4,7 @@
 //! Content is routed by [`fanplay_frontend::CoreCatalog`], so this module has no
 //! knowledge of a particular console. It supplies the generic media bridge:
 //!
-//! - a reusable ARGB frame buffer converted once per frame and sent to the
+//! - a reusable RGBA frame buffer converted once per frame and sent to the
 //!   dashboard transport (or retained for a headless PPM capture),
 //! - a bounded SPSC PCM ring shared with CPAL, with no mutex or allocation in
 //!   the producer callback after warm-up,
@@ -15,25 +15,31 @@
 //! Core-specific behavior (screen layout, touch mapping, buttons) comes from
 //! [`CoreInfo`](fanplay_core::CoreInfo), not from an extension branch here.
 
-use crate::session::{Runner, TransportInput};
+use crate::session::{ExtensionReplyQueue, Runner, TransportInput};
+use crate::shared_frames::SharedFrames;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use fanplay_core::{
-    AudioConfig, AudioSink, Button, Content, CoreControl, CoreEvent, CoreLoadInfo,
+    AudioConfig, AudioSink, Button, Content, CoreCommand, CoreControl, CoreEvent, CoreLoadInfo,
     CoreRegistration, EventSink, FrameError, PcmBuffer, PcmRing, PcmRingConsumer, PcmRingProducer,
     PcmStatus, Platform, PlatformError, PlatformResult, SessionConfig, VideoFrame, VideoSink,
-    CoreCommand,
 };
-use fanplay_frontend::{video::convert_argb, ContentId, SaveStore, StorageSubmitter, StorageWorker};
-use std::time::{SystemTime, UNIX_EPOCH};
+use fanplay_frontend::{
+    video::convert_rgba, ContentId, SaveStore, StorageSubmitter, StorageWorker,
+};
+use serde_json::Value;
 use std::collections::VecDeque;
 use std::error::Error;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{Receiver, SyncSender, TrySendError};
+use std::sync::mpsc::{Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-const AUDIO_SECONDS: u64 = 2;
-const FRAME_QUEUE: usize = 2;
+const AUDIO_BUFFER_MILLISECONDS: u64 = 250;
+// Keep a few frames available while the dashboard performs its texture upload.
+// A two-frame queue made short UI-thread spikes visible as dropped glyph
+// reveal frames (especially during dialogue text animation).
+const FRAME_QUEUE: usize = 4;
 const SAVE_QUEUE: usize = 32;
 
 /// Runs one cartridge session.
@@ -90,9 +96,21 @@ pub fn run(
 
     let control = Arc::new(CoreControl::new());
     control.set_frame_limit(frames);
-    control.set_fast_forward(fanplay_provision::settings::for_game(&content.path).map_err(|e| e.to_string())?.fast_forward);
+    control.set_fast_forward(
+        fanplay_provision::settings::for_game(&content.path)
+            .map_err(|e| e.to_string())?
+            .fast_forward,
+    );
 
-    let runner = if headless { None } else { Runner::connect()? };
+    let extension_replies = Arc::new(ExtensionReplyQueue::new());
+    let runner = if headless {
+        None
+    } else {
+        Runner::connect()?.map(|mut runner| {
+            runner.set_extension_replies(Arc::clone(&extension_replies));
+            runner
+        })
+    };
     if !headless && runner.is_none() && frames.is_none() && output.is_none() {
         return Err(
             "cartridge display requires a dashboard session; use --headless or --frames".into(),
@@ -114,7 +132,10 @@ pub fn run(
                 session_loop(runner, frames_in, recycle_out, host_input, thread_control)
             })?;
         session_thread = Some(join);
-        Box::new(TransportVideo::new(frames_out, recycle_in))
+        let shared = std::env::var_os("FANPLAY_FRAME_SHM")
+            .map(|path| SharedFrames::open(Path::new(&path)).map_err(std::io::Error::other))
+            .transpose()?;
+        Box::new(TransportVideo::new(frames_out, recycle_in, shared))
     } else {
         Box::new(CaptureVideo::new(Arc::clone(&capture)))
     };
@@ -136,6 +157,7 @@ pub fn run(
         Box::new(CartridgeEvents {
             submitter: worker.submitter(),
             label: title.clone(),
+            extension_replies,
         }),
         Arc::clone(&control),
     )
@@ -180,42 +202,80 @@ pub fn run(
 struct Frame {
     width: u32,
     height: u32,
-    pixels: Vec<u32>,
+    pixels: Vec<u8>,
+    shared_slot: Option<usize>,
 }
 
 impl Frame {
     fn prepare(&mut self, width: u32, height: u32) {
         self.width = width;
         self.height = height;
-        self.pixels
-            .resize((width as usize).saturating_mul(height as usize), 0);
+        self.pixels.resize(
+            (width as usize)
+                .saturating_mul(height as usize)
+                .saturating_mul(4),
+            0,
+        );
     }
 }
 
-/// Converts a borrowed contract frame into packed, native-endian ARGB.
+/// Converts a borrowed contract frame into tightly packed RGBA.
 fn convert(frame: &VideoFrame<'_>, out: &mut Frame) -> Result<(), FrameError> {
     out.prepare(frame.width, frame.height);
-    convert_argb(frame, &mut out.pixels)
+    convert_rgba(frame, &mut out.pixels)
 }
 
 struct TransportVideo {
     out: SyncSender<Frame>,
     recycle: Receiver<Frame>,
     free: VecDeque<Frame>,
+    shared: Option<SharedFrames>,
 }
 
 impl TransportVideo {
-    fn new(out: SyncSender<Frame>, recycle: Receiver<Frame>) -> Self {
+    fn new(out: SyncSender<Frame>, recycle: Receiver<Frame>, shared: Option<SharedFrames>) -> Self {
         Self {
             out,
             recycle,
             free: VecDeque::with_capacity(FRAME_QUEUE + 1),
+            shared,
         }
     }
 }
 
 impl VideoSink for TransportVideo {
     fn present(&mut self, frame: VideoFrame<'_>) {
+        if let Some(shared) = &self.shared {
+            let mut slot = loop {
+                if let Some(slot) = shared.acquire() {
+                    break slot;
+                }
+                std::thread::sleep(Duration::from_micros(250));
+            };
+            let length = frame.width as usize * frame.height as usize * 4;
+            let written = if frame.format == fanplay_core::PixelFormat::Rgba8
+                && frame.stride == frame.width as usize * 4
+            {
+                slot.write(&frame.pixels[..length]).is_ok()
+            } else {
+                let mut converted = self.free.pop_front().unwrap_or_default();
+                let ok = convert(&frame, &mut converted).is_ok()
+                    && slot.write(&converted.pixels).is_ok();
+                self.free.push_back(converted);
+                ok
+            };
+            if written {
+                let index = slot.index();
+                slot.publish();
+                let _ = self.out.send(Frame {
+                    width: frame.width,
+                    height: frame.height,
+                    pixels: Vec::new(),
+                    shared_slot: Some(index),
+                });
+            }
+            return;
+        }
         while let Ok(recycled) = self.recycle.try_recv() {
             self.free.push_back(recycled);
         }
@@ -224,13 +284,10 @@ impl VideoSink for TransportVideo {
             self.free.push_front(converted);
             return;
         }
-        match self.out.try_send(converted) {
-            Ok(()) => {}
-            Err(TrySendError::Full(converted)) | Err(TrySendError::Disconnected(converted)) => {
-                // Bounded backpressure: drop this frame rather than stall the
-                // core thread. The next frame reuses the buffer.
-                self.free.push_front(converted);
-            }
+        if let Err(error) = self.out.send(converted) {
+            // The dashboard is gone; recycle the frame so shutdown remains
+            // allocation-free and the core can exit cleanly.
+            self.free.push_front(error.0);
         }
     }
 }
@@ -269,10 +326,12 @@ fn session_loop(
     loop {
         match frames.recv_timeout(Duration::from_millis(2)) {
             Ok(frame) => {
-                if runner
-                    .frame_argb(frame.width, frame.height, &frame.pixels)
-                    .is_err()
-                {
+                let failed = match frame.shared_slot {
+                    Some(slot) => runner.frame_shared(frame.width, frame.height, slot),
+                    None => runner.frame_rgba(frame.width, frame.height, &frame.pixels),
+                }
+                .is_err();
+                if failed {
                     control.stop();
                     break;
                 }
@@ -368,14 +427,28 @@ impl TransportInput for HostInput {
         self.control.set_target_fps(rate);
     }
     fn save_state(&mut self, slot: &str) {
-        let _ = self
-            .control
-            .send_request(CoreCommand::SaveState { slot: slot.to_owned() });
+        let _ = self.control.send_request(CoreCommand::SaveState {
+            slot: slot.to_owned(),
+        });
     }
     fn load_state(&mut self, slot: &str, data: &[u8]) {
         let _ = self.control.send_request(CoreCommand::LoadState {
             slot: slot.to_owned(),
             data: data.to_vec(),
+        });
+    }
+    fn extension_request(&mut self, id: u64, generation: u64, operation: &str, arguments: &Value) {
+        let Ok(payload) = serde_json::to_vec(&serde_json::json!({
+            "request_id": id,
+            "generation": generation,
+            "operation": operation,
+            "arguments": arguments,
+        })) else {
+            return;
+        };
+        let _ = self.control.send_request(CoreCommand::Extension {
+            id: "nds.rhai".into(),
+            payload,
         });
     }
 }
@@ -449,14 +522,17 @@ impl PcmAudio {
         let stream_config: cpal::StreamConfig = supported.config();
         let config = AudioConfig::new(stream_config.sample_rate, stream_config.channels);
         let samples =
-            (u64::from(config.sample_rate) * u64::from(config.channels) * AUDIO_SECONDS) as usize;
+            (u64::from(config.sample_rate) * u64::from(config.channels) * AUDIO_BUFFER_MILLISECONDS
+                / 1000) as usize;
         let (producer, consumer) = PcmRing::new(samples.max(2048));
         let consumer = Arc::new(consumer);
-        let callback_consumer = Arc::clone(&consumer);
         let device_channels = config.channels as usize;
-        let stream = device
-            .build_output_stream(
-                stream_config,
+        let mut low_latency_config = stream_config;
+        low_latency_config.buffer_size = cpal::BufferSize::Fixed(512);
+        let build_stream = |config: cpal::StreamConfig| {
+            let callback_consumer = Arc::clone(&consumer);
+            device.build_output_stream(
+                config,
                 move |output: &mut [f32], _| {
                     for frame in output.chunks_mut(device_channels) {
                         let mut stereo = [0i16; 2];
@@ -479,7 +555,21 @@ impl PcmAudio {
                 |error| eprintln!("Cartridge audio stream error: {error}"),
                 None,
             )
-            .ok()?;
+        };
+        let (stream, buffer_size) = match build_stream(low_latency_config) {
+            Ok(stream) => (stream, low_latency_config.buffer_size),
+            Err(error) => {
+                eprintln!(
+                    "Cartridge audio: 512-frame buffer unavailable ({error}); using device default"
+                );
+                let stream = build_stream(stream_config).ok()?;
+                (stream, stream_config.buffer_size)
+            }
+        };
+        eprintln!(
+            "Cartridge audio: {} Hz, {} channels, {:?} device buffer, {} ms queue",
+            config.sample_rate, config.channels, buffer_size, AUDIO_BUFFER_MILLISECONDS
+        );
         stream.play().ok()?;
         Some(Self {
             producer,
@@ -536,6 +626,7 @@ impl AudioSink for PcmAudio {
 struct CartridgeEvents {
     submitter: StorageSubmitter,
     label: String,
+    extension_replies: Arc<ExtensionReplyQueue>,
 }
 
 impl EventSink for CartridgeEvents {
@@ -557,10 +648,10 @@ impl EventSink for CartridgeEvents {
                     eprintln!("Cartridge: could not queue save state {slot}: {error}");
                 } else if let Ok(saved_at) = SystemTime::now().duration_since(UNIX_EPOCH) {
                     let metadata = SaveStore::state_metadata(saved_at.as_secs(), bytes);
-                    if let Err(error) = self.submitter.submit(
-                        SaveStore::state_metadata_key(&slot),
-                        metadata,
-                    ) {
+                    if let Err(error) = self
+                        .submitter
+                        .submit(SaveStore::state_metadata_key(&slot), metadata)
+                    {
                         eprintln!("Cartridge: could not queue save metadata {slot}: {error}");
                     }
                 }
@@ -572,7 +663,19 @@ impl EventSink for CartridgeEvents {
                 }
             }
             CoreEvent::Screenshot { .. } => {}
-            CoreEvent::CommandResult { id, outcome, .. } => {
+            CoreEvent::CommandResult {
+                id,
+                generation,
+                outcome,
+                response,
+            } => {
+                if let Some(response) = response
+                    && let Ok(body) = String::from_utf8(response)
+                    && let Ok(value) = serde_json::from_str::<Value>(&body)
+                    && let Some(request_id) = value.get("request_id").and_then(Value::as_u64)
+                {
+                    self.extension_replies.push((request_id, generation, body));
+                }
                 if !outcome.succeeded() {
                     eprintln!("Cartridge: command {id}: {outcome:?}");
                 }
@@ -616,8 +719,8 @@ fn write_ppm(path: &Path, frame: &Frame) -> Result<(), Box<dyn Error>> {
     use std::io::Write as _;
     let mut out = Vec::with_capacity(frame.width as usize * frame.height as usize * 3 + 32);
     out.extend_from_slice(format!("P6\n{} {}\n255\n", frame.width, frame.height).as_bytes());
-    for pixel in &frame.pixels {
-        out.extend_from_slice(&[(pixel >> 16) as u8, (pixel >> 8) as u8, *pixel as u8]);
+    for pixel in frame.pixels.chunks_exact(4) {
+        out.extend_from_slice(&pixel[..3]);
     }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -638,24 +741,24 @@ mod tests {
     }
 
     #[test]
-    fn converts_common_formats_to_packed_argb() {
+    fn converts_common_formats_to_rgba() {
         let mut out = Frame::default();
         convert(
             &frame(PixelFormat::Bgra8, &[0, 0, 255, 255, 0, 255, 0, 255]),
             &mut out,
         )
         .unwrap();
-        assert_eq!(out.pixels, [0xffff_0000, 0xff00_ff00]);
+        assert_eq!(out.pixels, [255, 0, 0, 255, 0, 255, 0, 255]);
         convert(
             &frame(PixelFormat::Rgba8, &[255, 0, 0, 255, 0, 255, 0, 255]),
             &mut out,
         )
         .unwrap();
-        assert_eq!(out.pixels, [0xffff_0000, 0xff00_ff00]);
+        assert_eq!(out.pixels, [255, 0, 0, 255, 0, 255, 0, 255]);
         let palette = [255, 0, 0, 255, 0, 255, 0, 255];
         let indexed = VideoFrame::indexed8(2, 1, 2, &[0, 1], &palette);
         convert(&indexed, &mut out).unwrap();
-        assert_eq!(out.pixels, [0xffff_0000, 0xff00_ff00]);
+        assert_eq!(out.pixels, [255, 0, 0, 255, 0, 255, 0, 255]);
     }
 
     #[test]

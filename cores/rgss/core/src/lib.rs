@@ -13,12 +13,12 @@
 mod game;
 mod host;
 
-use fanplay_rgss::engine::{self, RuntimeOptions};
-use fanplay_rgss::{api_bridge, runtime_patch, runtime_settings};
 use fanplay_core::{
     Content, ContentProbe, Core, CoreCapabilities, CoreContext, CoreError, CoreInfo,
     CoreRegistration, CoreRegistry, CoreResult, ExitStatus, PixelFormat, PresentationSupport,
 };
+use fanplay_rgss::engine::{self, RuntimeOptions};
+use fanplay_rgss::{api_bridge, runtime_patch, runtime_settings};
 use ruby_rgss_core::RubyCore;
 use std::path::Path;
 use std::sync::Arc;

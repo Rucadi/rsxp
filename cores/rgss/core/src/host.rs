@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! RGSS `Host` implementation backed by the generic core sinks.
 
-use fanplay_rgss::graphics::{Bitmap, Color};
-use fanplay_rgss::host::{AudioBackend, AudioChannel as RgssChannel, Host};
-use fanplay_rgss::input::Input;
 use fanplay_core::{
     AudioChannel, AudioStream, CoreContext, CoreEvent, CoreLoadInfo, InputEvent, PixelFormat,
     VideoFrame, WindowCommand,
 };
+use fanplay_rgss::graphics::{Bitmap, Color};
+use fanplay_rgss::host::{AudioBackend, AudioChannel as RgssChannel, Host};
+use fanplay_rgss::input::Input;
 
 /// VideoSink packet kind for the RGSS encoded GPU frame (`GpuFrame::encode`).
 pub(crate) const GPU_PACKET_KIND: &str = "rgss-gpu-v1";

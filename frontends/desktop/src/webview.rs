@@ -231,7 +231,7 @@ impl PluginWebView {
     pub fn respond(&self, id: u64, status: u16, body: &str) -> Result<(), String> {
         let message = serde_json::json!({"id": id, "status": status, "body": body});
         let script = format!(
-            "window.__rsxp_plugin_response({});",
+            "window.__fanplay_plugin_response({});",
             serde_json::to_string(&message).map_err(|error| error.to_string())?
         );
         self.view
@@ -278,41 +278,41 @@ fn native_bridge_script() -> &'static str {
         // resolve in the same JavaScript context that created them.
         let openerBridge = null;
         try {
-          if (window.opener && window.opener.RSXP && window.opener.RSXP.__native) {
-            openerBridge = window.opener.RSXP;
+          if (window.opener && window.opener.FANPLAY && window.opener.FANPLAY.__native) {
+            openerBridge = window.opener.FANPLAY;
           }
         } catch (_) {}
         if (openerBridge) {
-          window.RSXP = window.RSXP || {};
-          window.RSXP.api = (...args) => openerBridge.api(...args);
-          window.RSXP.http = window.RSXP.api;
-          window.RSXP.asset = (...args) => openerBridge.asset(...args);
+          window.FANPLAY = window.FANPLAY || {};
+          window.FANPLAY.api = (...args) => openerBridge.api(...args);
+          window.FANPLAY.http = window.FANPLAY.api;
+          window.FANPLAY.asset = (...args) => openerBridge.asset(...args);
           const nativeFetch = window.fetch.bind(window);
           window.fetch = (input, init = {}) => {
             const raw = typeof input === 'string' ? input : input.url;
             if (!raw.startsWith('/v1/')) return nativeFetch(input, init);
             const method = String(init.method || (typeof input === 'string' ? 'GET' : input.method) || 'GET').toUpperCase();
-            return window.RSXP.api(method, raw, init.body || '');
+            return window.FANPLAY.api(method, raw, init.body || '');
           };
           return;
         }
 
         const pending = new Map();
         let next = 1;
-        window.RSXP = window.RSXP || {};
-        window.RSXP.__native = true;
-        window.RSXP.api = (method, target, body = '') => new Promise((resolve, reject) => {
+        window.FANPLAY = window.FANPLAY || {};
+        window.FANPLAY.__native = true;
+        window.FANPLAY.api = (method, target, body = '') => new Promise((resolve, reject) => {
           const id = next++;
           pending.set(id, { kind: 'api', resolve, reject });
           window.ipc.postMessage(JSON.stringify({ kind: 'api', id, method, target, body }));
         });
-        window.RSXP.http = window.RSXP.api;
-        window.RSXP.asset = (category, name) => new Promise((resolve, reject) => {
+        window.FANPLAY.http = window.FANPLAY.api;
+        window.FANPLAY.asset = (category, name) => new Promise((resolve, reject) => {
           const id = next++;
           pending.set(id, { kind: 'asset', resolve, reject });
           window.ipc.postMessage(JSON.stringify({ kind: 'asset', id, category, name }));
         });
-        window.__rsxp_plugin_response = message => {
+        window.__fanplay_plugin_response = message => {
           const request = pending.get(message.id);
           if (!request) return;
           pending.delete(message.id);
@@ -331,7 +331,7 @@ fn native_bridge_script() -> &'static str {
           const raw = typeof input === 'string' ? input : input.url;
           if (!raw.startsWith('/v1/')) return nativeFetch(input, init);
           const method = String(init.method || (typeof input === 'string' ? 'GET' : input.method) || 'GET').toUpperCase();
-          return window.RSXP.api(method, raw, init.body || '');
+          return window.FANPLAY.api(method, raw, init.body || '');
         };
       })();
     "#

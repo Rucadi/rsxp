@@ -1,5 +1,5 @@
 [package]
-name = "rsxp-desktop"
+name = "fanplay-desktop"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
@@ -7,19 +7,19 @@ license = "GPL-2.0-or-later"
 publish = false
 
 [dependencies]
-rsxp-provision = { path = "../../crates/rsxp-provision" }
-rsxp-control = { path = "../../crates/rsxp-control" }
+fanplay-provision = { path = "../../crates/fanplay-provision" }
+fanplay-control = { path = "../../crates/fanplay-control" }
 serde = { version = "1", features = ["derive"] }
-rsxp-core-nds = { path = "../../cores/nds/core", optional = true }
-rsxp-core-gba = { path = "../../cores/gba/core", optional = true }
-rsxp = { path = "../../crates/rsxp-rgss", features = ["gpu", "game-api", "portable-media"], optional = true }
-rsxp-core = { path = "../../crates/rsxp-core" }
-rsxp-extension-api = { path = "../../crates/rsxp-extension-api" }
-rsxp-cores = { path = "../../crates/rsxp-cores", default-features = false }
-rsxp-frontend = { path = "../../crates/rsxp-frontend" }
-rsxp-ui = { path = "../../crates/rsxp-ui", optional = true }
+fanplay-core-nds = { path = "../../cores/nds/core", optional = true }
+fanplay-core-gba = { path = "../../cores/gba/core", optional = true }
+fanplay-rgss = { path = "../../crates/fanplay-rgss", features = ["gpu", "game-api", "portable-media"], optional = true }
+fanplay-core = { path = "../../crates/fanplay-core" }
+fanplay-extension-api = { path = "../../crates/fanplay-extension-api" }
+fanplay-cores = { path = "../../crates/fanplay-cores", default-features = false }
+fanplay-frontend = { path = "../../crates/fanplay-frontend" }
+fanplay-ui = { path = "../../crates/fanplay-ui", optional = true }
 eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "default_fonts", "x11", "wayland", "clipboard", "system_fonts"] }
-ruby_rgss_core = { package = "rsxp-rgss-ruby", path = "../../cores/rgss/ruby", optional = true }
+ruby_rgss_core = { package = "fanplay-rgss-ruby", path = "../../cores/rgss/ruby", optional = true }
 getrandom = "0.4.3"
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "vulkan", "gles", "metal", "wgsl"] }
 pollster = "1.0.1"
@@ -51,14 +51,14 @@ gif = "0.14"
 
 [features]
 default = ["gpu", "gba", "nds", "rgss"]
-gba = ["dep:rsxp-core-gba", "rsxp-cores/gba"]
-nds = ["dep:rsxp-core-nds", "rsxp-cores/nds"]
-rgss = ["dep:rsxp", "dep:rsxp-ui", "dep:ruby_rgss_core", "rsxp-cores/rgss"]
+gba = ["dep:fanplay-core-gba", "fanplay-cores/gba"]
+nds = ["dep:fanplay-core-nds", "fanplay-cores/nds"]
+rgss = ["dep:fanplay-rgss", "dep:fanplay-ui", "dep:ruby_rgss_core", "fanplay-cores/rgss"]
 gpu = []
 game-tests = []
 
 [[bin]]
-name = "rsxp"
+name = "fanplay"
 path = "src/main.rs"
 
 [[test]]

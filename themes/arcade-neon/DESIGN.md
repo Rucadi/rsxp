@@ -1,6 +1,6 @@
 # Arcade Neon
 
-Arcade Neon is the original RSXP look: a deep navy-black stage (`#0A0A14`)
+Arcade Neon is the original FANPLAY look: a deep navy-black stage (`#0A0A14`)
 with hot pink (`#FF006E`), electric cyan (`#00F0FF`), and lime (`#39FF14`).
 Use Bungee-style display headings, Work Sans body text, Space Mono for numeric
 values, and colored glow accents on featured actions.

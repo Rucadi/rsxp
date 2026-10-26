@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Fanplay
+GenericName=Fangame player
+Comment=Play RPG Maker, Game Boy Advance and Nintendo DS games
+Exec=fanplay
+Icon=fanplay
+Terminal=false
+Categories=Game;Emulator;
+Keywords=Fangames;RPG;RGSS;RPG Maker;GBA;Nintendo DS;

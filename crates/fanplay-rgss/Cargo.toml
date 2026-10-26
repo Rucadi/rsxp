@@ -1,0 +1,45 @@
+[package]
+name = "fanplay-rgss"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "GPL-2.0-or-later"
+description = "Native Rust engine for RPG Maker RGSS games"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "vulkan", "gles", "metal", "wgsl"], optional = true }
+pollster = { version = "1.0.1", optional = true }
+bytemuck = { version = "1", features = ["derive"], optional = true }
+fontdue = { version = "0.9", optional = true }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp"], optional = true }
+serde_json = "1"
+fanplay-control = { path = "../fanplay-control", optional = true }
+# Animated GIF decoding for Bitmap animation, shared by every frontend.
+gif = "0.14"
+# Pure-Rust Theora/Ogg movie decoding for Graphics.play_movie on every frontend.
+ogg = "0.9"
+theora-rs = "0.1"
+
+[features]
+portable-media = ["dep:fontdue", "dep:image"]
+default = ["gpu"]
+# Native GPU composition. Presentation is the frontend's job, so this does not
+# pull in the shared egui workspace: mobile and the desktop binary both use it.
+gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
+# Shared local game-command queue, Ruby adapter and egui inspector controls.
+game-api = ["dep:image", "dep:fanplay-control"]
+# Compile-time, code-first OpenAPI generation for the MCP/HTTP API binary.
+api-docs = ["dep:fanplay-control"]
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "fanplay-mcp"
+path = "api/main.rs"
+required-features = ["api-docs"]
+
+[[example]]
+name = "render-bench"
+path = "examples/render_bench.rs"

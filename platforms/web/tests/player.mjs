@@ -6,7 +6,7 @@ import { rubySource } from '../../../tools/ruby-sources.mjs';
 
 test('Rust-packaged player includes both runtimes and current browser sources', () => {
   const html = readFileSync(new URL('../dist/player.html', import.meta.url), 'utf8');
-  const payload = JSON.parse(html.match(/<script id="rsxp-payload" type="application\/json">([\s\S]*?)<\/script>/)[1]);
+  const payload = JSON.parse(html.match(/<script id="fanplay-payload" type="application\/json">([\s\S]*?)<\/script>/)[1]);
   for (const key of ['engine', 'ruby']) assert.equal(Buffer.from(payload[key], 'base64').subarray(0, 4).toString('hex'), '0061736d');
   for (const name of ['app.js', 'player-launcher.js', 'local-game.js']) assert.equal(payload.modules[name], readFileSync(new URL(`../browser/${name}`, import.meta.url), 'utf8'));
   assert.equal(payload.rgss, rubySource('RGSS_SOURCE'));

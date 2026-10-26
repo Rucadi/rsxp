@@ -13,7 +13,7 @@ use dust_core::{
     utils::{zeroed_box, BoxedByteSlice, Bytes},
     Model, SaveContents,
 };
-use rsxp_core::{
+use fanplay_core::{
     AudioInfo, Button, CommandOutcome, Content, ContentKind, ContentProbe, Core, CoreCapabilities,
     CoreCommand, CoreContext, CoreError, CoreEvent, CoreInfo, CoreLoadInfo, CoreRegistration,
     CoreResult, ExitStatus, InputInfo, PcmBuffer, PixelFormat, PlatformError, PresentationSupport,
@@ -243,7 +243,7 @@ impl NdsAdapter {
             .map_err(|error| {
                 CoreError::content(match error {
                     emu::BuildError::RomNeedsDecryptionButNoBiosProvided => {
-                        "encrypted DS ROM needs your BIOS dump (RSXP_NDS_BIOS7)"
+                        "encrypted DS ROM needs your BIOS dump (FANPLAY_NDS_BIOS7)"
                     }
                     emu::BuildError::MissingSysFiles => "missing DS BIOS/firmware",
                     emu::BuildError::MissingRom => "missing DS ROM",
@@ -343,14 +343,14 @@ impl Core for NdsAdapter {
         self.rom = read(&content, &context)?;
         validate_rom(&self.rom)?;
         self.bios7 = bios(
-            system_file(&content, &context, "RSXP_NDS_BIOS7", "bios7.bin")?,
+            system_file(&content, &context, "FANPLAY_NDS_BIOS7", "bios7.bin")?,
             "bios7.bin",
         )?;
         self.bios9 = bios(
-            system_file(&content, &context, "RSXP_NDS_BIOS9", "bios9.bin")?,
+            system_file(&content, &context, "FANPLAY_NDS_BIOS9", "bios9.bin")?,
             "bios9.bin",
         )?;
-        self.firmware = system_file(&content, &context, "RSXP_NDS_FIRMWARE", "firmware.bin")?
+        self.firmware = system_file(&content, &context, "FANPLAY_NDS_FIRMWARE", "firmware.bin")?
             .unwrap_or_else(|| firmware::default(Model::Lite).to_vec());
         if !firmware::is_valid_size(self.firmware.len()) {
             return Err(CoreError::content(
@@ -369,7 +369,7 @@ impl Core for NdsAdapter {
         } else if let Some(output) = context.audio.output_config() {
             output.sample_rate
         } else {
-            std::env::var("RSXP_NDS_AUDIO_RATE")
+            std::env::var("FANPLAY_NDS_AUDIO_RATE")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .filter(|v| (8000..=192000).contains(v))
@@ -563,7 +563,7 @@ impl Core for NdsAdapter {
                 }
             }
             frames += 1;
-            if std::env::var_os("RSXP_NDS_TRACE").is_some() && frames % 60 == 0 {
+            if std::env::var_os("FANPLAY_NDS_TRACE").is_some() && frames % 60 == 0 {
                 eprintln!("frame {frames}: arm9={:?} arm7={:?}", self.emu.as_ref().unwrap().arm9.regs(), self.emu.as_ref().unwrap().arm7.regs());
             }
             if control.frame_limit().is_some_and(|limit| frames >= limit) {

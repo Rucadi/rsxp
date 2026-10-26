@@ -1,6 +1,6 @@
 # Field Guide
 
-Field Guide is the Pokémon-focused RSXP theme. It should feel like opening a
+Field Guide is the Pokémon-focused FANPLAY theme. It should feel like opening a
 well-used regional field notebook or Pokédex: route-map cream (`#F2EBDD`),
 clean card paper (`#FFFDF5`), Pokédex red (`#D83A3A`), trainer blue (`#2D6FA3`),
 and badge gold (`#D9A62E`).

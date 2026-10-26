@@ -1,7 +1,7 @@
-import init, * as wasm from '../dist/pkg/rsxp_web.js';
+import init, * as wasm from '../dist/pkg/fanplay_web.js';
 import fs from 'fs';
 
-const bytes = fs.readFileSync(new URL('../dist/pkg/rsxp_web_bg.wasm', import.meta.url));
+const bytes = fs.readFileSync(new URL('../dist/pkg/fanplay_web_bg.wasm', import.meta.url));
 await init(bytes);
 
 const enc = (s) => new TextEncoder().encode(s + '\n');

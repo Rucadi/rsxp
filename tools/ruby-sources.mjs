@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
-const sourceRoot = resolve(root, 'crates/rsxp-rgss/src');
+const sourceRoot = resolve(root, 'crates/fanplay-rgss/src');
 const declarations = readFileSync(resolve(sourceRoot, 'ruby.rs'), 'utf8');
 
 export function rubySource(name) {

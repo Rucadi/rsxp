@@ -1,12 +1,17 @@
 # Native tile atlas and retained world-map rendering
 
+> Historical record. Measurements and implementation details below describe the
+> recorded workload/revision, not the current support matrix. Names and commands
+> have been adapted to Fanplay; timings have not been re-measured. See
+> [current architecture](architecture.md) and [development](development.md).
+
 The desktop wgpu renderer now has a dedicated tile path for Essentials'
 `TilemapRenderer::TileSprite`. This replaces individual tile dispatches with a
 native cell atlas and retained ground/priority quad geometry. It also retains
 scene ordering, batch schedules and GPU bindings, and avoids resolving every
 weak reference twice per update.
 
-The reference is rsxp commit
+The reference is fanplay commit
 `37a04d1`.
 Its `tilemap.cpp`
 retains an atlas, ground vertices and priority layers and batches adjacent
@@ -16,7 +21,7 @@ this is not a copy of its OpenGL rendering implementation.
 
 ## Native ownership and draw ordering
 
-`crates/rsxp-rgss/src/graphics/tilemap.rs` owns the atlas and geometry:
+`crates/fanplay-rgss/src/graphics/tilemap.rs` owns the atlas and geometry:
 
 - Cells are keyed by source bitmap ID and source rectangle. Multiple tile
   instances share one packed GPU atlas cell. Autotile frame selection refers
@@ -46,8 +51,8 @@ for this game; it does not claim a complete implementation of the standard
 RGSS Tilemap API or move all game map logic into Rust. Software/browser
 composition keeps the existing sprite path.
 
-`RSXP_NATIVE_TILEMAP=0` disables the adapter for A/B comparisons.
-`RSXP_SCENE_CACHE=0` rebuilds native scene ordering each frame.
+`FANPLAY_NATIVE_TILEMAP=0` disables the adapter for A/B comparisons.
+`FANPLAY_SCENE_CACHE=0` rebuilds native scene ordering each frame.
 
 ## Profile-driven synchronization improvement
 
@@ -81,10 +86,10 @@ prints the actual render dimensions. At 3x they must be **1536 x 1152**.
 Saving is disabled by the harness.
 
 ```sh
-RSXP_BENCH_SAVE="$HOME/.local/share/rsxp/Pokemon Anil/Partida 1.rxdata" \
-RSXP_BENCH_ZOOM=3 RSXP_BENCH_FIXED_CLOCK=1 \
-RSXP_BENCH_CLOCK_START=0 RSXP_BENCH_SEED=0 \
-target/release/rsxp run --script tools/benchmark-anil.rb \
+FANPLAY_BENCH_SAVE="$HOME/.local/share/fanplay/Pokemon Anil/Partida 1.rxdata" \
+FANPLAY_BENCH_ZOOM=3 FANPLAY_BENCH_FIXED_CLOCK=1 \
+FANPLAY_BENCH_CLOCK_START=0 FANPLAY_BENCH_SEED=0 \
+target/release/fanplay run --script tools/benchmark-anil.rb \
   --headless --renderer wgpu --uncapped --frames 1650
 ```
 
@@ -93,7 +98,7 @@ Alternate baseline and candidate runs without builds or sampling in parallel.
 For walking add:
 
 ```sh
-RSXP_INPUT=200:79:100,400:80:100,600:82:100,800:81:100,1000:79:100,1200:80:100,1400:82:100
+FANPLAY_INPUT=200:79:100,400:80:100,600:82:100,800:81:100,1000:79:100,1200:80:100,1400:82:100
 ```
 
 `--output /tmp/map.ppm` captures the last frame. Compare hashes as well as the
@@ -116,7 +121,7 @@ wall-clock time; these measurements are not capped-play FPS promises.
 GPU tests require an adapter:
 
 ```sh
-cargo test -p rsxp --lib gpu::tests -- --ignored --nocapture
-cargo test -p rsxp-desktop --test cli native_tiles_match -- --ignored --nocapture
-cargo test -p rsxp-desktop --test cli retained_scene_matches -- --ignored --nocapture
+cargo test -p fanplay-rgss --lib gpu::tests -- --ignored --nocapture
+cargo test -p fanplay-desktop --test cli native_tiles_match -- --ignored --nocapture
+cargo test -p fanplay-desktop --test cli retained_scene_matches -- --ignored --nocapture
 ```

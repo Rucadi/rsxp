@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Native gamepad input via `gilrs`, translated into the engine's SDL-style
-//! key codes and merged into [`rsxp::input::Input`].
+//! key codes and merged into [`fanplay_rgss::input::Input`].
 //!
 //! [`Controllers`] owns the optional `gilrs` backend, the set of key codes it
 //! currently holds down, and the on-disk control mapping. The mapping is
-//! provided by the engine's `rsxp::controls` module: [`Controllers::new`]
-//! decodes any saved layout (from `rsxp/controls` under `%APPDATA%` on Windows
+//! provided by the engine's `fanplay_rgss::controls` module: [`Controllers::new`]
+//! decodes any saved layout (from `fanplay/controls` under `%APPDATA%` on Windows
 //! or `$XDG_CONFIG_HOME`/`~/.config` elsewhere) and records an `encode()`d
 //! snapshot for change detection. If no backend can be created it logs and
 //! continues with keyboard-only input.
@@ -19,7 +19,7 @@
 //! frame in which the UI suppressed input. When the encoded mapping changes it
 //! is persisted back to the config file.
 use gilrs::{Axis, Button, Gilrs};
-use rsxp::{controls, input::Input};
+use fanplay_rgss::{controls, input::Input};
 use std::{collections::HashSet, path::PathBuf};
 
 pub struct Controllers {
@@ -38,7 +38,7 @@ impl Controllers {
                 .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join(".config")))
         }
         .map(|p| p.join("rsxp/controls"));
-        let path = Some(rsxp_provision::root(None).join("config/controls"));
+        let path = Some(fanplay_provision::root(None).join("config/controls"));
         if let Some(path) = &path {
             if let Ok(text) = std::fs::read_to_string(path).or_else(|error| {
                 legacy.as_ref().map(std::fs::read_to_string).unwrap_or(Err(error))
@@ -46,8 +46,8 @@ impl Controllers {
                 controls::decode(&text);
             }
         }
-        if let Ok(encoded) = std::env::var("RSXP_CONTROLS") { controls::decode(&encoded); }
-        let path = if std::env::var_os("RSXP_CONTROLS").is_some() { None } else { path };
+        if let Ok(encoded) = std::env::var("FANPLAY_CONTROLS") { controls::decode(&encoded); }
+        let path = if std::env::var_os("FANPLAY_CONTROLS").is_some() { None } else { path };
         let backend = Gilrs::new()
             .map_err(|error| eprintln!("Controller backend unavailable: {error}"))
             .ok();
@@ -61,7 +61,7 @@ impl Controllers {
     /// Per-game overrides must never overwrite the user's global mapping.
     pub fn use_game_mapping(&mut self, encoded: Option<&str>) {
         controls::set(controls::Mapping::default());
-        if let Ok(global) = std::fs::read_to_string(rsxp_provision::root(None).join("config/controls")) { controls::decode(&global); }
+        if let Ok(global) = std::fs::read_to_string(fanplay_provision::root(None).join("config/controls")) { controls::decode(&global); }
         if let Some(encoded) = encoded { controls::decode(encoded); }
         self.path = None;
         self.saved = controls::encode();

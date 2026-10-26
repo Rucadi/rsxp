@@ -3,8 +3,8 @@
 //! The editor is deliberately a single resizable window so it works the same
 //! from the library and the running workspace. Controls follow the ArcadeNeon
 //! design system and the window itself is safe to open before a game starts.
-use rsxp_ui::theme::{self, ButtonKind, ButtonSize};
-use rsxp_provision::settings::{Preferences, Settings};
+use fanplay_ui::theme::{self, ButtonKind, ButtonSize};
+use fanplay_provision::settings::{Preferences, Settings};
 use std::path::PathBuf;
 pub struct Editor {
     pub key: String,
@@ -89,29 +89,29 @@ impl Editor {
                     });
             }
             if let Some(path) = &self.game_path {
-                let game = rsxp_provision::folders::game_directory(path);
-                let root = rsxp_provision::root(Some(path));
-                let save = rsxp_provision::folders::save_directory(
+                let game = fanplay_provision::folders::game_directory(path);
+                let root = fanplay_provision::root(Some(path));
+                let save = fanplay_provision::folders::save_directory(
                     &root,
-                    &rsxp_provision::folders::title(path),
+                    &fanplay_provision::folders::title(path),
                 );
-                let patches = rsxp_provision::folders::patches_directory(path);
+                let patches = fanplay_provision::folders::patches_directory(path);
                 ui.add_space(8.0);
                 ui.horizontal_wrapped(|ui| {
                     if theme::button_sized(ui, "Game folder", ButtonKind::Ghost, ButtonSize::Sm)
                         .clicked()
                     {
-                        let _ = rsxp_provision::folders::open(&game);
+                        let _ = fanplay_provision::folders::open(&game);
                     }
                     if theme::button_sized(ui, "Save folder", ButtonKind::Ghost, ButtonSize::Sm)
                         .clicked()
                     {
-                        let _ = rsxp_provision::folders::open(&save);
+                        let _ = fanplay_provision::folders::open(&save);
                     }
                     if theme::button_sized(ui, "Patches folder", ButtonKind::Ghost, ButtonSize::Sm)
                         .clicked()
                     {
-                        let _ = rsxp_provision::folders::open(&patches);
+                        let _ = fanplay_provision::folders::open(&patches);
                     }
                 });
                 ui.label(

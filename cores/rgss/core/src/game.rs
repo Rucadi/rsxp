@@ -6,8 +6,8 @@
 //! its own process. In-process use must therefore keep the RGSS core in a
 //! dedicated worker process until the shim is made cwd-independent.
 
-use rsxp::archive::Archive;
-use rsxp_core::{Content, ContentKind, CoreError, CoreResult, Platform};
+use fanplay_rgss::archive::Archive;
+use fanplay_core::{Content, ContentKind, CoreError, CoreResult, Platform};
 use std::ffi::OsStr;
 use std::path::Path;
 
@@ -68,11 +68,11 @@ pub(crate) fn prepare(content: &Content, platform: &dyn Platform) -> CoreResult<
     };
 
     if let Some(title) = field("Title") {
-        set_startup_env("RSXP_GAME_TITLE", title);
+        set_startup_env("FANPLAY_GAME_TITLE", title);
     } else if let Some(script) = &script
         && let Some(stem) = script.file_stem()
     {
-        set_startup_env("RSXP_GAME_TITLE", stem);
+        set_startup_env("FANPLAY_GAME_TITLE", stem);
     }
 
     let version = match &script {
@@ -84,10 +84,10 @@ pub(crate) fn prepare(content: &Content, platform: &dyn Platform) -> CoreResult<
     };
 
     if let Some(script) = script {
-        set_startup_env("RSXP_SCRIPT", &script);
-        remove_startup_env("RSXP_SCRIPTS");
+        set_startup_env("FANPLAY_SCRIPT", &script);
+        remove_startup_env("FANPLAY_SCRIPTS");
     } else {
-        remove_startup_env("RSXP_SCRIPT");
+        remove_startup_env("FANPLAY_SCRIPT");
         let scripts = field("Scripts").unwrap_or_else(|| {
             format!(
                 "Data/Scripts.{}",
@@ -98,7 +98,7 @@ pub(crate) fn prepare(content: &Content, platform: &dyn Platform) -> CoreResult<
                 }
             )
         });
-        set_startup_env("RSXP_SCRIPTS", scripts);
+        set_startup_env("FANPLAY_SCRIPTS", scripts);
     }
 
     let mut archives = Vec::new();

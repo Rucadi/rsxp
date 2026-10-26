@@ -1,23 +1,23 @@
 [package]
-name = "rsxp-core-runner"
+name = "fanplay-core-runner"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
 license = "GPL-2.0-or-later"
-description = "Headless runner for any RSXP core"
+description = "Headless runner for any FANPLAY core"
 publish = false
 
 [features]
 default = ["gba", "nds"]
-gba = ["rsxp-cores/gba"]
-nds = ["rsxp-cores/nds"]
-rgss = ["rsxp-cores/rgss"]
+gba = ["fanplay-cores/gba"]
+nds = ["fanplay-cores/nds"]
+rgss = ["fanplay-cores/rgss"]
 
 [dependencies]
-rsxp-core = { path = "../../crates/rsxp-core" }
-rsxp-frontend = { path = "../../crates/rsxp-frontend" }
-rsxp-cores = { path = "../../crates/rsxp-cores", default-features = false }
+fanplay-core = { path = "../../crates/fanplay-core" }
+fanplay-frontend = { path = "../../crates/fanplay-frontend" }
+fanplay-cores = { path = "../../crates/fanplay-cores", default-features = false }
 
 [[bin]]
-name = "rsxp-core-runner"
+name = "fanplay-core-runner"
 path = "src/main.rs"

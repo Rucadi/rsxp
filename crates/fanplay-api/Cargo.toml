@@ -1,0 +1,13 @@
+[package]
+name = "fanplay-api"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "GPL-2.0-or-later"
+description = "Generic operation registry and request routing for FANPLAY adapters"
+publish = false
+
+[dependencies]
+fanplay-extension-api = { path = "../fanplay-extension-api" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

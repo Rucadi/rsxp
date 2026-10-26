@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Native game discovery and the persistent RSXP library.
-//! Library entries live under RSXP/config; game data lives under RSXP/saves.
+//! Native game discovery and the persistent FANPLAY library.
+//! Library entries live under FANPLAY/config; game data lives under FANPLAY/saves.
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 pub fn load() -> Vec<String> {
-    rsxp_provision::config::library(&rsxp_provision::root(None))
+    fanplay_provision::config::library(&fanplay_provision::root(None))
 }
 pub fn remember(recent: &mut Vec<String>, path: &Path) -> std::io::Result<()> {
     let path = path.to_string_lossy().into_owned();
     recent.retain(|p| p != &path);
     recent.insert(0, path);
-    rsxp_provision::config::save_library(&rsxp_provision::root(None), recent)
+    fanplay_provision::config::save_library(&fanplay_provision::root(None), recent)
         .map_err(std::io::Error::other)
 }
 pub fn discover(path: &str) -> Result<GameSource, String> {
@@ -124,7 +124,7 @@ pub fn data_directory(root: &Path, title: &str) -> PathBuf {
     } else {
         &title
     };
-    rsxp_provision::root(Some(root))
+    fanplay_provision::root(Some(root))
         .join("saves/rgss")
         .join(title)
 }
@@ -135,7 +135,7 @@ mod tests {
 
     fn temp(label: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!(
-            "rsxp-library-{label}-{}-{}",
+            "fanplay-library-{label}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

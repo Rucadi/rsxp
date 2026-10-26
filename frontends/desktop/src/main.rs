@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! `rsxp` desktop binary: the entry point, CLI dispatch, archive tooling, and
+//! `fanplay` desktop binary: the entry point, CLI dispatch, archive tooling, and
 //! the standalone demo scene.
 //!
 //! Submodules wire the frontend together: [`audio`] (Kira audio),
@@ -24,7 +24,7 @@
 //!   is set (which means this is the runner side of a dashboard session),
 //!   opens the dashboard around the run; otherwise calls [`runtime::run`].
 //!
-//! `RSXP_RENDERER`, `RSXP_INPUT`, `RSXP_PATCH`, `RSXP_RECORD`, and the private
+//! `FANPLAY_RENDERER`, `FANPLAY_INPUT`, `FANPLAY_PATCH`, `FANPLAY_RECORD`, and the private
 //! dashboard session transport variables are the relevant environment; [`HELP`]
 //! documents the full CLI and frame pacing. `main` maps the
 //! returned status (or an error) to the process exit code.
@@ -63,7 +63,7 @@ mod webview;
 #[cfg(feature = "rgss")]
 mod window;
 #[cfg(feature = "rgss")]
-use rsxp::{
+use fanplay_rgss::{
     archive::Archive,
     graphics::{Bitmap, Color, Rect, Scene, Sprite},
     input::Input,
@@ -76,20 +76,20 @@ use std::{
     time::{Duration, Instant},
 };
 
-const HELP: &str = "rsxp — standalone Rust engine prototype
+const HELP: &str = "Fanplay — experimental fangame player
 
 Usage:
-  rsxp                         Open the game dashboard
-  rsxp [demo] [--headless] [--frames N] [--output frame.ppm]
-  rsxp archive-list ARCHIVE
-  rsxp archive-cat ARCHIVE ENTRY
-  rsxp run --script FILE [--rgss 1|2|3] [--headless] [--frames N] [--output frame.ppm]
-  rsxp run --game DIRECTORY [--rgss 1|2|3] [--headless] [--frames N] [--output frame.ppm]
-  rsxp software-provision list REPOSITORY...
-  rsxp software-provision install REPOSITORY GAME_ID
-  rsxp software-provision import-base ROM
-  rsxp --help
-  rsxp --version
+  fanplay                         Open the game dashboard
+  fanplay [demo] [--headless] [--frames N] [--output frame.ppm]
+  fanplay archive-list ARCHIVE
+  fanplay archive-cat ARCHIVE ENTRY
+  fanplay run --script FILE [--rgss 1|2|3] [--headless] [--frames N] [--output frame.ppm]
+  fanplay run --game PATH [--rgss 1|2|3] [--headless] [--frames N] [--output frame.ppm]
+  fanplay software-provision list REPOSITORY...
+  fanplay software-provision install REPOSITORY GAME_ID
+  fanplay software-provision import-base ROM
+  fanplay --help
+  fanplay --version
 
 Arrow keys move the demo sprite; Escape quits the demo. Headless demo mode
 defaults to one frame; Ruby scripts run to completion or --frames N updates.
@@ -106,14 +106,14 @@ entry hides the UI; F1 can reveal it again.
 --renderer auto|wgpu|software selects the desktop compositor (default auto).
 Auto uses the wgpu compositor; software keeps RGSS composition on the CPU while
 still presenting through wgpu. Headless runs use software unless wgpu is
-explicitly requested. RSXP_RENDERER also sets the default. Build with
+explicitly requested. FANPLAY_RENDERER also sets the default. Build with
 --release for game performance.
-RSXP_INPUT=FRAME:SCANCODE[:HOLD][,...] injects scripted input for
+FANPLAY_INPUT=FRAME:SCANCODE[:HOLD][,...] injects scripted input for
 headless runs and tests.
 Generic runtime patches are toggled from the left panel of the workspace and
 applied live to the running game. Game-specific behavior is supplied by Rhai
 plugins, including the Essentials panoramic and Cable Club tools.
-RSXP_PATCH=ID[,ID...] pre-enables patches at startup.
+FANPLAY_PATCH=ID[,ID...] pre-enables patches at startup.
 
 The run command embeds MRI Ruby through Magnus. Core RGSS graphics, input,
 and Table bindings are available; full game compatibility is still in progress.
@@ -228,7 +228,7 @@ fn demo(args: &[String]) -> Result<(), Box<dyn Error>> {
             Box::new(window.native()),
         ));
         let surface = instance.create_surface(window.native())?;
-        let gpu = rsxp::gpu::GpuRenderer::new_for_surface(width, height, instance, &surface)?;
+        let gpu = fanplay_rgss::gpu::GpuRenderer::new_for_surface(width, height, instance, &surface)?;
         let display = crate::gpu_present::GpuDisplay::new(&gpu, surface, window.physical_size())?;
         (Some(gpu), Some(display))
     } else {
@@ -303,7 +303,7 @@ fn run() -> Result<u8, Box<dyn Error>> {
     match args.first().map(String::as_str) {
         Some("software-provision") => return provision_cli::run(&args[1..]),
         Some("--help" | "-h") => println!("{HELP}"),
-        Some("--version" | "-V") => println!("rsxp {}", env!("CARGO_PKG_VERSION")),
+        Some("--version" | "-V") => println!("fanplay {}", env!("CARGO_PKG_VERSION")),
         Some("archive-list" | "archive-cat") => {
             #[cfg(feature = "rgss")]
             archive_command(&args)?;
@@ -320,8 +320,8 @@ fn run() -> Result<u8, Box<dyn Error>> {
             runtime::validate(&args[1..])?;
             #[cfg(all(feature = "gpu", feature = "rgss"))]
             if !args.iter().any(|a| a == "--headless")
-                && std::env::var_os("RSXP_SESSION_ADDR").is_none()
-                && std::env::var_os("RSXP_SESSION_STDIO").is_none()
+                && std::env::var_os("FANPLAY_SESSION_ADDR").is_none()
+                && std::env::var_os("FANPLAY_SESSION_STDIO").is_none()
             {
                 return dashboard::run(Some(args[1..].to_vec()));
             }
@@ -348,7 +348,7 @@ fn main() -> std::process::ExitCode {
     match run() {
         Ok(status) => std::process::ExitCode::from(status),
         Err(error) => {
-            eprintln!("rsxp: {error}");
+            eprintln!("fanplay: {error}");
             std::process::ExitCode::FAILURE
         }
     }

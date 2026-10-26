@@ -8,14 +8,14 @@
 //!
 //! The backend needs a 16 KiB GBA BIOS. This adapter embeds the open-source
 //! Normmatt/VBA-M replacement BIOS from ReGBA, so no external file is required.
-//! `RSXP_GBA_BIOS` or `gba_bios.bin`/`bios.bin` beside the ROM or in the save
+//! `FANPLAY_GBA_BIOS` or `gba_bios.bin`/`bios.bin` beside the ROM or in the save
 //! directory can override it with the user's own dump.
 //!
 //! The steady-state loop performs no allocation: the backend renders into its
 //! own `u32` framebuffer, which is submitted zero-copy as `Bgrx8` on
 //! little-endian hosts, and audio is drained from a preallocated ring buffer.
 
-use rsxp_core::{
+use fanplay_core::{
     content_hash, AudioInfo, Button, CommandOutcome, CommandRequest, Content, ContentKind,
     ContentProbe, Core, CoreCapabilities, CoreCommand, CoreContext, CoreError, CoreEvent, CoreInfo,
     CoreLoadInfo, CoreRegistration, CoreRegistry, CoreResult, ExitStatus, InputInfo, PcmBuffer,
@@ -111,7 +111,7 @@ pub fn detect(probe: &ContentProbe<'_>) -> u32 {
 #[derive(Default)]
 struct GbaAdapter {
     context: Option<CoreContext>,
-    control: Option<Arc<rsxp_core::CoreControl>>,
+    control: Option<Arc<fanplay_core::CoreControl>>,
     core: Option<GameBoyAdvance>,
     audio_consumer: Option<SampleConsumer>,
     audio_scratch: Vec<i16>,
@@ -155,7 +155,7 @@ impl GbaAdapter {
     }
 
     fn read_bios(content: &Content, context: &CoreContext) -> CoreResult<Vec<u8>> {
-        if let Some(path) = std::env::var_os("RSXP_GBA_BIOS").map(PathBuf::from) {
+        if let Some(path) = std::env::var_os("FANPLAY_GBA_BIOS").map(PathBuf::from) {
             return read_bios_file(&path).ok_or_else(|| {
                 CoreError::content(format!(
                     "{}: BIOS must be at least {BIOS_BYTES} bytes",
@@ -438,7 +438,7 @@ impl GbaAdapter {
         }
     }
 
-    fn set_buttons(&mut self, buttons: rsxp_core::ButtonSet) {
+    fn set_buttons(&mut self, buttons: fanplay_core::ButtonSet) {
         let Some(core) = self.core.as_mut() else {
             return;
         };
@@ -550,7 +550,7 @@ impl Core for GbaAdapter {
         } else if let Some(output) = context.audio.output_config() {
             output.sample_rate
         } else {
-            std::env::var("RSXP_GBA_AUDIO_RATE")
+            std::env::var("FANPLAY_GBA_AUDIO_RATE")
                 .ok()
                 .and_then(|value| value.parse().ok())
                 .filter(|rate: &u32| (8_000..=192_000).contains(rate))
@@ -663,9 +663,9 @@ fn uses_rtc(rom: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rsxp_core::audio::NullAudioSink;
-    use rsxp_core::events::NullEventSink;
-    use rsxp_core::{CoreControl, VideoSink};
+    use fanplay_core::audio::NullAudioSink;
+    use fanplay_core::events::NullEventSink;
+    use fanplay_core::{CoreControl, VideoSink};
     use std::sync::{Arc, Mutex};
 
     struct HashSink(Arc<Mutex<u64>>);
@@ -724,9 +724,9 @@ mod tests {
     }
 
     struct GbaTestPlatform;
-    impl rsxp_core::Platform for GbaTestPlatform {
-        fn read_content(&self, path: &str) -> rsxp_core::PlatformResult<Vec<u8>> {
-            Err(rsxp_core::PlatformError::not_found(path))
+    impl fanplay_core::Platform for GbaTestPlatform {
+        fn read_content(&self, path: &str) -> fanplay_core::PlatformResult<Vec<u8>> {
+            Err(fanplay_core::PlatformError::not_found(path))
         }
         fn save_dir(&self) -> PathBuf {
             std::env::temp_dir()

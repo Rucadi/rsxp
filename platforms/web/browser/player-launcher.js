@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-import init, * as engine from './pkg/rsxp_web.js';
+import init, * as engine from './pkg/fanplay_web.js';
 import { createLauncher } from './launcher-controller.js';
 
 // The page supplies browser I/O. SessionPanel owns the launcher UI on both hosts.
-const bundle = globalThis.RSXP_BUNDLE;
+const bundle = globalThis.FANPLAY_BUNDLE;
 const canvas = document.getElementById('screen');
 const picker = document.getElementById('game-folder');
 const zipPicker = document.getElementById('game-zip');
@@ -21,8 +21,8 @@ function resize() {
 }
 resize();
 await engine.web_init_eframe(canvas);
-globalThis.RSXP = globalThis.RSXP || {};
-globalThis.RSXP.control = {
+globalThis.FANPLAY = globalThis.FANPLAY || {};
+globalThis.FANPLAY.control = {
   discovery: async () => JSON.parse(engine.web_control_discovery()),
   openapi: async () => JSON.parse(engine.web_control_openapi()),
   request: async () => {
@@ -34,7 +34,7 @@ globalThis.RSXP.control = {
 };
 status.hidden = true;
 const launcher = createLauncher({
-  bundle, supplied: globalThis.RSXP_GAME, document, location, fetch,
+  bundle, supplied: globalThis.FANPLAY_GAME, document, location, fetch,
   update({ title, status: message, busy }) { engine.web_eframe_launcher(title, message, busy); },
   pickFolder() { picker.value = ''; picker.click(); },
   pickZip() { zipPicker.value = ''; zipPicker.click(); },
@@ -45,7 +45,7 @@ const launcher = createLauncher({
     // module and RGSS bundle untouched (and avoid parsing ~30 MiB of Ruby).
     if (!cartridge) await bundle.load('ruby/browser.umd.js');
     // Keep the renderer and WASM instance alive across the launcher/game boundary.
-    globalThis.RSXP_PLAYER = {
+    globalThis.FANPLAY_PLAYER = {
       game, releaseSource, engineInitialized: true, eframeInitialized: true,
       rubyBytes: cartridge ? undefined : bundle.decode(bundle.payload.ruby),
       rgssSource: cartridge ? '' : bundle.payload.rgss,
@@ -63,7 +63,7 @@ const launcher = createLauncher({
     }
     events.abort();
     delete bundle.payload.ruby;
-    document.getElementById('rsxp-payload')?.remove();
+    document.getElementById('fanplay-payload')?.remove();
   },
 });
 on(picker, 'change', () => launcher.folder(picker.files));

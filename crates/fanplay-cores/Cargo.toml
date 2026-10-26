@@ -1,0 +1,21 @@
+[package]
+name = "fanplay-cores"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "GPL-2.0-or-later"
+description = "Build-time core registry for FANPLAY frontends"
+publish = false
+
+[features]
+default = ["gba", "nds"]
+gba = ["dep:fanplay-core-gba"]
+nds = ["dep:fanplay-core-nds"]
+rgss = ["dep:fanplay-core-rgss"]
+
+[dependencies]
+fanplay-core-nds = { path = "../../cores/nds/core", optional = true }
+fanplay-core = { path = "../fanplay-core" }
+fanplay-frontend = { path = "../fanplay-frontend" }
+fanplay-core-gba = { path = "../../cores/gba/core", optional = true }
+fanplay-core-rgss = { path = "../../cores/rgss/core", optional = true }

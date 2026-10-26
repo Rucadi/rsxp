@@ -4,7 +4,7 @@
 //! The RGSS path in `app.js` runs Ruby in a Fiber and calls the engine per
 //! frame. Cartridge cores own a native `Core::run` loop instead, so the page
 //! drives them one frame at a time by setting a one-frame limit before each
-//! call. Everything else is shared with the desktop host: `rsxp-core` routing,
+//! call. Everything else is shared with the desktop host: `fanplay-core` routing,
 //! `Platform`/`VideoSink`/`AudioSink`/`EventSink`, `CoreControl` input and the
 //! same egui workspace used for RGSS.
 //!
@@ -13,8 +13,8 @@
 //! `read_content` fallback then sees them without any native file access.
 
 use crate::files::read_via_host;
-use rsxp::graphics::Bitmap;
-use rsxp_core::{
+use fanplay_rgss::graphics::Bitmap;
+use fanplay_core::{
     AudioConfig, AudioSink, Button, Content, Core, CoreCommand, CoreContext, CoreControl,
     CoreEvent, EventSink, PcmBuffer, Platform, PlatformError, PlatformResult, VideoFrame,
     VideoSink,
@@ -86,7 +86,7 @@ impl Platform for CartridgePlatform {
         // pacing that a native host would get from a blocking sleep.
     }
 
-    fn log(&self, level: rsxp_core::LogLevel, message: &str) {
+    fn log(&self, level: fanplay_core::LogLevel, message: &str) {
         let _ = level;
         web_sys::console::log_1(&message.into());
     }
@@ -100,7 +100,7 @@ struct CartridgeVideo {
 
 impl VideoSink for CartridgeVideo {
     fn present(&mut self, frame: VideoFrame<'_>) {
-        if rsxp_frontend::video::convert_rgba(&frame, &mut self.rgba).is_ok()
+        if fanplay_frontend::video::convert_rgba(&frame, &mut self.rgba).is_ok()
             && let Ok(bitmap) = Bitmap::from_rgba(frame.width, frame.height, &self.rgba)
         {
             *self.frame.lock().unwrap() = Some(bitmap);
@@ -266,8 +266,8 @@ pub fn web_core_init(name: &str, bytes: &[u8]) -> Result<String, JsValue> {
         )));
     }
     let path = Path::new(name);
-    let probe = rsxp_core::ContentProbe::new(path, false, bytes);
-    let registration = rsxp_cores::catalog()
+    let probe = fanplay_core::ContentProbe::new(path, false, bytes);
+    let registration = fanplay_cores::catalog()
         .route_probe(&probe)
         .map_err(|error| JsValue::from_str(&error.to_string()))?;
 

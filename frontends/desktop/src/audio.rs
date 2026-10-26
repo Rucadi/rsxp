@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Pure-Rust desktop audio backend built on Kira over CPAL.
 //!
-//! [`DesktopAudio`] is the concrete [`rsxp::host::AudioBackend`] the desktop
+//! [`DesktopAudio`] is the concrete [`fanplay_rgss::host::AudioBackend`] the desktop
 //! host installs to service the engine's four RGSS audio channels
 //! ([`AudioChannel::Bgm`], `Bgs`, `Me`, `Se`), which are indexed here as
 //! `[Bgm, Bgs, Me, Se]` for per-channel master volumes.
@@ -33,7 +33,7 @@ use kira::{
     },
     AudioManager, AudioManagerSettings, Decibels, DefaultBackend, Tween,
 };
-use rsxp::host::{AudioBackend, AudioChannel};
+use fanplay_rgss::host::{AudioBackend, AudioChannel};
 use std::{collections::HashMap, io::Cursor, time::Duration};
 
 enum VoiceHandle {

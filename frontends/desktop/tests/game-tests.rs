@@ -4,10 +4,10 @@
 //! in the default `cargo test`/CI suite. Run them explicitly:
 //!
 //! ```text
-//! cargo test -p rsxp-desktop --features game-tests --test game-tests
+//! cargo test -p fanplay-desktop --features game-tests --test game-tests
 //! ```
 //!
-//! The `pokemonz` cases accept `RSXP_POKEMONZ_ROOT`/`RSXP_POKEMONZ_SAVE`; the
+//! The `pokemonz` cases accept `FANPLAY_POKEMONZ_ROOT`/`FANPLAY_POKEMONZ_SAVE`; the
 //! world-camera case also needs a wgpu adapter and is `#[ignore]`d (add
 //! `-- --ignored`).
 //!
@@ -30,7 +30,7 @@ impl TempDir {
     fn new() -> Self {
         static ID: AtomicUsize = AtomicUsize::new(0);
         let path = std::env::temp_dir().join(format!(
-            "rsxp-game-test-{}-{}",
+            "fanplay-game-test-{}-{}",
             std::process::id(),
             ID.fetch_add(1, Ordering::Relaxed)
         ));
@@ -45,7 +45,7 @@ impl Drop for TempDir {
 }
 
 fn run(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_rsxp"))
+    Command::new(env!("CARGO_BIN_EXE_fanplay"))
         .args(args)
         .output()
         .unwrap()
@@ -55,7 +55,7 @@ fn run(args: &[&str]) -> Output {
 fn pokemonz_starter_event_reads_binary_data_and_stores_fennekin() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../crates/rsxp-rgss/testdata/pokemonz_starter.rb"
+        "/../../crates/fanplay-rgss/testdata/pokemonz_starter.rb"
     );
     let result = run(&["run", "--script", script, "--headless"]);
     assert!(
@@ -81,7 +81,7 @@ fn pokemonz_starter_event_reads_binary_data_and_stores_fennekin() {
 fn pokemonz_pokedex_movedex_itemdex_and_encounters_use_legacy_pbs_data() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../crates/rsxp-rgss/testdata/pokemonz_game_api.rb"
+        "/../../crates/fanplay-rgss/testdata/pokemonz_game_api.rb"
     );
     let result = run(&["run", "--script", script, "--headless"]);
     assert!(
@@ -109,11 +109,11 @@ fn pokemonz_pokedex_movedex_itemdex_and_encounters_use_legacy_pbs_data() {
 fn pokemonz_continue_loads_a_temporary_save_copy() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../crates/rsxp-rgss/testdata/pokemonz_save_load.rb"
+        "/../../crates/fanplay-rgss/testdata/pokemonz_save_load.rb"
     );
     // The debug native dispatcher needs more machine stack than Ruby's
     // default Fiber stack; the game itself runs on the main Ruby stack.
-    let result = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+    let result = Command::new(env!("CARGO_BIN_EXE_fanplay"))
         .args(["run", "--script", script, "--headless"])
         .env("RUBY_FIBER_MACHINE_STACK_SIZE", "8388608")
         .output()
@@ -135,7 +135,7 @@ fn retained_map_matches_legacy_frames() {
 
 fn retained_frames_match(fixture: &str) {
     let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../crates/rsxp-rgss/testdata")
+        .join("../../crates/fanplay-rgss/testdata")
         .join(fixture);
     let mut results = Vec::new();
     for (state, map, scroll, world, chunks) in [
@@ -148,7 +148,7 @@ fn retained_frames_match(fixture: &str) {
         ("1", "1", "1", "0", "1"),
         ("1", "1", "1", "1", "1"),
     ] {
-        let result = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+        let result = Command::new(env!("CARGO_BIN_EXE_fanplay"))
             .args([
                 "run",
                 "--script",
@@ -157,11 +157,11 @@ fn retained_frames_match(fixture: &str) {
                 "--renderer",
                 "software",
             ])
-            .env("RSXP_NATIVE_STATE", state)
-            .env("RSXP_RETAINED_MAP", map)
-            .env("RSXP_NATIVE_SCROLL", scroll)
-            .env("RSXP_WORLD_CAMERA", world)
-            .env("RSXP_MAP_CHUNKS", chunks)
+            .env("FANPLAY_NATIVE_STATE", state)
+            .env("FANPLAY_RETAINED_MAP", map)
+            .env("FANPLAY_NATIVE_SCROLL", scroll)
+            .env("FANPLAY_WORLD_CAMERA", world)
+            .env("FANPLAY_MAP_CHUNKS", chunks)
             .output()
             .unwrap();
         assert!(
@@ -181,14 +181,14 @@ fn retained_frames_match(fixture: &str) {
 fn world_camera_gpu_frames_match_software_during_scrolling() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../crates/rsxp-rgss/testdata/rgss_retained_map.rb"
+        "/../../crates/fanplay-rgss/testdata/rgss_retained_map.rb"
     );
     let dir = TempDir::new();
     for frame in [3, 4, 10, 14] {
         let mut images = Vec::new();
         for (renderer, camera) in [("software", "0"), ("wgpu", "1")] {
             let path = dir.0.join(format!("{frame}-{renderer}.ppm"));
-            let output = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+            let output = Command::new(env!("CARGO_BIN_EXE_fanplay"))
                 .args([
                     "run",
                     "--script",
@@ -199,12 +199,12 @@ fn world_camera_gpu_frames_match_software_during_scrolling() {
                     "--output",
                     path.to_str().unwrap(),
                 ])
-                .env("RSXP_NATIVE_STATE", "1")
-                .env("RSXP_RETAINED_MAP", "1")
-                .env("RSXP_NATIVE_SCROLL", "1")
-                .env("RSXP_WORLD_CAMERA", camera)
-                .env("RSXP_MAP_CHUNKS", camera)
-                .env("RSXP_TEST_CAPTURE_FRAME", frame.to_string())
+                .env("FANPLAY_NATIVE_STATE", "1")
+                .env("FANPLAY_RETAINED_MAP", "1")
+                .env("FANPLAY_NATIVE_SCROLL", "1")
+                .env("FANPLAY_WORLD_CAMERA", camera)
+                .env("FANPLAY_MAP_CHUNKS", camera)
+                .env("FANPLAY_TEST_CAPTURE_FRAME", frame.to_string())
                 .output()
                 .unwrap();
             assert!(

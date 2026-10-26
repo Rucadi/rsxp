@@ -1,27 +1,27 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 use super::*;
 use dust_core::utils::mem_prelude::*;
-use rsxp_core::{AudioSink, CoreControl, EventSink, Platform, VideoSink};
+use fanplay_core::{AudioSink, CoreControl, EventSink, Platform, VideoSink};
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
 };
 struct PlatformFs(PathBuf);
 impl Platform for PlatformFs {
-    fn read_content(&self, name: &str) -> rsxp_core::PlatformResult<Vec<u8>> {
-        std::fs::read(self.0.join(name)).map_err(|_| rsxp_core::PlatformError::not_found(name))
+    fn read_content(&self, name: &str) -> fanplay_core::PlatformResult<Vec<u8>> {
+        std::fs::read(self.0.join(name)).map_err(|_| fanplay_core::PlatformError::not_found(name))
     }
-    fn read_system_file(&self, name: &str) -> rsxp_core::PlatformResult<Option<Vec<u8>>> {
+    fn read_system_file(&self, name: &str) -> fanplay_core::PlatformResult<Option<Vec<u8>>> {
         match std::fs::read(self.0.join(name)) {
             Ok(bytes) => Ok(Some(bytes)),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(error) => Err(error.into()),
         }
     }
-    fn read_save(&self, name: &str) -> rsxp_core::PlatformResult<Option<Vec<u8>>> {
+    fn read_save(&self, name: &str) -> fanplay_core::PlatformResult<Option<Vec<u8>>> {
         self.read_system_file(name)
     }
-    fn write_save(&self, name: &str, bytes: &[u8]) -> rsxp_core::PlatformResult<()> {
+    fn write_save(&self, name: &str, bytes: &[u8]) -> fanplay_core::PlatformResult<()> {
         std::fs::write(self.0.join(name), bytes).map_err(|error| error.into())
     }
     fn save_dir(&self) -> PathBuf {
@@ -93,7 +93,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let path = std::env::temp_dir().join(format!(
-            "rsxp-nds-{}-{}",
+            "fanplay-nds-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

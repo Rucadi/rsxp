@@ -1249,6 +1249,173 @@ dependencies = [
 ]
 
 [[package]]
+name = "fanplay-api"
+version = "0.1.0"
+dependencies = [
+ "fanplay-extension-api",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "fanplay-control"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "fanplay-core"
+version = "0.1.0"
+
+[[package]]
+name = "fanplay-core-gba"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "fanplay-core",
+ "rustboyadvance-core",
+ "rustboyadvance-utils",
+]
+
+[[package]]
+name = "fanplay-core-nds"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dust-core",
+ "dust-soft-2d",
+ "dust-soft-3d",
+ "dust-wgpu-2d",
+ "dust-wgpu-3d",
+ "fanplay-core",
+ "pollster",
+ "serde_json",
+ "wgpu 23.0.1",
+]
+
+[[package]]
+name = "fanplay-cores"
+version = "0.1.0"
+dependencies = [
+ "fanplay-core",
+ "fanplay-core-gba",
+ "fanplay-core-nds",
+ "fanplay-frontend",
+]
+
+[[package]]
+name = "fanplay-extension-api"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "fanplay-extension-ui"
+version = "0.1.0"
+dependencies = [
+ "egui",
+ "fanplay-extension-api",
+ "serde_json",
+]
+
+[[package]]
+name = "fanplay-extensions"
+version = "0.1.0"
+dependencies = [
+ "fanplay-api",
+ "fanplay-extension-api",
+ "rhai",
+ "serde_json",
+]
+
+[[package]]
+name = "fanplay-frontend"
+version = "0.1.0"
+dependencies = [
+ "fanplay-core",
+]
+
+[[package]]
+name = "fanplay-gba"
+version = "0.1.0"
+dependencies = [
+ "egui",
+]
+
+[[package]]
+name = "fanplay-nds"
+version = "0.1.0"
+dependencies = [
+ "egui",
+]
+
+[[package]]
+name = "fanplay-rgss"
+version = "0.1.0"
+dependencies = [
+ "fanplay-control",
+ "fontdue",
+ "gif",
+ "image",
+ "ogg",
+ "serde",
+ "serde_json",
+ "theora-rs",
+]
+
+[[package]]
+name = "fanplay-ui"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "eframe",
+ "egui",
+ "fanplay-extension-api",
+ "fanplay-extension-ui",
+ "fanplay-extensions",
+ "fanplay-gba",
+ "fanplay-nds",
+ "fanplay-rgss",
+ "image",
+ "serde",
+ "serde_json",
+ "web-time",
+ "winit",
+]
+
+[[package]]
+name = "fanplay-web"
+version = "0.1.0"
+
+[[package]]
+name = "fanplay-web-engine"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "eframe",
+ "fanplay-control",
+ "fanplay-core",
+ "fanplay-cores",
+ "fanplay-extension-api",
+ "fanplay-extensions",
+ "fanplay-frontend",
+ "fanplay-rgss",
+ "fanplay-ui",
+ "fontdue",
+ "image",
+ "js-sys",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "wgpu 30.0.1",
+]
+
+[[package]]
 name = "fax"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3150,173 +3317,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rsxp"
-version = "0.1.0"
-dependencies = [
- "fontdue",
- "gif",
- "image",
- "ogg",
- "rsxp-control",
- "serde",
- "serde_json",
- "theora-rs",
-]
-
-[[package]]
-name = "rsxp-api"
-version = "0.1.0"
-dependencies = [
- "rsxp-extension-api",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "rsxp-control"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "rsxp-core"
-version = "0.1.0"
-
-[[package]]
-name = "rsxp-core-gba"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "rsxp-core",
- "rustboyadvance-core",
- "rustboyadvance-utils",
-]
-
-[[package]]
-name = "rsxp-core-nds"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dust-core",
- "dust-soft-2d",
- "dust-soft-3d",
- "dust-wgpu-2d",
- "dust-wgpu-3d",
- "pollster",
- "rsxp-core",
- "serde_json",
- "wgpu 23.0.1",
-]
-
-[[package]]
-name = "rsxp-cores"
-version = "0.1.0"
-dependencies = [
- "rsxp-core",
- "rsxp-core-gba",
- "rsxp-core-nds",
- "rsxp-frontend",
-]
-
-[[package]]
-name = "rsxp-extension-api"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "rsxp-extension-ui"
-version = "0.1.0"
-dependencies = [
- "egui",
- "rsxp-extension-api",
- "serde_json",
-]
-
-[[package]]
-name = "rsxp-extensions"
-version = "0.1.0"
-dependencies = [
- "rhai",
- "rsxp-api",
- "rsxp-extension-api",
- "serde_json",
-]
-
-[[package]]
-name = "rsxp-frontend"
-version = "0.1.0"
-dependencies = [
- "rsxp-core",
-]
-
-[[package]]
-name = "rsxp-gba"
-version = "0.1.0"
-dependencies = [
- "egui",
-]
-
-[[package]]
-name = "rsxp-nds"
-version = "0.1.0"
-dependencies = [
- "egui",
-]
-
-[[package]]
-name = "rsxp-ui"
-version = "0.1.0"
-dependencies = [
- "base64",
- "eframe",
- "egui",
- "image",
- "rsxp",
- "rsxp-extension-api",
- "rsxp-extension-ui",
- "rsxp-extensions",
- "rsxp-gba",
- "rsxp-nds",
- "serde",
- "serde_json",
- "web-time",
- "winit",
-]
-
-[[package]]
-name = "rsxp-web"
-version = "0.1.0"
-
-[[package]]
-name = "rsxp-web-engine"
-version = "0.1.0"
-dependencies = [
- "console_error_panic_hook",
- "eframe",
- "fontdue",
- "image",
- "js-sys",
- "rsxp",
- "rsxp-control",
- "rsxp-core",
- "rsxp-cores",
- "rsxp-extension-api",
- "rsxp-extensions",
- "rsxp-frontend",
- "rsxp-ui",
- "serde_json",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
- "wgpu 30.0.1",
-]
-
-[[package]]
 name = "rustboyadvance-core"
 version = "0.1.0"
 source = "git+https://github.com/michelhe/rustboyadvance-ng?rev=1d7ff23a6adb42d803ebd393c3d27d94e4fea15e#1d7ff23a6adb42d803ebd393c3d27d94e4fea15e"
@@ -5063,7 +5063,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 name = "xtask"
 version = "0.1.0"
 dependencies = [
- "rsxp",
+ "fanplay-rgss",
  "serde_json",
 ]
 

@@ -13,48 +13,48 @@ import { rubySource } from './ruby-sources.mjs';
 const root = resolve(import.meta.dirname, '..');
 const pkg = resolve(process.argv[2] || `${root}/platforms/web/dist/pkg`);
 const shim = process.argv[3] ? readFileSync(process.argv[3], 'utf8') : rubySource('RGSS_SOURCE');
-const engine = await import(pathToFileURL(`${pkg}/rsxp_web.js`));
-await engine.default({ module_or_path: readFileSync(`${pkg}/rsxp_web_bg.wasm`) });
+const engine = await import(pathToFileURL(`${pkg}/fanplay_web.js`));
+await engine.default({ module_or_path: readFileSync(`${pkg}/fanplay_web_bg.wasm`) });
 engine.web_init(160, 120, 1, 40, undefined);
 const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });
 let calls = 0;
-globalThis.RSXP = {
+globalThis.FANPLAY = {
   native_text(request) {
     calls += 1;
     const result = engine.web_native_call(encoder.encode(request));
-    if (result === undefined) return '__RSXP_STOP__';
+    if (result === undefined) return '__FANPLAY_STOP__';
     if (!result.length) return '';
     try { return `U${decoder.decode(result)}`; }
     catch { return `B${Buffer.from(result).toString('base64')}`; }
   },
 };
-globalThis.MKXP = globalThis.RSXP;
+globalThis.MKXP = globalThis.FANPLAY;
 const { vm } = await DefaultRubyVM(await WebAssembly.compile(
   readFileSync(`${root}/platforms/web/dist/ruby/ruby+stdlib.wasm`),
 ), { env: {
   HOME: '/', LANG: 'en_US.UTF-8',
-  ...Object.fromEntries(['RSXP_SPRITE_CACHE']
+  ...Object.fromEntries(['FANPLAY_SPRITE_CACHE']
     .filter(name => process.env[name] !== undefined).map(name => [name, process.env[name]])),
 } });
 // Match the browser VM so fixtures can use Dir.tmpdir/Dir.mktmpdir.
 vm.eval(WASI_TMPDIR_COMPAT);
 vm.eval(`
 require 'js'
-def __rsxp_native(request)
-  text=JS.global[:RSXP].native_text(request.force_encoding(Encoding::UTF_8)).to_s
-  return nil if text=='__RSXP_STOP__'
+def __fanplay_native(request)
+  text=JS.global[:FANPLAY].native_text(request.force_encoding(Encoding::UTF_8)).to_s
+  return nil if text=='__FANPLAY_STOP__'
   return ''.b if text.empty?
   text.getbyte(0)==85 ? text.byteslice(1..-1).b : text.byteslice(1..-1).unpack1('m0')
 end
-def __mkxp_native(request) = __rsxp_native(request)
+def __mkxp_native(request) = __fanplay_native(request)
 `);
 // Load only the RGSS API; the final begin/rescue block launches game scripts.
 const boundary = shim.lastIndexOf('\nbegin\n');
 assert(boundary > 0, 'RGSS game entry block missing');
 vm.eval(shim.slice(0, boundary));
-if (process.env.RSXP_WEB_FIXTURE) {
-  vm.eval(readFileSync(process.env.RSXP_WEB_FIXTURE, 'utf8'));
+if (process.env.FANPLAY_WEB_FIXTURE) {
+  vm.eval(readFileSync(process.env.FANPLAY_WEB_FIXTURE, 'utf8'));
   console.log('WASM_FIXTURE_OK');
   process.exit(0);
 }
@@ -76,7 +76,7 @@ const results = [];
 for (const mode of ['static-sync', 'changing-sync', 'render']) {
   const frames = 80;
   const change = mode === 'static-sync' ? '' : '$sprites.each_with_index { |s,i| s.x=(i*13+frame)%160 if i%4==0 }';
-  const update = mode === 'render' ? 'Graphics.update' : 'Sprite.__sync_all; RSXP.flush_sync';
+  const update = mode === 'render' ? 'Graphics.update' : 'Sprite.__sync_all; FANPLAY.flush_sync';
   calls = 0;
   vm.eval('GC.start; $bench_allocations=GC.stat(:total_allocated_objects)');
   const start = performance.now();

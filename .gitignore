@@ -5,7 +5,7 @@
 *.frag.xxd
 *.ttf.xxd
 ericlostie
-rsxp
+fanplay
 xxd+
 JUEGO
 
@@ -18,8 +18,8 @@ JUEGO
 /mobile/android/.gradle/
 /mobile/android/app/build/
 /mobile/android/local.properties
-!/mobile/android/app/src/main/java/org/rsxp/
-!/mobile/ios/RSXP/
+!/mobile/android/app/src/main/java/org/fanplay/
+!/mobile/ios/FANPLAY/
 /profiles/
 /result
 /result-*
@@ -32,8 +32,8 @@ anil
 *.code-workspace
 
 # Codeblocks
-rsxp.layout
-rsxp.cbp
+fanplay.layout
+fanplay.cbp
 
 # General
 .DS_Store

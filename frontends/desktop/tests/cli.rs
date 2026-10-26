@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! End-to-end integration tests for the `rsxp` command-line binary.
+//! End-to-end integration tests for the `fanplay` command-line binary.
 //!
-//! Every test drives the compiled `rsxp` executable through
-//! `CARGO_BIN_EXE_rsxp` (no window server required) using the Ruby fixtures in
-//! `crates/rsxp-rgss/testdata/` and temporary game folders. Coverage includes:
+//! Every test drives the compiled `fanplay` executable through
+//! `CARGO_BIN_EXE_fanplay` (no window server required) using the Ruby fixtures in
+//! `crates/fanplay-rgss/testdata/` and temporary game folders. Coverage includes:
 //!
 //! - deterministic headless framebuffer output (`--headless --output`, PPM);
 //! - `archive-list`/`archive-cat` against fixed RGSSAD fixtures;
 //! - argument validation and `--help`/`--version`;
 //! - generic runtime patch loading and startup overrides through embedded Ruby
 //!   scripts; Essentials-specific patches are covered by the Rhai plugin host;
-//! - scripted input and controller events (`RSXP_INPUT`) plus RGSS value/media
+//! - scripted input and controller events (`FANPLAY_INPUT`) plus RGSS value/media
 //!   smoke tests across RGSS 1-3;
 //! - script-bundle loading, `Game.ini` handling and encrypted archives;
-//! - the isolated runner session protocol (`RSXP_SESSION_ADDR`/`TOKEN`);
-//! - retained/native state equivalence under `RSXP_*` feature flags.
+//! - the isolated runner session protocol (`FANPLAY_SESSION_ADDR`/`TOKEN`);
+//! - retained/native state equivalence under `FANPLAY_*` feature flags.
 //!
-//! Run with `cargo test -p rsxp-desktop --test cli`. Tests marked `#[ignore]`
+//! Run with `cargo test -p fanplay-desktop --test cli`. Tests marked `#[ignore]`
 //! need a wgpu adapter; run them with `-- --ignored`.
 use std::{
     fs,
@@ -30,7 +30,7 @@ impl TempDir {
     fn new() -> Self {
         static ID: AtomicUsize = AtomicUsize::new(0);
         let path = std::env::temp_dir().join(format!(
-            "rsxp-test-{}-{}",
+            "fanplay-test-{}-{}",
             std::process::id(),
             ID.fetch_add(1, Ordering::Relaxed)
         ));
@@ -44,7 +44,7 @@ impl Drop for TempDir {
     }
 }
 fn run(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_rsxp"))
+    Command::new(env!("CARGO_BIN_EXE_fanplay"))
         .args(args)
         .output()
         .unwrap()
@@ -81,15 +81,15 @@ puts 'JIT_SELECTION_OK'
         (Some("zjit"), "0", "zjit"),
         (Some("off"), "1", "off"),
     ] {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_rsxp"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_fanplay"));
         command
             .args(["run", "--headless", "--script", script.to_str().unwrap()])
             .env_remove("RUBYOPT")
-            .env_remove("RSXP_JIT")
-            .env("RSXP_YJIT", legacy)
+            .env_remove("FANPLAY_JIT")
+            .env("FANPLAY_YJIT", legacy)
             .env("EXPECTED_JIT", expected);
         if let Some(selection) = selection {
-            command.env("RSXP_JIT", selection);
+            command.env("FANPLAY_JIT", selection);
         }
         let output = command.output().unwrap();
         assert!(
@@ -169,7 +169,7 @@ fn invalid_arguments_fail_without_starting_a_window() {
     ] {
         let result = run(&args);
         assert!(!result.status.success());
-        assert!(String::from_utf8_lossy(&result.stderr).starts_with("rsxp: "));
+        assert!(String::from_utf8_lossy(&result.stderr).starts_with("fanplay: "));
     }
     assert!(run(&["--help"]).status.success());
     assert!(run(&["--version"]).status.success());
@@ -187,12 +187,12 @@ class Scene_Map
   def disposeSpritesets; end
   def createSpritesets; end
 end
-listing = RSXP.call('runtime_patch_list')
+listing = FANPLAY.call('runtime_patch_list')
 raise 'map_panoramic missing from the catalog' unless listing.include?("map_panoramic")
 raise 'panoramic mode should start disabled' if RuntimePatches.active?('map_panoramic')
 w0, h0 = Graphics.width, Graphics.height
 $scene = Object.new
-RSXP.call('runtime_patch_set', 'map_panoramic', 1)
+FANPLAY.call('runtime_patch_set', 'map_panoramic', 1)
 RuntimePatches.sync
 raise 'patch did not report active' unless RuntimePatches.active?('map_panoramic')
 raise "resized while off the map: #{Graphics.width}x#{Graphics.height}" unless Graphics.width == w0 && Graphics.height == h0
@@ -205,7 +205,7 @@ raise "frame did not revert off the map: #{Graphics.width}x#{Graphics.height}" u
 $scene = Scene_Map.new
 Graphics.update
 raise "frame did not re-apply on the map: #{Graphics.width}x#{Graphics.height}" unless Graphics.width == (w0 * 1.5).round
-RSXP.call('runtime_patch_set', 'map_panoramic', 0)
+FANPLAY.call('runtime_patch_set', 'map_panoramic', 0)
 RuntimePatches.sync
 raise 'patch did not revert' if RuntimePatches.active?('map_panoramic')
 raise "frame did not shrink back: #{Graphics.width}x#{Graphics.height}" unless Graphics.width == w0 && Graphics.height == h0
@@ -213,7 +213,7 @@ puts 'RUNTIME_PATCH_OK'
 "#,
     )
     .unwrap();
-    let result = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+    let result = Command::new(env!("CARGO_BIN_EXE_fanplay"))
         .args(["run", "--script", script.to_str().unwrap(), "--headless"])
         .output()
         .unwrap();
@@ -236,8 +236,8 @@ fn cable_club_rng_runtime_patch_repairs_missing_rng_and_instance_srand() {
 class Battle_CableClub
   def battleRNG; @battleRNG; end
 end
-raise 'Cable Club RNG patch missing from catalog' unless RSXP.call('runtime_patch_list').include?('cable_club_rng')
-RSXP.call('runtime_patch_set', 'cable_club_rng', 1)
+raise 'Cable Club RNG patch missing from catalog' unless FANPLAY.call('runtime_patch_list').include?('cable_club_rng')
+FANPLAY.call('runtime_patch_set', 'cable_club_rng', 1)
 RuntimePatches.sync
 first = Battle_CableClub.new
 second = Battle_CableClub.new
@@ -246,14 +246,14 @@ seed = first.battleRNG.srand
 first.battleRNG.srand(seed)
 second.battleRNG.srand(seed)
 raise 'Cable Club RNGs did not synchronize' unless first.battleRNG.rand(1_000_000) == second.battleRNG.rand(1_000_000)
-RSXP.call('runtime_patch_set', 'cable_club_rng', 0)
+FANPLAY.call('runtime_patch_set', 'cable_club_rng', 0)
 RuntimePatches.sync
 raise 'patch did not disable' if RuntimePatches.active?('cable_club_rng')
 puts 'CABLE_CLUB_RNG_PATCH_OK'
 "#,
     )
     .unwrap();
-    let result = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+    let result = Command::new(env!("CARGO_BIN_EXE_fanplay"))
         .args(["run", "--script", script.to_str().unwrap(), "--headless"])
         .output()
         .unwrap();
@@ -273,16 +273,16 @@ fn runtime_patch_can_be_preenabled_for_headless_runs() {
     fs::write(
         &script,
         r#"
-raise 'RSXP_PATCH did not enable the patch' unless RSXP.call('runtime_patch_states').include?("map_panoramic=1")
+raise 'FANPLAY_PATCH did not enable the patch' unless FANPLAY.call('runtime_patch_states').include?("map_panoramic=1")
 RuntimePatches.sync
 raise 'pre-enabled patch was not applied' unless RuntimePatches.active?('map_panoramic')
 puts 'RUNTIME_PATCH_ENV_OK'
 "#,
     )
     .unwrap();
-    let result = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+    let result = Command::new(env!("CARGO_BIN_EXE_fanplay"))
         .args(["run", "--script", script.to_str().unwrap(), "--headless"])
-        .env("RSXP_PATCH", "map_panoramic")
+        .env("FANPLAY_PATCH", "map_panoramic")
         .output()
         .unwrap();
     assert!(
@@ -306,24 +306,24 @@ class Scene_Map
   def createSpritesets; end
 end
 $scene = Scene_Map.new
-listing = RSXP.call('runtime_patch_list')
+listing = FANPLAY.call('runtime_patch_list')
 raise 'zoom parameter missing from the catalog' unless listing.include?("map_panoramic\t") && listing.include?("3")
 w0, h0 = Graphics.width, Graphics.height
-RSXP.call('runtime_patch_set', 'map_panoramic', 1)
-RSXP.call('runtime_patch_value_set', 'map_panoramic', 2.0)
+FANPLAY.call('runtime_patch_set', 'map_panoramic', 1)
+FANPLAY.call('runtime_patch_value_set', 'map_panoramic', 2.0)
 RuntimePatches.sync
 raise "zoom 2.0 not applied: #{Graphics.width}x#{Graphics.height}" unless Graphics.width == (w0 * 2.0).round && Graphics.height == (h0 * 2.0).round
-RSXP.call('runtime_patch_value_set', 'map_panoramic', 1.2)
+FANPLAY.call('runtime_patch_value_set', 'map_panoramic', 1.2)
 RuntimePatches.sync
 raise "zoom 1.2 not applied: #{Graphics.width}x#{Graphics.height}" unless Graphics.width == (w0 * 1.2).round && Graphics.height == (h0 * 1.2).round
-RSXP.call('runtime_patch_set', 'map_panoramic', 0)
+FANPLAY.call('runtime_patch_set', 'map_panoramic', 0)
 RuntimePatches.sync
 raise 'frame not restored' unless Graphics.width == w0 && Graphics.height == h0
 puts 'RUNTIME_PATCH_ZOOM_OK'
 "#,
     )
     .unwrap();
-    let result = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+    let result = Command::new(env!("CARGO_BIN_EXE_fanplay"))
         .args(["run", "--script", script.to_str().unwrap(), "--headless"])
         .output()
         .unwrap();
@@ -343,9 +343,9 @@ fn runtime_patch_panoramic_hooks_centre_the_enlarged_map() {
         "runtime_patch_legacy_camera.rb",
     ] {
         let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../crates/rsxp-rgss/testdata")
+            .join("../../crates/fanplay-rgss/testdata")
             .join(fixture);
-        let result = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+        let result = Command::new(env!("CARGO_BIN_EXE_fanplay"))
             .args(["run", "--script", script.to_str().unwrap(), "--headless"])
             .output()
             .unwrap();
@@ -363,11 +363,11 @@ fn runtime_patch_panoramic_hooks_centre_the_enlarged_map() {
 fn native_tiles_match_sprite_path_with_animation_priorities_and_plugins() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../crates/rsxp-rgss/testdata/rgss_native_tiles.rb"
+        "/../../crates/fanplay-rgss/testdata/rgss_native_tiles.rb"
     );
     let mut outputs = Vec::new();
     for mode in ["0", "1"] {
-        let output = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+        let output = Command::new(env!("CARGO_BIN_EXE_fanplay"))
             .args([
                 "run",
                 "--script",
@@ -376,7 +376,7 @@ fn native_tiles_match_sprite_path_with_animation_priorities_and_plugins() {
                 "--renderer",
                 "wgpu",
             ])
-            .env("RSXP_NATIVE_TILEMAP", mode)
+            .env("FANPLAY_NATIVE_TILEMAP", mode)
             .output()
             .unwrap();
         assert!(
@@ -413,11 +413,11 @@ fn native_tiles_match_sprite_path_with_animation_priorities_and_plugins() {
 fn retained_scene_matches_rebuilt_scene_across_resource_changes() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../crates/rsxp-rgss/testdata/rgss_scene_cache.rb"
+        "/../../crates/fanplay-rgss/testdata/rgss_scene_cache.rb"
     );
     let mut outputs = Vec::new();
     for mode in ["0", "1"] {
-        let output = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+        let output = Command::new(env!("CARGO_BIN_EXE_fanplay"))
             .args([
                 "run",
                 "--script",
@@ -426,7 +426,7 @@ fn retained_scene_matches_rebuilt_scene_across_resource_changes() {
                 "--renderer",
                 "wgpu",
             ])
-            .env("RSXP_SCENE_CACHE", mode)
+            .env("FANPLAY_SCENE_CACHE", mode)
             .output()
             .unwrap();
         assert!(
@@ -443,13 +443,13 @@ fn retained_scene_matches_rebuilt_scene_across_resource_changes() {
 fn typed_sprite_sync_matches_ruby_with_effects_and_getter_overrides() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../crates/rsxp-rgss/testdata/rgss_sprite_sync.rb"
+        "/../../crates/fanplay-rgss/testdata/rgss_sprite_sync.rb"
     );
     let dir = TempDir::new();
     let mut results = Vec::new();
     for mode in ["native", "ruby"] {
         let image = dir.0.join(format!("{mode}.ppm"));
-        let result = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+        let result = Command::new(env!("CARGO_BIN_EXE_fanplay"))
             .args([
                 "run",
                 "--script",
@@ -460,7 +460,7 @@ fn typed_sprite_sync_matches_ruby_with_effects_and_getter_overrides() {
                 "--output",
                 image.to_str().unwrap(),
             ])
-            .env("RSXP_SPRITE_SYNC", mode)
+            .env("FANPLAY_SPRITE_SYNC", mode)
             .output()
             .unwrap();
         assert!(
@@ -477,11 +477,11 @@ fn typed_sprite_sync_matches_ruby_with_effects_and_getter_overrides() {
 fn sprite_cache_preserves_lifecycle_and_pixels() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../crates/rsxp-rgss/testdata/rgss_sync_lifecycle.rb"
+        "/../../crates/fanplay-rgss/testdata/rgss_sync_lifecycle.rb"
     );
     let mut results = Vec::new();
     for (binding, cache) in [("native", "1"), ("ruby", "1"), ("ruby", "0")] {
-        let result = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+        let result = Command::new(env!("CARGO_BIN_EXE_fanplay"))
             .args([
                 "run",
                 "--script",
@@ -490,8 +490,8 @@ fn sprite_cache_preserves_lifecycle_and_pixels() {
                 "--renderer",
                 "software",
             ])
-            .env("RSXP_SPRITE_SYNC", binding)
-            .env("RSXP_SPRITE_CACHE", cache)
+            .env("FANPLAY_SPRITE_SYNC", binding)
+            .env("FANPLAY_SPRITE_CACHE", cache)
             .output()
             .unwrap();
         assert!(
@@ -508,7 +508,7 @@ fn sprite_cache_preserves_lifecycle_and_pixels() {
 fn ruby_rgss_values_gc_and_rendering_all_versions() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../crates/rsxp-rgss/testdata/rgss_smoke.rb"
+        "/../../crates/fanplay-rgss/testdata/rgss_smoke.rb"
     );
     let dir = TempDir::new();
     for version in ["1", "2", "3"] {
@@ -546,7 +546,7 @@ fn scripted_headless_input_triggers_ruby_keys() {
         "loop { Graphics.update; Input.update; break if Input.trigger?(Input::C) }; raise 'raw trigger' unless Input.triggerex?(:RETURN); 2.times { Graphics.update; Input.update; raise 'held snapshot' unless Input.press?(:C) && Input.pressex?(:RETURN) && !Input.trigger?(:C) }; Graphics.update; Input.update; raise 'released snapshot' unless !Input.press?(:C) && Input.release?(:C) && Input.releaseex?(:RETURN); Input.update; raise 'stale release' if Input.release?(:C); puts 'C_OK'\n",
     )
     .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+    let output = Command::new(env!("CARGO_BIN_EXE_fanplay"))
         .args([
             "run",
             "--script",
@@ -557,7 +557,7 @@ fn scripted_headless_input_triggers_ruby_keys() {
             "--frames",
             "30",
         ])
-        .env("RSXP_INPUT", "10:40:3")
+        .env("FANPLAY_INPUT", "10:40:3")
         .output()
         .unwrap();
     assert!(
@@ -573,7 +573,7 @@ fn controller_actions_coexist_with_keyboard_input() {
     let dir = TempDir::new();
     let script = dir.0.join("controller.rb");
     fs::write(&script, "loop { Graphics.update; Input.update; break if Input.trigger?(:C) }; raise 'connection' unless Input.connected? && Input::Controller.count == 1; 3.times { Graphics.update; Input.update }; raise 'keyboard release canceled controller' unless Input.press?(:C) && !Input.pressex?(:RETURN); 3.times { Graphics.update; Input.update }; raise 'controller release' unless Input.release?(:C) && !Input.press?(:C); raise 'disconnect' unless Input.count == 0; puts 'CONTROLLER_OK'\n").unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+    let output = Command::new(env!("CARGO_BIN_EXE_fanplay"))
         .args([
             "run",
             "--script",
@@ -582,7 +582,7 @@ fn controller_actions_coexist_with_keyboard_input() {
             "--frames",
             "30",
         ])
-        .env("RSXP_INPUT", "10:606:6,10:40:3,10:620:6")
+        .env("FANPLAY_INPUT", "10:606:6,10:40:3,10:620:6")
         .output()
         .unwrap();
     assert!(
@@ -597,7 +597,7 @@ fn controller_actions_coexist_with_keyboard_input() {
 fn ruby_images_fonts_and_viewports() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../crates/rsxp-rgss/testdata/rgss_media_smoke.rb"
+        "/../../crates/fanplay-rgss/testdata/rgss_media_smoke.rb"
     );
     let result = run(&["run", "--script", script, "--headless"]);
     assert!(
@@ -636,12 +636,12 @@ fn media_demo_reports_animated_gif_metadata() {
     fs::write(&gif, bytes).unwrap();
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../crates/rsxp-rgss/testdata/media_demo.rb"
+        "/../../crates/fanplay-rgss/testdata/media_demo.rb"
     );
-    let result = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+    let result = Command::new(env!("CARGO_BIN_EXE_fanplay"))
         .args(["run", "--script", script, "--headless", "--frames", "5"])
-        .env("RSXP_GIF", &gif)
-        .env("RSXP_DEMO_FRAMES", "1")
+        .env("FANPLAY_GIF", &gif)
+        .env("FANPLAY_DEMO_FRAMES", "1")
         .output()
         .unwrap();
     assert!(
@@ -659,7 +659,7 @@ fn media_demo_reports_animated_gif_metadata() {
 fn kgl2_compatibility_functions_run_headless() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../crates/rsxp-rgss/testdata/kgl2_smoke.rb"
+        "/../../crates/fanplay-rgss/testdata/kgl2_smoke.rb"
     );
     let result = run(&["run", "--script", script, "--headless"]);
     assert!(
@@ -678,7 +678,7 @@ fn kgl2_compatibility_functions_run_headless() {
 fn mkxp_compatibility_methods_run_headless() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../crates/rsxp-rgss/testdata/mkxp_compat.rb"
+        "/../../crates/fanplay-rgss/testdata/mkxp_compat.rb"
     );
     let result = run(&["run", "--script", script, "--headless"]);
     assert!(
@@ -697,13 +697,13 @@ fn mkxp_compatibility_methods_run_headless() {
 fn movie_playback_polls_skip_input_and_honours_skippable_flag() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../crates/rsxp-rgss/testdata/rgss_movie_input.rb"
+        "/../../crates/fanplay-rgss/testdata/rgss_movie_input.rb"
     );
     for (skippable, key) in [("1", 40), ("1", 41), ("1", 606), ("0", 40)] {
-        let result = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+        let result = Command::new(env!("CARGO_BIN_EXE_fanplay"))
             .args(["run", "--script", script, "--headless", "--frames", "90"])
-            .env("RSXP_INPUT", format!("2:{key}:2"))
-            .env("RSXP_MOVIE_SKIPPABLE", skippable)
+            .env("FANPLAY_INPUT", format!("2:{key}:2"))
+            .env("FANPLAY_MOVIE_SKIPPABLE", skippable)
             .output()
             .unwrap();
         assert!(
@@ -720,13 +720,13 @@ fn movie_playback_polls_skip_input_and_honours_skippable_flag() {
 fn legacy_rgss_win32_tilemap_and_bush_rendering() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../crates/rsxp-rgss/testdata/rgss_legacy_compat.rb"
+        "/../../crates/fanplay-rgss/testdata/rgss_legacy_compat.rb"
     );
     for cache in ["0", "1"] {
-        let result = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+        let result = Command::new(env!("CARGO_BIN_EXE_fanplay"))
             .args(["run", "--script", script, "--headless"])
-            .env("RSXP_SPRITE_CACHE", cache)
-            .env("RSXP_INPUT", "0:4:2")
+            .env("FANPLAY_SPRITE_CACHE", cache)
+            .env("FANPLAY_INPUT", "0:4:2")
             .output()
             .unwrap();
         assert!(
@@ -939,7 +939,7 @@ fn isolated_runner_transport(renderer: &str) {
     for _ in 0..2 {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         listener.set_nonblocking(true).unwrap();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_fanplay"))
             .args([
                 "run",
                 "--script",
@@ -948,11 +948,11 @@ fn isolated_runner_transport(renderer: &str) {
                 renderer,
             ])
             .env(
-                "RSXP_SESSION_ADDR",
+                "FANPLAY_SESSION_ADDR",
                 listener.local_addr().unwrap().to_string(),
             )
-            .env("RSXP_SESSION_TOKEN", "session-test-token")
-            .env("RSXP_API", "0")
+            .env("FANPLAY_SESSION_TOKEN", "session-test-token")
+            .env("FANPLAY_API", "0")
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
@@ -1026,7 +1026,7 @@ fn isolated_runner_transport(renderer: &str) {
                     stream.read_exact(&mut bytes).unwrap();
                     #[cfg(feature = "gpu")]
                     assert_eq!(
-                        rsxp::gpu::GpuFrame::decode(&bytes).unwrap().size(),
+                        fanplay_rgss::gpu::GpuFrame::decode(&bytes).unwrap().size(),
                         (640, 480)
                     );
                 } else {
@@ -1061,7 +1061,7 @@ fn isolated_runner_transport(renderer: &str) {
 
 fn retained_frames_match(fixture: &str) {
     let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../crates/rsxp-rgss/testdata")
+        .join("../../crates/fanplay-rgss/testdata")
         .join(fixture);
     let mut results = Vec::new();
     for (state, map, scroll, world, chunks) in [
@@ -1074,7 +1074,7 @@ fn retained_frames_match(fixture: &str) {
         ("1", "1", "1", "0", "1"),
         ("1", "1", "1", "1", "1"),
     ] {
-        let result = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+        let result = Command::new(env!("CARGO_BIN_EXE_fanplay"))
             .args([
                 "run",
                 "--script",
@@ -1083,11 +1083,11 @@ fn retained_frames_match(fixture: &str) {
                 "--renderer",
                 "software",
             ])
-            .env("RSXP_NATIVE_STATE", state)
-            .env("RSXP_RETAINED_MAP", map)
-            .env("RSXP_NATIVE_SCROLL", scroll)
-            .env("RSXP_WORLD_CAMERA", world)
-            .env("RSXP_MAP_CHUNKS", chunks)
+            .env("FANPLAY_NATIVE_STATE", state)
+            .env("FANPLAY_RETAINED_MAP", map)
+            .env("FANPLAY_NATIVE_SCROLL", scroll)
+            .env("FANPLAY_WORLD_CAMERA", world)
+            .env("FANPLAY_MAP_CHUNKS", chunks)
             .output()
             .unwrap();
         assert!(
@@ -1111,7 +1111,7 @@ fn retained_native_state_matches_legacy_frames() {
 fn retained_legacy_tilemap_matches_rebuilt_pixels_and_coordinates() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../crates/rsxp-rgss/testdata/rgss_legacy_retained.rb"
+        "/../../crates/fanplay-rgss/testdata/rgss_legacy_retained.rb"
     );
     let mut results = Vec::new();
     for (retained, batch, compact) in [
@@ -1120,11 +1120,11 @@ fn retained_legacy_tilemap_matches_rebuilt_pixels_and_coordinates() {
         ("1", "1", "0"),
         ("1", "1", "1"),
     ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+        let output = Command::new(env!("CARGO_BIN_EXE_fanplay"))
             .args(["run", "--script", script, "--headless"])
-            .env("RSXP_RETAINED_TILEMAP", retained)
-            .env("RSXP_NATIVE_TILEMAP_BATCH", batch)
-            .env("RSXP_TEST_COMPACT", compact)
+            .env("FANPLAY_RETAINED_TILEMAP", retained)
+            .env("FANPLAY_NATIVE_TILEMAP_BATCH", batch)
+            .env("FANPLAY_TEST_COMPACT", compact)
             .output()
             .unwrap();
         assert!(
@@ -1189,21 +1189,21 @@ puts 'CASE_INDEX_OK'
 fn retained_legacy_tilemap_gpu_matches_rebuilt_software() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../crates/rsxp-rgss/testdata/rgss_legacy_retained.rb"
+        "/../../crates/fanplay-rgss/testdata/rgss_legacy_retained.rb"
     );
     let dir = TempDir::new();
     for (capture, frame) in [
-        ("RSXP_TEST_CAPTURE_FRAME", 4),
-        ("RSXP_TEST_CAPTURE_FRAME", 11),
-        ("RSXP_TEST_CAPTURE_FRAME", 15),
-        ("RSXP_TEST_CAPTURE_FRAME", 25),
-        ("RSXP_TEST_CAPTURE_REVERSAL", 2),
-        ("RSXP_TEST_CAPTURE_ANIMATION", 15),
+        ("FANPLAY_TEST_CAPTURE_FRAME", 4),
+        ("FANPLAY_TEST_CAPTURE_FRAME", 11),
+        ("FANPLAY_TEST_CAPTURE_FRAME", 15),
+        ("FANPLAY_TEST_CAPTURE_FRAME", 25),
+        ("FANPLAY_TEST_CAPTURE_REVERSAL", 2),
+        ("FANPLAY_TEST_CAPTURE_ANIMATION", 15),
     ] {
         let mut images = Vec::new();
         for (renderer, retained) in [("software", "0"), ("wgpu", "1")] {
             let path = dir.0.join(format!("legacy-{frame}-{renderer}.ppm"));
-            let output = Command::new(env!("CARGO_BIN_EXE_rsxp"))
+            let output = Command::new(env!("CARGO_BIN_EXE_fanplay"))
                 .args([
                     "run",
                     "--script",
@@ -1214,7 +1214,7 @@ fn retained_legacy_tilemap_gpu_matches_rebuilt_software() {
                     "--output",
                     path.to_str().unwrap(),
                 ])
-                .env("RSXP_RETAINED_TILEMAP", retained)
+                .env("FANPLAY_RETAINED_TILEMAP", retained)
                 .env(capture, frame.to_string())
                 .output()
                 .unwrap();
@@ -1236,7 +1236,7 @@ fn legacy_kernel_helpers_remain_callable_after_runtime_definition_or_privatizati
         "--script",
         concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../crates/rsxp-rgss/testdata/rgss_kernel_helpers.rb"
+            "/../../crates/fanplay-rgss/testdata/rgss_kernel_helpers.rb"
         ),
         "--headless",
     ]);

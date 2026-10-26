@@ -1,6 +1,6 @@
 # Adventure Journal
 
-The default RSXP theme is a warm handheld RPG library. Parchment (`#EAE6D8`)
+The default FANPLAY theme is a warm handheld RPG library. Parchment (`#EAE6D8`)
 and cream surfaces (`#FFF9EC`) frame game artwork, while forest green
 (`#28654D`) and water blue (`#285F86`) identify actions and links. Use crisp
 1px borders, 8px corners, restrained shadows, and readable Work Sans text.

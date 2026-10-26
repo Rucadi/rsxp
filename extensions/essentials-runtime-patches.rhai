@@ -1,13 +1,13 @@
-// rsxp:id = essentials-runtime-patches
-// rsxp:name = Essentials Runtime Patches
-// rsxp:version = 0.1.0
-// rsxp:capabilities = ruby.inject,ruby.unload
-// rsxp:operation = essentials_runtime_patch
-// rsxp:operation-capabilities = essentials_runtime_patch game.read
-// rsxp:operation-mutates = essentials_runtime_patch
-// rsxp:route = GET /v1/essentials/runtime-patches essentials_runtime_patch payload
-// rsxp:route = POST /v1/essentials/runtime-patches essentials_runtime_patch payload
-// rsxp:panel = runtime-patches,Essentials Runtime Patches
+// fanplay:id = essentials-runtime-patches
+// fanplay:name = Essentials Runtime Patches
+// fanplay:version = 0.1.0
+// fanplay:capabilities = ruby.inject,ruby.unload
+// fanplay:operation = essentials_runtime_patch
+// fanplay:operation-capabilities = essentials_runtime_patch game.read
+// fanplay:operation-mutates = essentials_runtime_patch
+// fanplay:route = GET /v1/essentials/runtime-patches essentials_runtime_patch payload
+// fanplay:route = POST /v1/essentials/runtime-patches essentials_runtime_patch payload
+// fanplay:panel = runtime-patches,Essentials Runtime Patches
 
 // The engine only supplies the reversible Ruby injection transport. The patch
 // implementations, their state, and the zoom control all belong to this
@@ -18,7 +18,7 @@ fn on_activate() {
     state_set("cable", false);
     state_set("zoom", 1.5);
     let ruby = text_block("ruby");
-    let apply = "{ apply: proc { " + ruby + " }, revert: proc { RSXP::EssentialsRuntimePatches.uninstall } }";
+    let apply = "{ apply: proc { " + ruby + " }, revert: proc { FANPLAY::EssentialsRuntimePatches.uninstall } }";
     state_set("pending", ruby_inject("essentials-runtime-patches", apply));
 }
 
@@ -86,7 +86,7 @@ fn on_shutdown() {
     if handle != () { ruby_unload(handle); }
 }
 
-/* rsxp:text ruby-begin
+/* fanplay:text ruby-begin
 module MapPanoramic
   DEFAULT_ZOOM = 1.5
   MIN_ZOOM = 1.0
@@ -161,11 +161,11 @@ module MapPanoramic
     @original_graphics_dimensions = [Graphics.method(:width), Graphics.method(:height)]
     Graphics.singleton_class.class_eval do
       define_method(:width) do
-        @__size ||= RSXP.call('graphics_size').split("\t").map!(&:to_i)
+        @__size ||= FANPLAY.call('graphics_size').split("\t").map!(&:to_i)
         @__size[0]
       end
       define_method(:height) do
-        @__size ||= RSXP.call('graphics_size').split("\t").map!(&:to_i)
+        @__size ||= FANPLAY.call('graphics_size').split("\t").map!(&:to_i)
         @__size[1]
       end
     end
@@ -190,9 +190,9 @@ module MapPanoramic
     return if @hooks_installed
     if defined?(Graphics)
       Graphics.singleton_class.class_eval do
-        alias_method :__rsxp_panoramic_update, :update
+        alias_method :__fanplay_panoramic_update, :update
         def update
-          __rsxp_panoramic_update
+          __fanplay_panoramic_update
           MapPanoramic.tick if MapPanoramic.engaged?
         end
       end
@@ -201,8 +201,8 @@ module MapPanoramic
         Game_Player.method_defined?(:center) && Game_Player.method_defined?(:update_screen_position) &&
         %i[TILE_WIDTH TILE_HEIGHT X_SUBPIXELS Y_SUBPIXELS REAL_RES_X REAL_RES_Y].all? { |name| Game_Map.const_defined?(name) }
       Game_Player.class_eval do
-        alias_method :__rsxp_panoramic_center, :center
-        alias_method :__rsxp_panoramic_update_screen_position, :update_screen_position
+        alias_method :__fanplay_panoramic_center, :center
+        alias_method :__fanplay_panoramic_update_screen_position, :update_screen_position
         def center(x, y)
           self.map.display_x = (x * Game_Map::REAL_RES_X) - MapPanoramic.center_x
           self.map.display_y = (y * Game_Map::REAL_RES_Y) - MapPanoramic.center_y
@@ -224,25 +224,25 @@ module MapPanoramic
     end
     if defined?(Spriteset_Map)
       Spriteset_Map.class_eval do
-        alias_method :__rsxp_panoramic_update, :update
+        alias_method :__fanplay_panoramic_update, :update
         def update
           if MapPanoramic.applied?
             @@viewport0.rect.set(0, 0, Graphics.width, Graphics.height) if defined?(@@viewport0) && @@viewport0
             @@viewport3.rect.set(0, 0, Graphics.width, Graphics.height) if defined?(@@viewport3) && @@viewport3
           end
-          __rsxp_panoramic_update
+          __fanplay_panoramic_update
         end
       end
     end
     if defined?(TilemapLoader) && defined?(SynchronizedTilemap)
       TilemapLoader.class_eval do
-        alias_method :__rsxp_panoramic_update_class, :updateClass
+        alias_method :__fanplay_panoramic_update_class, :updateClass
         def updateClass
           if MapPanoramic.applied? && defined?($PokemonSystem) &&
               $PokemonSystem && $PokemonSystem.tilemap == 1
             setClass(SynchronizedTilemap)
           else
-            __rsxp_panoramic_update_class
+            __fanplay_panoramic_update_class
           end
         end
       end
@@ -263,7 +263,7 @@ module MapPanoramic
     return unless on_map?
     if busy?
       unless @busy_logged
-        RSXP::ERROR_OUTPUT.call("[MapPanoramic] map rebuild waiting for a safe frame\n")
+        FANPLAY::ERROR_OUTPUT.call("[MapPanoramic] map rebuild waiting for a safe frame\n")
         @busy_logged = true
       end
       return
@@ -296,12 +296,12 @@ module CableClubRngCompat
 
   module RandomInstance
     def srand(seed = (Random.new_seed & 0x7fffffff))
-      @rsxp_cable_club_random = Random.new(seed)
+      @fanplay_cable_club_random = Random.new(seed)
       seed
     end
 
     def rand(*arguments)
-      return @rsxp_cable_club_random.rand(*arguments) if CableClubRngCompat.enabled? && @rsxp_cable_club_random
+      return @fanplay_cable_club_random.rand(*arguments) if CableClubRngCompat.enabled? && @fanplay_cable_club_random
       super
     end
   end
@@ -332,13 +332,13 @@ module CableClubRngCompat
   end
 end
 
-module RSXP
+module FANPLAY
   module EssentialsRuntimePatches
     def self.install
-      @api = RSXP::GameAPI
+      @api = FANPLAY::GameAPI
       @original = @api.method(:essentials_runtime_patch) if @api.respond_to?(:essentials_runtime_patch)
       @api.define_singleton_method(:essentials_runtime_patch) do |args|
-        RSXP::EssentialsRuntimePatches.dispatch(args)
+        FANPLAY::EssentialsRuntimePatches.dispatch(args)
       end
     end
 
@@ -388,5 +388,5 @@ module RSXP
   end
 end
 
-RSXP::EssentialsRuntimePatches.install
-rsxp:text ruby-end */
+FANPLAY::EssentialsRuntimePatches.install
+fanplay:text ruby-end */

@@ -6,8 +6,8 @@
 //! encrypted archives that must be searched. [`GameConfig::prepare`] runs before any
 //! subsystem that creates threads: it canonicalizes `--script` or `--game`, sets the
 //! process working directory, and publishes the Ruby shim's startup environment via
-//! `set_startup_env`/`remove_startup_env` (`RSXP_SCRIPT`, `RSXP_GAME_TITLE`,
-//! `RSXP_SCRIPTS`).
+//! `set_startup_env`/`remove_startup_env` (`FANPLAY_SCRIPT`, `FANPLAY_GAME_TITLE`,
+//! `FANPLAY_SCRIPTS`).
 //!
 //! The RGSS version is the explicit `--rgss` override when given, else inferred from
 //! the `Scripts=` entry in `Game.ini` (`.rvdata2`→3, `.rvdata`→2, `.rxdata`→1), else
@@ -17,7 +17,7 @@
 //! `Archive::parse` to validate it before being retained.
 use super::{remove_startup_env, set_startup_env};
 use crate::host::case_path;
-use rsxp::archive::Archive;
+use fanplay_rgss::archive::Archive;
 use std::{
     error::Error,
     fs,
@@ -39,14 +39,14 @@ impl GameConfig {
     ) -> Result<Self, Box<dyn Error>> {
         if let Some(path) = script {
             let path = fs::canonicalize(path)?;
-            set_startup_env("RSXP_SCRIPT", &path);
+            set_startup_env("FANPLAY_SCRIPT", &path);
             std::env::set_current_dir(path.parent().ok_or("script has no parent")?)?;
         } else if let Some(path) = game {
             // Keep network-share paths as supplied. On Wine, canonicalizing a
             // Windows SMB path can produce an extended `\\?\UNC\...` path
             // that Wine cannot reopen, even though the original path works.
             std::env::set_current_dir(path)?;
-            remove_startup_env("RSXP_SCRIPT");
+            remove_startup_env("FANPLAY_SCRIPT");
         }
         let ini = case_path(Path::new("Game.ini"))
             .and_then(|p| fs::read_to_string(p).ok())
@@ -63,7 +63,7 @@ impl GameConfig {
                 .eq_ignore_ascii_case("Title")
                 .then_some(value.trim())
         }) {
-            set_startup_env("RSXP_GAME_TITLE", title);
+            set_startup_env("FANPLAY_GAME_TITLE", title);
         }
         let inferred = script_path.as_ref().and_then(|p| {
             if p.ends_with(".rvdata2") {
@@ -87,7 +87,7 @@ impl GameConfig {
             }
         });
         set_startup_env(
-            "RSXP_SCRIPTS",
+            "FANPLAY_SCRIPTS",
             script_path.unwrap_or_else(|| {
                 format!(
                     "Data/Scripts.{}",

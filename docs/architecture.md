@@ -1,374 +1,134 @@
 # Architecture
 
-This guide describes the current source tree. RSXP is moving to a multi-core
-architecture: `crates/rsxp-core` defines the emulator contract, `cores/` holds
-core implementations, and `frontends/` holds applications. The desktop RGSS
-path still runs its engine directly while the isolated runner is migrated to
-the adapter in `cores/rgss/core`. Ruby executes game logic; Rust stores and
-renders the RGSS scene. The dashboard is not the Ruby runtime.
+Fanplay has separate emulator execution, platform hosts, interface integration,
+and shared services. This is the implemented layout, not a target architecture.
 
-## Execution boundaries
+## Workspace map
+
+| Path / package | Responsibility |
+| --- | --- |
+| `crates/fanplay-core` | Core trait, content, input, audio/video contracts, commands, events and state envelopes |
+| `crates/fanplay-frontend` | Content routing, native core workers, pixel conversion, content identity and save storage |
+| `crates/fanplay-cores` | Compile-time core registry; default features `gba` and `nds`, optional `rgss` |
+| `cores/gba/core` / `fanplay-core-gba` | RustBoyAdvance-NG adapter and BIOS assets |
+| `cores/nds/core` / `fanplay-core-nds` | Dust adapter; local dependency patches remain in `cores/nds/vendor` |
+| `cores/rgss/core` / `fanplay-core-rgss` | Generic-core adapter for the RGSS runtime |
+| `cores/rgss/ruby` / `fanplay-rgss-ruby` | MRI embedding and Magnus bindings; Rust library name `ruby_rgss_core` |
+| `crates/fanplay-rgss` | RPG Maker runtime, resources, renderers, media, Ruby shim, patches and game bridge; package `fanplay-rgss`, import `fanplay_rgss` |
+| `crates/fanplay-gba` | GBA library/interface presentation, no emulator dependency |
+| `crates/fanplay-nds` | DS screen geometry, layout selection, painting and library presentation, no emulator dependency |
+| `crates/fanplay-ui` | Shared eframe app, workspace, themes, panels and runtime service adapter |
+| `crates/fanplay-provision` | Portable storage, repositories, verified installation, settings and backups |
+| `crates/fanplay-control` | Typed control catalog and native loopback HTTP transport |
+| `crates/fanplay-api` | Operation discovery/routing without a socket or emulator |
+| `crates/fanplay-extension-api` | Serializable plugin contracts |
+| `crates/fanplay-extensions` | Rhai loading, metadata, capabilities and operation orchestration |
+| `crates/fanplay-extension-ui` | Plugin UI declarations and host adaptation |
+| `frontends/desktop` | `fanplay` executable, device services, dashboard, child processes and webviews |
+| `frontends/core-runner` | Headless generic-core driver |
+| `platforms/web` | Separate Cargo workspace: native web host, WASM engine and build task |
+
+## Native execution
 
 ```mermaid
 flowchart TD
-    Dashboard[Desktop dashboard: window, egui, presentation] <-->|Loopback controls, frames, inspector requests| Runner[Isolated desktop runner: MRI and DesktopHost]
-    Runner --> Magnus[Magnus callbacks and typed bindings]
-    Page[Browser page: Ruby WASM and Fiber scheduler] --> Bridge[JavaScript and wasm-bindgen bridge]
-    Magnus --> Engine[Shared Rust engine Runtime]
-    Bridge --> Engine
-    Engine --> CPU[Software graphics]
-    Engine --> GPU[Optional GPU compositor / remote draw recording]
-    Engine --> Host[Host: files, text, audio, input, presentation, clock]
+    CLI[fanplay CLI] --> Dispatch{Command and features}
+    Dispatch -->|no args, gpu + rgss| Dashboard[Dashboard process]
+    Dispatch -->|interactive run| Dashboard
+    Dispatch -->|headless run| Runner[Runtime dispatcher]
+    Dashboard -->|spawn child + session transport| Runner
+    Runner -->|GBA or DS content| Cartridge[cartridge.rs]
+    Cartridge --> Catalog[fanplay-cores registry]
+    Catalog --> Worker[fanplay-frontend core worker]
+    Worker --> Core[GBA / DS core]
+    Runner -->|RGSS| NativeRGSS[desktop runtime + MRI]
+    NativeRGSS --> Engine[fanplay-rgss runtime]
+    Core --> Media[video, audio, input and save contracts]
+    Media --> Cartridge
+    Engine --> Host[DesktopHost]
+    Cartridge -->|frames and status| Dashboard
+    Host -->|frames / GPU commands and status| Dashboard
 ```
 
-`frontends/desktop/src/main.rs` selects the path:
+The desktop RGSS route uses `frontends/desktop/src/runtime` directly. It does
+not simply launch every game through the generic RGSS core adapter. The latter
+exists for clients of the core contract, including the headless runner.
+Both routes currently contain RGSS game-preparation code. They must remain
+consistent when startup behavior changes.
 
-| Invocation | Execution |
-| --- | --- |
-| No arguments, default features | Open dashboard with no active game |
-| Interactive `run` | Validate arguments, open dashboard, launch runner |
-| `run --headless` | Execute runtime directly in the CLI process |
-| `run` with internal `RSXP_SESSION_ADDR` | Connect as a dashboard runner, without another dashboard |
-| `demo` | Standalone Rust scene; no Ruby game runtime |
-| `archive-list` / `archive-cat` | Decode archive data; no Ruby execution |
+The dashboard supervises one game session at a time. `session.rs` carries
+framed messages between dashboard and runner. A cartridge runner owns a generic
+core worker plus host-side frame/audio/save handling. RGSS owns MRI and the
+game working directory in its process. Exit/reset/close are host lifecycle
+operations, not evidence that Ruby can safely run concurrently in arbitrary
+in-process threads.
 
-Cargo features select what the binary links. `gba`, `nds` and `rgss` are enabled
-by default. `--no-default-features --features gba` builds a cartridge-only
-binary: `run --game ROM` routes through `rsxp_cores::catalog()` and the generic
-cartridge host, without MRI, the RGSS engine, `rsxp-ui`, or the DS toolchain.
-The RGSS feature currently supplies the desktop dashboard, so a cartridge-only
-build supports headless execution and PPM capture rather than the dashboard.
-
-The dashboard uses eframe for its native window, egui application and UI
-presentation. The shared `rsxp-ui::SharedApp` owns the game workspace.
-`dashboard::Session` starts the same executable with `run`, a loopback address
-and a per-launch random token. Background threads collect output and exchange
-frames and controls. Dropping a session kills and waits for the child. This is
-one active game per dashboard, not multiple Ruby VMs inside one process.
-
-The runner owns its working directory, MRI globals, engine state, decoding and
-audio. A control reader feeds a bounded queue; only the initial control handshake
-waits for a reply. Later updates drain available controls. Socket writes and
-bounded queues can still impose backpressure. The dashboard keeps the latest
-view and merges ordered GPU asset updates rather than discarding required data.
-See [workspace](dashboard.md) and [transport measurements](session-performance.md).
-
-## Workspace layout and Cargo features
-
-The repository is a virtual Cargo workspace. The dependency direction is
-frontend → `rsxp-core` ← core; a core never depends on a frontend or on the
-RGSS application.
-
-| Path | Purpose |
-| --- | --- |
-| `crates/rsxp-core/` | Emulator-core contract: video/audio/input/control/events, no RGSS or frontend dependencies |
-| `crates/rsxp-frontend/` | Generic core catalog, content routing and dedicated core-thread driver |
-| `crates/rsxp-cores/` | Build-time registry; features select which cores a frontend links |
-| `crates/rsxp-rgss/` | The `rsxp` engine package: graphics, GPU compositor, archives, media, Ruby shim and RGSS runtime services |
-| `crates/rsxp-ui/` | Shared workspace, themes, service adapters and cross-platform frame presentation |
-| `cores/rgss/core/` | RGSS adapter implementing `rsxp_core::Core` |
-| `cores/rgss/ruby/` | MRI embedding and all Magnus bindings (package `rsxp-rgss-ruby`) |
-| `crates/rsxp-nds/` | DS interface and screen-layout UI |
-| `crates/rsxp-gba/` | GBA interface presentation |
-| `cores/gba/core/` | GBA emulator adapter |
-| `cores/nds/core/` | DS emulator adapter; vendor code lives in `cores/nds/vendor/` |
-| `frontends/core-runner/` | Headless generic runner for core validation |
-| `frontends/desktop/` | Desktop binary, dashboard, window, audio, presentation and session transport |
-| `platforms/web/` | Browser frontend (separate Cargo workspace) |
-| `mobile/` | iOS/Android host (separate Cargo workspace) |
-
-The engine package still uses the library name `rsxp`, so existing engine and
-frontend imports remain valid. The MCP binary is built by the engine package
-from `crates/rsxp-rgss/api/main.rs`. The browser crate has its own manifest in
-`platforms/web/engine/`.
-
-See [multi-core architecture](multi-core-architecture.md) for the core contract,
-hot-path rules and migration phases.
-
-| Feature | What it enables |
-| --- | --- |
-| No default features | Engine, CPU graphics, archives, Tables, patch catalog and runtime settings |
-| `ui` | Shared egui panels and workspace service adapter |
-| `gpu` | Shared wgpu compositor, GPU presentation dependencies and `ui` |
-| `game-api` | JSON/image dependencies and game API bridge; native cable services outside wasm |
-| `api-docs` | Utoipa declarations used by `rsxp-mcp` |
-
-The engine library defaults to `gpu`; the desktop package enables its `gpu`
-frontend and the needed engine features. The MCP binary requires `api-docs`.
-The browser depends on `rsxp-ui` and starts it with eframe's `WebRunner`.
-Browser game composition remains software and its output is uploaded as a
-texture to the shared UI.
-Magnus is a private dependency of `rsxp-rgss-ruby`; the engine library and
-desktop application use the crate's Rust-only interface.
-
-## Startup and shutdown
-
-The startup graph follows the default desktop build. Interactive launches first
-create the dashboard; headless launches enter the runtime directly. Both reach
-the same game initialization code.
-
-```mermaid
-flowchart TD
-    Start["rsxp: main.rs"] --> Mode{"Command?"}
-    Mode -->|"No arguments"| Dashboard["Open dashboard"]
-    Mode -->|"run"| Validate["Validate run arguments"]
-    Mode -->|"demo"| Demo["Run standalone Rust scene"]
-    Mode -->|"archive-list / archive-cat"| Archive["Read and decrypt archive bytes"]
-    Validate --> Route{"Headless or internal runner?"}
-    Route -->|"No"| Dashboard
-    Dashboard --> Select["Load or select a game"]
-    Select --> Spawn["Spawn rsxp run child with session address and token"]
-    Spawn --> Validate
-    Route -->|"Yes"| Options["Parse options and resolve output paths"]
-    Options --> Config["Set working directory; read Game.ini; select RGSS; load archives"]
-    Config --> Host["Create DesktopHost and engine Runtime"]
-    Host --> State["Install runtime; initialize bridge, settings and patches"]
-    State --> MRI["cores/rgss/ruby initializes MRI and RGSS bindings"]
-    MRI --> Shim["Evaluate rgss.rb and compatibility definitions"]
-    Shim --> Load["Load preload.rb and script or game bundle"]
-    Load --> Game["Execute Ruby game code"]
-```
-
-The child sees the internal session address and takes the runtime branch,
-avoiding recursive dashboard creation. Its host connects back to the dashboard;
-a headless host instead uses silent audio and no window.
-
-`frontends/desktop/src/runtime/options.rs` validates arguments and resolves capture paths
-before changing directories. `runtime/game.rs` sets the working
-directory, reads Game.ini, infers the RGSS version and loads recognized archives.
-Startup environment changes precede the host's thread-creating subsystems.
-
-`runtime::run` creates `DesktopHost` and `engine::Runtime`, installs the active
-runtime, initializes API/bridge state, resets live settings and applies startup
-patch selections. It initializes MRI once, attempts to enable YJIT, registers
-Magnus bindings and evaluates the compile-time Ruby bundle from `crates/rsxp-rgss/src/ruby/`. That shim supplies
-RGSS classes, compatibility behavior and game script loading.
-
-On completion Ruby is dropped while the native registries still exist, so
-finalizers can release resources. The runner then
-takes the runtime, optionally captures the last frame, and returns the Ruby
-status. Reset recreates the process rather than reinitializing MRI in place
-(the runtime uses `exec` on Unix). The dashboard remains available after a game
-stops or is replaced.
-
-## Ruby bridge and resource ownership
-
-`rgss.rb` holds Ruby-facing RGSS properties. It compares snapshots to avoid
-sending unchanged sprite, plane and viewport state; mutable Rect, Color and
-Tone values must be compared by value. Serialized operations enter
-`engine/commands.rs`. Desktop sprites also have a typed Magnus snapshot path
-in `bindings/sprite.rs`, which calls the same runtime registries directly.
-The browser serializes through a base64 JavaScript bridge into wasm exports.
-Desktop Tables are GC-owned Magnus objects; browser Tables use the portable fallback in the same RGSS source bundle.
-
-The active runtime is a thread-local `RefCell<Option<Runtime>>`. It owns
-bitmaps, sprites, planes and viewports under numeric IDs and holds no Ruby heap
-values. Wrappers release resources on disposal/finalization. Convert Ruby
-arguments before borrowing the runtime: GC can run finalizers that reenter the
-bridge, and nested mutable runtime borrows are invalid.
-
-Bitmap pixels use copy-on-write sharing. Mutations advance revisions used by
-GPU upload caches. Retained scene order has separate invalidation for changes
-to membership and ordering. These caches avoid work without making the Ruby
-object graph the renderer's source of truth.
-
-## One game frame
-
-This sequence shows an interactive dashboard session. The game runs until Ruby
-calls Graphics.update; changes to Ruby objects alone do not present a frame.
-The transport can deliver frames independently of the dashboard's redraw loop.
+## Frame and control flow
 
 ```mermaid
 sequenceDiagram
-    participant Ruby as Game Ruby / rgss.rb
-    participant Bridge as Magnus bridge
-    participant Engine as engine::Runtime
-    participant Host as Runner DesktopHost
-    participant UI as Dashboard
-    Ruby->>Ruby: Change sprites, planes and viewports
-    Ruby->>Bridge: Graphics.update: synchronize changed snapshots
-    Bridge->>Engine: Serialized commands or typed sprite state
-    Ruby->>Bridge: graphics_update
-    Bridge->>Engine: update_frame
-    Engine->>Engine: Check limit; apply settings and queued input
-    Engine->>Host: Poll controls and input
-    Host-->>Engine: Available controls, or stop
-    Engine->>Engine: Inject scripted input; compose scene
-    Engine->>Host: Present GPU submission or software bitmap
-    Host->>UI: Transport frame and metrics
-    Note over UI: Redraw independently using newest received view
-    Engine->>Engine: Advance counters and apply pacing
-    Engine-->>Bridge: Complete update
-    Bridge-->>Ruby: Return to game code
+    participant UI as Workspace
+    participant Host as Host / session transport
+    participant Control as CoreControl
+    participant Core as Cartridge core
+    participant Save as StorageWorker
+    UI->>Host: input and session intent
+    Host->>Control: input snapshot / queued command
+    Core->>Control: read input and drain commands
+    Core->>Core: advance emulation
+    Core->>Host: VideoFrame and PCM
+    Host->>UI: present frame
+    Core->>Host: save/state event
+    Host->>Save: bounded write request
+    Host->>Save: flush on session completion
 ```
 
+Core frames are borrowed buffers with explicit dimensions, stride and pixel
+format. `fanplay-frontend/src/video.rs` converts supported formats. The native
+cartridge host uses a bounded frame queue and PCM ring; save writes use a
+bounded worker. GBA's upstream battery-save path also uses the native save
+directory directly, so not every backend write goes through the worker.
 
-1. Ruby changes RGSS objects. `Graphics.update` synchronizes their state.
-2. `graphics_update` dispatches into `engine/frame.rs::update_frame`.
-3. The runtime checks the independent update limit, applies live pacing
-   settings, begins pending input, applies queued events, polls the host and
-   injects scripted input. F10 toggles the FPS display and F11 toggles uncapped
-   execution.
-4. The runtime attempts GPU rendering when available. Unsupported GPU scene
-   cases return to software composition.
-5. Scene draws respect ordering and viewport grouping. Viewport effects apply
-   to the combined children. Frame effects include freeze/transition and brightness.
-6. The host presents or transports the result. The runtime reports timings,
-   advances counters and paces non-headless execution. Pacing budgets include
-   Ruby work between updates; headless execution does not sleep.
+RGSS has its own Ruby-to-Rust command bridge and retained rendering path.
+`fanplay-rgss/src/engine` owns resources, scene/frame execution and commands;
+`graphics` supplies CPU composition, and `gpu` supplies wgpu composition and
+remote submissions. Composition and host presentation are separate choices.
 
-Input state tracking and Ruby `Input.update` remain distinct from polling host
-events. In the browser, the patched Graphics update yields the Ruby Fiber;
-JavaScript presents the workspace and resumes Ruby on a later animation frame.
-Code that does not yield can still block the page.
-
-## Rendering and platform services
-
-`graphics/` implements CPU bitmap operations, rasterization and effects.
-`engine/render_software.rs` turns runtime resources into software draws.
-`engine/render_gpu.rs` translates the scene to the optional compositor. Visible
-planes whose scaled tile dimensions are fractional/non-finite, and patterned
-sprites with zero pattern zoom, trigger software fallback to preserve behavior.
-
-`gpu/` manages devices, revision-based uploads, draw encoding, batching,
-submission and readback. Native tile geometry and atlas caches live in
-`graphics/tilemap.rs`. Adjacent disjoint operations can share dispatches;
-unchanged compositions can be reused.
-
-The eframe dashboard accepts both CPU frames and ordered GPU command packets.
-It installs `GameCallback` for accelerated RGSS sessions and retains asset
-updates even when superseded draw lists are dropped. CPU fallback uploads
-bitmap revisions to the shared application texture when acceleration is
-disabled or a scene is unsupported.
+## Browser execution
 
 ```mermaid
-flowchart TD
-    Scene["Runtime scene: bitmaps, sprites, planes, viewports"] --> Eligible{"GPU compositor available and scene supported?"}
-    Eligible -->|"Yes"| Draws["Encode GPU draws and revision-based asset updates"]
-    Eligible -->|"No"| CPU["Compose RGBA bitmap on CPU"]
-    Draws --> Remote{"Dashboard session?"}
-    Remote -->|"Yes"| Packet["Send ordered GPU resource and draw packets"]
-    Packet --> Callback["Render through eframe GameCallback"]
-    Remote -->|"No"| Local["Compose on local GPU"]
-    CPU --> Pixels["Send pixels to dashboard, or use local host"]
-    Pixels --> Upload
-    Upload --> Display["Game texture plus shared eframe workspace"]
-    Callback --> Display
-    Local --> Display
-    Display --> Window["Present window surface"]
+flowchart LR
+    Page[HTML + JS host] --> UI[eframe WebRunner / fanplay-ui]
+    Page --> Ruby[ruby.wasm: RGSS scripts]
+    Ruby --> Bridge[JS native-call bridge]
+    Bridge --> Engine[WASM fanplay-rgss]
+    Page --> Pump[cooperative cartridge frame driver]
+    Pump --> Core[WASM GBA / DS core]
+    Engine --> UI
+    Core --> UI
 ```
 
-This graph describes interactive presentation. Headless runs still compose but
-skip window presentation. Explicit captures and snapshots can materialize CPU
-pixels from the GPU path.
+The browser owns scheduling and virtual files. It cannot block the main thread
+in a native-style infinite core loop. Cartridge core calls cooperate with the
+browser frame driver. RGSS runs in a separate Ruby WASM module and uses the JS
+bridge to reach the Rust engine. RGSS composition is software; eframe uses
+wgpu for presentation. No native MRI process or desktop loopback listener is
+embedded in a browser tab.
 
-`engine/host.rs::Host` supplies file reads, image decoding, text measurement and
-rasterization, input, presentation, window controls, audio, clocks and sleeping.
-Desktop implementations use the filesystem, image/fontdue and Kira/CPAL.
-Browser implementations use virtual files, image/fontdue and browser media/Web
-Audio. Archive resolution lives in the engine asset layer, above host file reads.
+## Current dependency limits
 
-## Browser startup and scheduling
+- `fanplay-ui` still uses RGSS `Bitmap`, controls and runtime services. Moving
+  the workspace source out of RGSS did not remove those dependency edges.
+- GBA/DS interface crates are separate from their emulator crates. Screen
+  layout changes belong in `fanplay-nds`; emulation, BIOS and backend save
+  behavior belong in `cores/nds`.
+- The native dashboard is gated on both `gpu` and `rgss`. A cartridge-only
+  desktop build can run headlessly without MRI; it is not a standalone generic
+  graphical dashboard.
+- Android-specific eframe settings exist, but there is no complete mobile
+  application or build tree in this checkout.
+- Plugins extend operations and UI, not the static emulator registry. There
+  is no implemented dynamic emulator plugin ABI.
 
-The browser shares the engine and panel code, but does not launch a child
-process or embed Ruby through Magnus. The page initializes the engine WASM,
-preloads assets, starts Ruby WASM, installs the bridge/adaptations and creates a
-Fiber that evaluates rgss.rb. The full file listing falls back to the warm
-manifest when unavailable.
-
-```mermaid
-flowchart TD
-    Page["Load page and app.js"] --> Engine["Initialize Rust engine WASM and canvas workspace"]
-    Engine --> Assets["Fetch file listing and preload virtual filesystem"]
-    Assets --> Ruby["Start Ruby WASM and install PRELUDE bridge"]
-    Ruby --> Fiber["Create Ruby Fiber evaluating rgss.rb"]
-    Fiber --> Schedule["requestAnimationFrame"]
-    Schedule --> Resume["Resume game Fiber"]
-    Resume --> Logic["Execute Ruby game logic"]
-    Logic --> Update["Graphics.update"]
-    Update --> Bridge["Base64 bridge: Ruby to JavaScript to Rust WASM"]
-    Bridge --> Compose["Shared engine composes software framebuffer"]
-    Compose --> Yield["Fiber.yield returns control to JavaScript"]
-    Yield --> Present["Upload framebuffer to SharedApp; eframe paints canvas"]
-    Present --> Schedule
-    Events["Browser keyboard, mouse and text events"] --> Queue["Queue engine input between resumes"]
-    Queue -.-> Update
-    Resume -->|"Ended or raised"| Stop["Stop pump and report status"]
-```
-
-Startup also yields between batches of Ruby preparation work. The Fiber is
-cooperative: a long Ruby operation without a yield blocks page interaction.
-The browser runner uses eframe for the canvas and shared UI; game composition
-remains software. See [browser setup and limitations](../platforms/web/README.md).
-
-## Workspace and inspection
-
-Shared panels live in `crates/rsxp-ui/src/ui/`, with a `ui::backend::Backend` service contract.
-`workspace_services::LocalServices` adapts local settings, patches, API requests,
-assets and native cable services. The dashboard also routes remote session
-controls and replies. Session/library/save actions are frontend intents; the
-shared panel code does not own a Ruby VM.
-
-`crates/rsxp-rgss/src/api_bridge.rs` queues requests for Ruby to service on the game thread.
-`crates/rsxp-rgss/api/game_bridge/` reads game state and applies input/transfer operations.
-HTTP and `rsxp-mcp` are external interfaces to this mechanism; inspector panels
-do not require an HTTP listener. Pokémon Essentials introspection is
-version/game dependent. Native `cable_club.rs` and `cable_unmod.rs` provide
-separate relay services, not a general HTTP implementation for game scripts.
-
-## Source map
-
-| Area | Source |
-| --- | --- |
-| Emulator-core contract | `crates/rsxp-core/` |
-| Core catalog, routing and core thread | `crates/rsxp-frontend/` |
-| Build-time core registry | `crates/rsxp-cores/` |
-| RGSS core adapter | `cores/rgss/core/` |
-| GBA core adapter | `cores/gba/core/` |
-| DS core adapter | `cores/nds/core/` |
-| Public engine modules and compatibility re-exports | `crates/rsxp-rgss/src/lib.rs` |
-| Runtime registries and bridge entry points | `crates/rsxp-rgss/src/engine/mod.rs` |
-| Protocol, assets, input, frame and scene order | `crates/rsxp-rgss/src/engine/{commands,assets,input,frame,scene}.rs` |
-| Composition | `crates/rsxp-rgss/src/engine/render_software.rs`, `render_gpu.rs` |
-| CPU types, pixels and effects | `crates/rsxp-rgss/src/graphics/` |
-| GPU setup, resources, commands, batching, submission and transport | `crates/rsxp-rgss/src/gpu/` |
-| Archive decryption and Table storage | `crates/rsxp-rgss/src/data/` |
-| Ruby compatibility classes and game loader | `crates/rsxp-rgss/src/ruby/`; `rpg1.rb`, `rpg2.rb`, and `rpg3.rb` are taken from mkxp-z |
-| Desktop entry and runtime lifecycle | `frontends/desktop/src/main.rs`, `frontends/desktop/src/runtime/` |
-| Dashboard, transport, library and save backups | `frontends/desktop/src/{dashboard,session,library,saves}.rs` |
-| Platform services | `frontends/desktop/src/{host,window,gpu_present,media,audio}.rs` |
-| Ruby VM, Magnus and Win32 adapters | `cores/rgss/ruby/src/` |
-| Workspace panels and services | `crates/rsxp-ui/src/ui/`, `crates/rsxp-ui/src/workspace_services/`, `crates/rsxp-ui/src/workspace_services.rs` |
-| Runtime patch catalog and Ruby patch bodies | `crates/rsxp-rgss/src/patches/` |
-| Browser scheduling and Ruby adaptations | `platforms/web/browser/app.js` |
-| Browser exports, services and presentation | `platforms/web/engine/src/` |
-| HTTP/MCP and game-thread adapter | `crates/rsxp-rgss/api/`, `crates/rsxp-rgss/src/api_bridge.rs` |
-| Tests and benchmark workloads | `crates/rsxp-rgss/src/engine/tests.rs`, `crates/rsxp-rgss/src/graphics/tests.rs`, `crates/rsxp-rgss/src/gpu/tests.rs`, `frontends/desktop/tests/cli.rs`, `crates/rsxp-rgss/testdata/`, `crates/rsxp-rgss/examples/` |
-
-Paths are relative to the repository root. Start a new RGSS operation in the
-Ruby shim and command dispatcher, keeping typed desktop paths consistent.
-Platform changes belong behind Host; pixel changes need CPU/GPU parity checks.
-See the [README](../README.md#development-checks) for validation commands and
-[browser guide](../platforms/web/README.md) for the actual wasm build.
-
-## Shared workspace services
-
-Both frontends enable `ui` and `game-api`: the browser no longer excludes the
-inspector, map previews or Pokémon tools. `crates/rsxp-rgss/src/api_bridge.rs` is the shared
-nonblocking game-thread queue and operation routing; only
-`crates/rsxp-rgss/src/api_bridge/transport.rs` owns the desktop HTTP listener.
-`crates/rsxp-rgss/api/game_bridge/` is compiled into the same game operations for both interpreters.
-The browser does not need network access to inspect the running game.
-
-`LocalServices` accepts an asset reader for hosts without native files/workers.
-The browser injects its virtual file reader and caches decoded preview images;
-desktop keeps its background filesystem decoder. The shared UI uses a portable
-clock. Browser VM compatibility setup lives once in `platforms/web/browser/ruby-host.js`,
-imported by the page and the headless integration runner. `Table` fallback
-storage lives in the shared RGSS shim, selected only without native bindings.
-
-Interpreter embedding, native retained-state acceleration, composition backend,
-save persistence, process launching and network transport still have host-specific
-implementations. They are not additional game-logic or tool-panel implementations.
-
-Emulator implementations and vendor dependencies remain in `cores/gba` and `cores/nds`. Platform-specific RSXP interface, GUI and connectivity code belongs in `rsxp-gba` and `rsxp-nds`, independently of the emulator crates. Shared workspace code belongs in `rsxp-ui`; generic core contracts remain in `rsxp-core`.
+For build defaults and checks, see [development](development.md). For storage
+identity and core capabilities, see [the core contract](multi-core-architecture.md).

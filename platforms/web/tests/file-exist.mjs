@@ -21,7 +21,7 @@ const { vm } = await DefaultRubyVM(await WebAssembly.compile(wasm), {
 
 vm.eval(PRELUDE);
 // No engine is initialized here, so asset probes report the file as missing.
-vm.eval(`def __rsxp_native(_request) = ''.b`);
+vm.eval(`def __fanplay_native(_request) = ''.b`);
 const shim = rubySource('RGSS_SOURCE');
 const entry = shim.lastIndexOf('\nbegin\n');
 assert.ok(entry > 0, 'RGSS game entry block missing');

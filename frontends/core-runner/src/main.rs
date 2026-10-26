@@ -7,29 +7,29 @@
 //! core selection.
 //!
 //! User data is content-scoped under `<save-dir>/<core>/<content-hash>/`.
-//! Save states use the versioned `rsxp_core::StateEnvelope`; a raw state from an
+//! Save states use the versioned `fanplay_core::StateEnvelope`; a raw state from an
 //! older build is rejected rather than restored without validation. Writes are
 //! queued on a bounded worker and flushed before the runner reports success.
 //!
 //! ```sh
-//! cargo run -p rsxp-core-runner -- --content game.gba --frames 120 --output frame.ppm
-//! cargo run -p rsxp-core-runner --features rgss -- \
+//! cargo run -p fanplay-core-runner -- --content game.gba --frames 120 --output frame.ppm
+//! cargo run -p fanplay-core-runner --features rgss -- \
 //!   --content game/Game.ini --frames 60
 //! ```
 
-use rsxp_core::{
+use fanplay_core::{
     AudioChannel, AudioSink, AudioStream, Content, CoreCommand, CoreControl, CoreEvent,
     CoreLoadInfo, EventSink, LogLevel, PcmBuffer, PixelFormat, Platform, PlatformError,
     PlatformResult, SessionConfig, VideoFrame, VideoSink,
 };
-use rsxp_frontend::{spawn_core, ContentId, SaveStore, StorageWorker};
+use fanplay_frontend::{spawn_core, ContentId, SaveStore, StorageWorker};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 fn main() {
     if let Err(error) = run() {
-        eprintln!("rsxp-core-runner: {error}");
+        eprintln!("fanplay-core-runner: {error}");
         std::process::exit(1);
     }
 }
@@ -45,7 +45,7 @@ fn run() -> Result<(), String> {
     } else {
         Content::file(path)
     };
-    let catalog = rsxp_cores::catalog();
+    let catalog = fanplay_cores::catalog();
     let registration = match &options.core {
         Some(id) => *catalog
             .get(id)
@@ -63,8 +63,16 @@ fn run() -> Result<(), String> {
             .or_else(|| {
                 std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share"))
             })
-            .map(|base| base.join("rsxp/saves"))
-            .unwrap_or_else(|| root.join(".rsxp-saves"))
+            .map(|base| {
+                let current = base.join("fanplay/saves");
+                let legacy = base.join("rsxp/saves");
+                if !current.is_dir() && legacy.is_dir() { legacy } else { current }
+            })
+            .unwrap_or_else(|| {
+                let current = root.join(".fanplay-saves");
+                let legacy = root.join(".rsxp-saves");
+                if !current.is_dir() && legacy.is_dir() { legacy } else { current }
+            })
     });
     let content_id = ContentId::of(&content)
         .map_err(|error| format!("could not identify {}: {error}", content.path.display()))?;
@@ -75,7 +83,7 @@ fn run() -> Result<(), String> {
     if let Ok(copied) = store.migrate_named_from(&base, &legacy_stem)
         && copied > 0
     {
-        eprintln!("rsxp-core-runner: migrated {copied} legacy save file(s)");
+        eprintln!("fanplay-core-runner: migrated {copied} legacy save file(s)");
     }
     let worker = StorageWorker::spawn(Arc::clone(store.storage()), 16);
     let save_dir = store.native_save_dir().unwrap_or_else(|| base.clone());
@@ -89,7 +97,7 @@ fn run() -> Result<(), String> {
             Ok(None) => {
                 let legacy = state_path(&base, &content, slot);
                 match std::fs::read(&legacy) {
-                    Ok(data) if data.starts_with(rsxp_core::state::STATE_MAGIC) => data,
+                    Ok(data) if data.starts_with(fanplay_core::state::STATE_MAGIC) => data,
                     Ok(_) => {
                         return Err(format!(
                             "{} is a legacy raw state; re-create it with this build so it can be validated",
@@ -113,7 +121,7 @@ fn run() -> Result<(), String> {
 
     let frames = Arc::new(Mutex::new(None));
     let session = SessionConfig::default();
-    let context = rsxp_core::CoreContext::new(
+    let context = fanplay_core::CoreContext::new(
         Arc::new(NativePlatform {
             root,
             save_dir,
@@ -130,7 +138,7 @@ fn run() -> Result<(), String> {
     )
     .with_session(session);
     eprintln!(
-        "rsxp-core-runner: core={} content={}",
+        "fanplay-core-runner: core={} content={}",
         registration.info.id,
         content.path.display()
     );
@@ -157,12 +165,12 @@ fn run() -> Result<(), String> {
         return Err(format!("{failures} save write(s) failed: {detail}"));
     }
     worker.shutdown();
-    eprintln!("rsxp-core-runner: core exited with code {}", status.code);
+    eprintln!("fanplay-core-runner: core exited with code {}", status.code);
     if let Some(output) = options.output
         && let Some(frame) = frames.lock().unwrap().take()
     {
         write_ppm(&output, &frame)?;
-        eprintln!("rsxp-core-runner: wrote {}", output.display());
+        eprintln!("fanplay-core-runner: wrote {}", output.display());
     }
     Ok(())
 }
@@ -236,7 +244,7 @@ impl Options {
                 }
                 "--help" | "-h" => {
                     println!(
-                        "rsxp-core-runner --content PATH [--core ID] [--frames N] \
+                        "fanplay-core-runner --content PATH [--core ID] [--frames N] \
                          [--fast-forward] [--save-state SLOT] [--load-state SLOT] \
                          [--save-dir DIR] [--output frame.ppm]\n\
                          Saves are stored under DIR/<core>/<content-hash>/."
@@ -257,7 +265,7 @@ impl Options {
 struct NativePlatform {
     root: PathBuf,
     save_dir: PathBuf,
-    submitter: rsxp_frontend::StorageSubmitter,
+    submitter: fanplay_frontend::StorageSubmitter,
     start: Instant,
 }
 
@@ -352,7 +360,7 @@ impl AudioSink for SilentAudio {
 }
 
 struct NativeEvents {
-    submitter: rsxp_frontend::StorageSubmitter,
+    submitter: fanplay_frontend::StorageSubmitter,
     label: String,
 }
 

@@ -1,0 +1,13 @@
+[package]
+name = "fanplay-extension-ui"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "GPL-2.0-or-later"
+description = "Generic egui renderer for FANPLAY extension UI descriptions"
+publish = false
+
+[dependencies]
+egui = { version = "0.37.0", features = ["default_fonts"] }
+fanplay-extension-api = { path = "../fanplay-extension-api" }
+serde_json = "1"

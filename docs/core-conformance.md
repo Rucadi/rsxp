@@ -6,9 +6,9 @@ measured performance that has not been recorded.
 ## Contract and routing
 
 ```sh
-cargo test -p rsxp-core -p rsxp-frontend
-cargo test -p rsxp-core-gba
-cargo test -p rsxp-cores --no-default-features --features gba
+cargo test -p fanplay-core -p fanplay-frontend
+cargo test -p fanplay-core-gba
+cargo test -p fanplay-cores --no-default-features --features gba
 ```
 
 The core/frontend suite covers routing, command request ids and payload bounds,
@@ -25,23 +25,24 @@ transactional restore check with its candidate-machine path.
 
 ```sh
 # Core/GBA only (no MRI or RGSS)
-cargo check -p rsxp-desktop --no-default-features --features gba
+cargo check -p fanplay-desktop --no-default-features --features gba
 
 # DS feature (unstable Dust dependencies)
-RUSTC_BOOTSTRAP=1 cargo test -p rsxp-core-nds
+RUSTC_BOOTSTRAP=1 cargo test -p fanplay-core-nds
 
 # Full desktop/RGSS build
-cargo test -p rsxp-desktop --bin rsxp
+cargo test -p fanplay-desktop --bin fanplay
 ```
 
-The desktop `gba` feature has no dependency edge to `rsxp-rgss`. Verify it:
+The desktop `gba` feature has no dependency edge to `fanplay-rgss`. Verify it:
 
 ```sh
-cargo tree -p rsxp-desktop --no-default-features --features gba -e normal \
-  | grep -E 'rsxp-rgss|rsxp-rgss-ruby|magnus' && exit 1 || true
+cargo tree -p fanplay-desktop --no-default-features --features gba -e normal \
+  | grep -E 'fanplay-rgss|fanplay-rgss-ruby|magnus' && exit 1 || true
 ```
 
-CI runs this matrix on Ubuntu. The DS feature requires a nightly compiler (or
+These are local validation commands; see `.github/workflows/build.yml` for
+the checks actually configured in CI. The DS feature requires a nightly compiler (or
 `RUSTC_BOOTSTRAP=1` for local checks) because of the Dust dependency.
 
 ## Save and storage failures
@@ -60,11 +61,11 @@ regression or improvement is claimed. Useful commands:
 
 ```sh
 # Isolated RGSS transport baseline.
-cargo run --release -p rsxp-desktop --example session-bench -- target/release/rsxp
+cargo run --release -p fanplay-desktop --example session-bench -- target/release/fanplay
 
 # Headless core throughput; report frame time and audio queue status rather
 # than assuming the backend allocation profile.
-cargo run --release -p rsxp-core-runner -- --content game.gba --frames 600
+cargo run --release -p fanplay-core-runner -- --content game.gba --frames 600
 ```
 
 The cartridge bridge keeps steady-state video and audio memory bounded and uses

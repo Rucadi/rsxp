@@ -2,7 +2,7 @@
 // Headless end-to-end check of the browser pipeline: engine wasm + ruby.wasm +
 // the real game scripts, driven by the same Fiber frame pump the page uses.
 // Run from the repository: node platforms/web/tests/game-e2e.mjs
-import init, * as engine from '../dist/pkg/rsxp_web.js';
+import init, * as engine from '../dist/pkg/fanplay_web.js';
 import { PRELUDE } from '../browser/ruby-host.js';
 import { DefaultRubyVM } from '../node_modules/@ruby/wasm-wasi/dist/esm/browser.js';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -12,7 +12,7 @@ import { rubySource } from '../../../tools/ruby-sources.mjs';
 const gameRoot = resolve(import.meta.dirname, '..', '..', 'ericlostie');
 const manifest = JSON.parse(readFileSync(resolve(import.meta.dirname, '../browser/assets.json'), 'utf8'));
 
-await init(readFileSync(resolve(import.meta.dirname, '../dist/pkg/rsxp_web_bg.wasm')));
+await init(readFileSync(resolve(import.meta.dirname, '../dist/pkg/fanplay_web_bg.wasm')));
 
 let loaded = 0;
 for (const path of manifest) {
@@ -27,7 +27,7 @@ console.log(`loaded ${loaded}/${manifest.length} assets`);
 
 const ini = new TextDecoder().decode(engine.web_read_file('Game.ini'));
 let scriptPath = 'Data/Scripts.rxdata';
-let title = 'rsxp';
+let title = 'fanplay';
 for (const line of ini.split(/\r?\n/)) {
   const m = line.match(/^\s*([^=]+)=(.*)$/);
   if (!m) continue;
@@ -40,7 +40,7 @@ else if (scriptPath.endsWith('.rvdata')) version = 2;
 const [width, height] = version === 1 ? [640, 480] : [544, 416];
 engine.web_init(width, height, version, version === 1 ? 40 : 60, null);
 
-globalThis.RSXP = {
+globalThis.FANPLAY = {
   source: rubySource('RGSS_SOURCE'),
   manifestText: manifest.join('\n'),
   // Saves are kept in memory for the run (the page uses localStorage instead).
@@ -51,13 +51,13 @@ globalThis.RSXP = {
   native(requestBase64) {
     const request = Buffer.from(requestBase64, 'base64');
     const response = engine.web_native_call(request);
-    if (response === undefined) return '__RSXP_STOP__';
+    if (response === undefined) return '__FANPLAY_STOP__';
     if (response.length === 0) return '';
     return Buffer.from(response).toString('base64');
   },
   native_text(requestText) {
     const response = engine.web_native_call(new TextEncoder().encode(requestText));
-    if (response === undefined) return '__RSXP_STOP__';
+    if (response === undefined) return '__FANPLAY_STOP__';
     if (response.length === 0) return '';
     try {
       return `U${new TextDecoder('utf-8', { fatal: true }).decode(response)}`;
@@ -73,8 +73,8 @@ globalThis.RSXP = {
     }
   },
 };
-globalThis.MKXP = globalThis.RSXP;
-engine.web_set_reader(globalThis.RSXP.readFile);
+globalThis.MKXP = globalThis.FANPLAY;
+engine.web_set_reader(globalThis.FANPLAY.readFile);
 
 
 
@@ -83,8 +83,8 @@ const rubyWasm = readFileSync(
 );
 const { vm } = await DefaultRubyVM(await WebAssembly.compile(rubyWasm), {
   env: {
-    RSXP_SCRIPTS: scriptPath,
-    RSXP_GAME_TITLE: title,
+    FANPLAY_SCRIPTS: scriptPath,
+    FANPLAY_GAME_TITLE: title,
     HOME: '/',
     USER: 'player',
     LANG: 'en_US.UTF-8',
@@ -106,9 +106,9 @@ const binaryReader = vm.eval(`
 if (binaryReader !== '[120, 13398, 2309737746]') {
   throw new Error(`StringIO RGSS binary reader mismatch: ${binaryReader}`);
 }
-vm.eval('$rsxp_source = JS.global[:RSXP][:source].to_s');
-vm.eval('$rsxp_fiber = Fiber.new { eval($rsxp_source, TOPLEVEL_BINDING, "rgss.rb", 1) }');
-const gameFiber = vm.eval('$rsxp_fiber');
+vm.eval('$fanplay_source = JS.global[:FANPLAY][:source].to_s');
+vm.eval('$fanplay_fiber = Fiber.new { eval($fanplay_source, TOPLEVEL_BINDING, "rgss.rb", 1) }');
+const gameFiber = vm.eval('$fanplay_fiber');
 
 // Simulate scripted input: press Return every 40 frames to advance the game.
 let frames = 0;
@@ -154,10 +154,10 @@ console.log(nonBlack > 0 ? 'E2E_OK' : 'E2E_BLANK');
 // Exercise the same Ruby adapter used by desktop tools against real game data.
 // Poll explicitly while the game Fiber is paused so this also works at a title.
 const { strict: assert } = await import('node:assert');
-engine.web_add_file('PBS/rsxp-virtual-check.txt', new TextEncoder().encode('Pueblo español\nOutdoor=true\n'));
+engine.web_add_file('PBS/fanplay-virtual-check.txt', new TextEncoder().encode('Pueblo español\nOutdoor=true\n'));
 vm.eval(`
-path = File.expand_path('PBS/rsxp-virtual-check.txt')
-raise 'fixture unexpectedly mirrored into Ruby' if File.__rsxp_real_file?(path)
+path = File.expand_path('PBS/fanplay-virtual-check.txt')
+raise 'fixture unexpectedly mirrored into Ruby' if File.__fanplay_real_file?(path)
 raise 'virtual File.file? failed' unless File.file?(path) && FileTest.file?(path)
 raise 'directory treated as file' if File.file?('PBS')
 lines = File.foreach(path, encoding: 'UTF-8').to_a
@@ -168,7 +168,7 @@ raise 'virtual foreach block semantics failed' unless result.nil? && seen == lin
 `);
 for (const [operation, args] of [['game_status', []], ['map_preview', ['3']], ['world_map', []]]) {
   const id = engine.web_game_request(operation, args);
-  vm.eval('RSXP::GameAPI.poll');
+  vm.eval('FANPLAY::GameAPI.poll');
   const reply = JSON.parse(engine.web_game_response(id));
   assert.equal(reply.error, undefined, JSON.stringify(reply));
   if (operation === 'map_preview') {

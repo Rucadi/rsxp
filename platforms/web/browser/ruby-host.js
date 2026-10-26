@@ -7,8 +7,8 @@
 // candidates; writes still fail normally if the filesystem is read-only.
 export const WASI_TMPDIR_COMPAT = `
 class << File
-  alias_method :__rsxp_wasi_writable?, :writable? unless method_defined?(:__rsxp_wasi_writable?)
-  def writable?(path) = __rsxp_wasi_writable?(path) || directory?(path)
+  alias_method :__fanplay_wasi_writable?, :writable? unless method_defined?(:__fanplay_wasi_writable?)
+  def writable?(path) = __fanplay_wasi_writable?(path) || directory?(path)
 end
 `;
 
@@ -63,70 +63,70 @@ end
 # only holds save data and any preloaded files.
 class File
   class << self
-    alias_method :__rsxp_real_exist?, :exist?
-    alias_method :__rsxp_real_file?, :file?
-    alias_method :__rsxp_real_foreach, :foreach
+    alias_method :__fanplay_real_exist?, :exist?
+    alias_method :__fanplay_real_file?, :file?
+    alias_method :__fanplay_real_foreach, :foreach
     # Ruby expands metadata paths against its game cwd, while engine assets
     # are named relative to that cwd (including assets held only in archives).
-    def __rsxp_asset_path(path)
+    def __fanplay_asset_path(path)
       absolute = expand_path(path)
       prefix = Dir.pwd.sub(%r{/+$}, '') + '/'
       absolute.start_with?(prefix) ? absolute.delete_prefix(prefix) : path.to_s
     end
-    def __rsxp_asset_exist?(path)
-      RSXP.call('exists', payload: RSXP.utf8(__rsxp_asset_path(path))) == '1'
+    def __fanplay_asset_exist?(path)
+      FANPLAY.call('exists', payload: FANPLAY.utf8(__fanplay_asset_path(path))) == '1'
     end
     def file?(path)
-      __rsxp_asset_exist?(path) || __rsxp_real_file?(path)
+      __fanplay_asset_exist?(path) || __fanplay_real_file?(path)
     end
     def foreach(path, *args, encoding: nil, **options, &block)
       return enum_for(:foreach, path, *args, encoding: encoding, **options) unless block
-      asset = __rsxp_asset_path(path)
-      if RSXP.call('exists', payload: RSXP.utf8(asset)) == '1'
-        data = RSXP.call('read', payload: RSXP.utf8(asset))
+      asset = __fanplay_asset_path(path)
+      if FANPLAY.call('exists', payload: FANPLAY.utf8(asset)) == '1'
+        data = FANPLAY.call('read', payload: FANPLAY.utf8(asset))
         data.force_encoding(encoding || Encoding.default_external)
         StringIO.new(data).each_line(*args, **options, &block)
         nil
       else
         options[:encoding] = encoding if encoding
-        __rsxp_real_foreach(path, *args, **options, &block)
+        __fanplay_real_foreach(path, *args, **options, &block)
       end
     end
-    alias_method :__rsxp_real_read, :read
-    alias_method :__rsxp_real_binread, :binread
-    alias_method :__rsxp_real_binwrite, :binwrite
+    alias_method :__fanplay_real_read, :read
+    alias_method :__fanplay_real_binread, :binread
+    alias_method :__fanplay_real_binwrite, :binwrite
     def binwrite(path, data, *args)
-      result = __rsxp_real_binwrite(path, data, *args)
-      RSXP.persist_save(path)
+      result = __fanplay_real_binwrite(path, data, *args)
+      FANPLAY.persist_save(path)
       result
     end
     def exist?(path)
-      return true if __rsxp_asset_exist?(path)
-      __rsxp_real_exist?(path)
+      return true if __fanplay_asset_exist?(path)
+      __fanplay_real_exist?(path)
     end
     def exists?(path) = exist?(path)
     def binread(path, *args)
-      if RSXP.call('exists', payload: RSXP.utf8(__rsxp_asset_path(path))) == '1'
-        RSXP.call('read', payload: RSXP.utf8(__rsxp_asset_path(path)))
+      if FANPLAY.call('exists', payload: FANPLAY.utf8(__fanplay_asset_path(path))) == '1'
+        FANPLAY.call('read', payload: FANPLAY.utf8(__fanplay_asset_path(path)))
       else
-        __rsxp_real_binread(path, *args)
+        __fanplay_real_binread(path, *args)
       end
     end
     def read(path, *args)
-      if RSXP.call('exists', payload: RSXP.utf8(__rsxp_asset_path(path))) == '1'
-        RSXP.call('read', payload: RSXP.utf8(__rsxp_asset_path(path)))
+      if FANPLAY.call('exists', payload: FANPLAY.utf8(__fanplay_asset_path(path))) == '1'
+        FANPLAY.call('read', payload: FANPLAY.utf8(__fanplay_asset_path(path)))
       else
-        __rsxp_real_read(path, *args)
+        __fanplay_real_read(path, *args)
       end
     end
     def readlines(path, *args)
       read(path, *args).split($/, -1)
     end
-    alias_method :__rsxp_real_open, :open unless method_defined?(:__rsxp_real_open)
+    alias_method :__fanplay_real_open, :open unless method_defined?(:__fanplay_real_open)
     def open(path, mode = 'r', *rest, &block)
       mode = 'r' if mode.nil?
-      if mode.to_s.start_with?('r') && RSXP.call('exists', payload: RSXP.utf8(__rsxp_asset_path(path))) == '1'
-        io = StringIO.new(RSXP.call('read', payload: RSXP.utf8(__rsxp_asset_path(path))))
+      if mode.to_s.start_with?('r') && FANPLAY.call('exists', payload: FANPLAY.utf8(__fanplay_asset_path(path))) == '1'
+        io = StringIO.new(FANPLAY.call('read', payload: FANPLAY.utf8(__fanplay_asset_path(path))))
         if block
           begin
             return block.call(io)
@@ -137,52 +137,52 @@ class File
         return io
       end
       if block
-        result = __rsxp_real_open(path, mode, *rest, &block)
-        RSXP.persist_save(path) if mode.to_s.match?(/[wa+]/)
+        result = __fanplay_real_open(path, mode, *rest, &block)
+        FANPLAY.persist_save(path) if mode.to_s.match?(/[wa+]/)
         result
       else
-        __rsxp_real_open(path, mode, *rest)
+        __fanplay_real_open(path, mode, *rest)
       end
     end
   end
 end
 module FileTest
   class << self
-    # rgss.rb aliases FileTest's current probe to __rsxp_case_sensitive_exist?
+    # rgss.rb aliases FileTest's current probe to __fanplay_case_sensitive_exist?
     # and builds its case-insensitive exist? on top. Defining it here first
     # keeps that alias independent of File.exist?: RGSS games commonly replace
     # File.exist? with a wrapper that falls back to FileTest.exist?, and an
     # alias that dispatched back through the replaceable File.exist? would
     # recurse until the Ruby VM's stack overflows.
-    def __rsxp_case_sensitive_exist?(path)
-      File.__rsxp_asset_exist?(path) || File.__rsxp_real_exist?(path)
+    def __fanplay_case_sensitive_exist?(path)
+      File.__fanplay_asset_exist?(path) || File.__fanplay_real_exist?(path)
     end
-    def exist?(path) = __rsxp_case_sensitive_exist?(path)
+    def exist?(path) = __fanplay_case_sensitive_exist?(path)
     def exists?(path) = exist?(path)
     def file?(path) = File.file?(path)
     def size(path) = File.binread(path).bytesize
   end
 end
-def __rsxp_native(request)
+def __fanplay_native(request)
   request.force_encoding(Encoding::UTF_8)
   if request.valid_encoding?
-    result = JS.global[:RSXP].native_text(request)
+    result = JS.global[:FANPLAY].native_text(request)
     text = result.nil? ? '' : result.to_s
-    return nil if text == '__RSXP_STOP__'
+    return nil if text == '__FANPLAY_STOP__'
     return ''.b if text.empty?
     payload = text.byteslice(1..-1) || ''
     return payload.b if text.getbyte(0) == 85  # UTF-8 response
     return payload.unpack1('m0') if text.getbyte(0) == 66 # binary response
     raise "invalid native response encoding"
   end
-  result = JS.global[:RSXP].native([request].pack('m0'))
+  result = JS.global[:FANPLAY].native([request].pack('m0'))
   text = result.nil? ? '' : result.to_s
-  return nil if text == '__RSXP_STOP__'
+  return nil if text == '__FANPLAY_STOP__'
   return ''.b if text.empty?
   text.unpack1('m0')
 end
-def __mkxp_native(request) = __rsxp_native(request)
-module RSXP
+def __mkxp_native(request) = __fanplay_native(request)
+module FANPLAY
   # Directory holding the game's saves; only files written here are mirrored to
   # the browser's localStorage (game assets under Data/ are not).
   def self.save_directory
@@ -201,19 +201,19 @@ module RSXP
     if dir && !path.start_with?(dir)
       return unless path == 'Game.rxdata' || path == './Game.rxdata'
     end
-    data = File.__rsxp_real_binread(path)
-    JS.global[:RSXP].persistSave(path, [data].pack('m0'))
+    data = File.__fanplay_real_binread(path)
+    JS.global[:FANPLAY].persistSave(path, [data].pack('m0'))
   rescue StandardError
     nil
   end
   # Restore mirrored saves into the filesystem before the game reads them.
   def self.restore_saves
     require 'json'
-    raw = JS.global[:RSXP][:savedSavesJson].to_s
+    raw = JS.global[:FANPLAY][:savedSavesJson].to_s
     return if raw.empty?
     JSON.parse(raw).each do |path, encoded|
       FileUtils.mkdir_p(File.dirname(path))
-      File.__rsxp_real_binwrite(path, encoded.unpack1('m0'))
+      File.__fanplay_real_binwrite(path, encoded.unpack1('m0'))
     rescue StandardError
       nil
     end
@@ -223,7 +223,7 @@ module RSXP
   def self.startup_yield
     @startup_work = (@startup_work || 0) + 1
     return unless (@startup_work % 8).zero?
-    JS.global[:RSXP].startup_progress(@startup_work)
+    JS.global[:FANPLAY].startup_progress(@startup_work)
     Fiber.yield
   end
   def self.before_scripts
@@ -231,23 +231,23 @@ module RSXP
     # File and Dir APIs see them (the engine keeps its own copy for rendering).
     require 'fileutils'
     restore_saves
-    paths = JS.global[:RSXP][:manifestText].to_s.split("\n")
+    paths = JS.global[:FANPLAY][:manifestText].to_s.split("\n")
     paths << 'preload.rb'
     paths.each do |path|
       next if path.empty?
       begin
         FileUtils.mkdir_p(File.dirname(path))
-        File.binwrite(path, RSXP.call('read', payload: path))
+        File.binwrite(path, FANPLAY.call('read', payload: path))
       rescue StandardError
         nil
       end
       startup_yield
     end
     Graphics.singleton_class.class_eval do
-      alias_method :__rsxp_web_update, :update
+      alias_method :__fanplay_web_update, :update
       def update
-        __rsxp_web_update
-        JS.global[:RSXP].game_started
+        __fanplay_web_update
+        JS.global[:FANPLAY].game_started
         Fiber.yield
       end
     end

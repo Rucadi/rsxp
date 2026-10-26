@@ -2,10 +2,10 @@
 //! End-to-end check that the RGSS core adapter satisfies the generic contract.
 //!
 //! Requires the same native MRI toolchain as the desktop build. Run with:
-//! `nix-shell --run 'cargo test -p rsxp-core-rgss --test headless'`.
+//! `nix-shell --run 'cargo test -p fanplay-core-rgss --test headless'`.
 
-use rsxp_core::audio::NullAudioSink;
-use rsxp_core::{Content, CoreContext, CoreEvent, CoreLoadInfo, CoreResult, EventSink, Platform};
+use fanplay_core::audio::NullAudioSink;
+use fanplay_core::{Content, CoreContext, CoreEvent, CoreLoadInfo, CoreResult, EventSink, Platform};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -16,7 +16,7 @@ struct TempDir(PathBuf);
 impl TempDir {
     fn new(label: &str) -> Self {
         let path = std::env::temp_dir().join(format!(
-            "rsxp-rgss-core-{label}-{}-{}",
+            "fanplay-rgss-core-{label}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -56,8 +56,8 @@ impl Platform for TestPlatform {
 
 struct CountingVideo(Arc<AtomicU32>);
 
-impl rsxp_core::VideoSink for CountingVideo {
-    fn present(&mut self, _frame: rsxp_core::VideoFrame<'_>) {
+impl fanplay_core::VideoSink for CountingVideo {
+    fn present(&mut self, _frame: fanplay_core::VideoFrame<'_>) {
         self.0.fetch_add(1, Ordering::Relaxed);
     }
 }
@@ -84,7 +84,7 @@ fn rgss_core_loads_runs_and_presents_a_frame() {
     // Keep CI and headless tests away from an actual wgpu adapter. The GPU path
     // is covered by the existing desktop integration suite.
     // SAFETY: this test is the only environment mutator in its process.
-    unsafe { std::env::set_var("RSXP_RENDERER", "software") };
+    unsafe { std::env::set_var("FANPLAY_RENDERER", "software") };
 
     let dir = TempDir::new("smoke");
     let script = dir.0.join("smoke.rb");
@@ -105,10 +105,10 @@ Graphics.update
         Box::new(CountingVideo(Arc::clone(&frames))),
         Box::new(NullAudioSink),
         Box::new(RecordingEvents(Arc::clone(&loaded))),
-        Arc::new(rsxp_core::CoreControl::new()),
+        Arc::new(fanplay_core::CoreControl::new()),
     );
 
-    let mut core = rsxp_core_rgss::create();
+    let mut core = fanplay_core_rgss::create();
     core.load(Content::file(&script), context).unwrap();
     let info = *loaded.lock().unwrap();
     assert_eq!(info.unwrap().width, 640);

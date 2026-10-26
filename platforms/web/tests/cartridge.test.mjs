@@ -2,9 +2,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import init, * as wasm from '../dist/pkg/rsxp_web.js';
+import init, * as wasm from '../dist/pkg/fanplay_web.js';
 
-const bytes = readFileSync(new URL('../dist/pkg/rsxp_web_bg.wasm', import.meta.url));
+const bytes = readFileSync(new URL('../dist/pkg/fanplay_web_bg.wasm', import.meta.url));
 await init(bytes);
 
 // Same tiny mode-3 ROM the native GBA adapter test uses. It has no commercial

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Browser (WebAssembly) frontend for the rsxp engine.
+//! Browser (WebAssembly) frontend for the fanplay engine.
 //!
 //! The engine core (rendering, archives, input, native dispatcher) is shared
 //! with the desktop build. This crate supplies a `Host` that reads game files
@@ -30,10 +30,10 @@ pub use cartridge::{
 pub use files::{web_add_archive, web_add_file, web_file_count, web_read_file, web_set_reader};
 use host::WebHost;
 use js_sys::Uint8Array;
-use rsxp::engine::{self, Runtime, RuntimeOptions, ScriptedKey};
-use rsxp::graphics::Bitmap;
-use rsxp::host::InputEvent;
-use rsxp_extension_api::{OperationError, OperationRequest, OperationResponse};
+use fanplay_rgss::engine::{self, Runtime, RuntimeOptions, ScriptedKey};
+use fanplay_rgss::graphics::Bitmap;
+use fanplay_rgss::host::InputEvent;
+use fanplay_extension_api::{OperationError, OperationRequest, OperationResponse};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
@@ -116,9 +116,9 @@ pub async fn web_init_eframe(canvas: web_sys::HtmlCanvasElement) -> Result<(), J
     console_error_panic_hook::set_once();
     let runner = eframe::WebRunner::new();
     let creator: eframe::AppCreator<'static> = Box::new(|_| {
-        let mut app = rsxp_ui::SharedApp::default();
-        let mut panel = rsxp_ui::session::SessionPanel::default();
-        panel.capabilities = rsxp_ui::session::SessionCapabilities::BROWSER;
+        let mut app = fanplay_ui::SharedApp::default();
+        let mut panel = fanplay_ui::session::SessionPanel::default();
+        panel.capabilities = fanplay_ui::session::SessionCapabilities::BROWSER;
         panel.api_bridge = true;
         panel.api_status = "Browser bridge · no TCP listener".into();
         app.set_save_buttons(true);
@@ -132,11 +132,11 @@ pub async fn web_init_eframe(canvas: web_sys::HtmlCanvasElement) -> Result<(), J
     Ok(())
 }
 
-fn with_eframe_app<R>(f: impl FnOnce(&mut rsxp_ui::SharedApp) -> R) -> Option<R> {
+fn with_eframe_app<R>(f: impl FnOnce(&mut fanplay_ui::SharedApp) -> R) -> Option<R> {
     WEB_RUNNER.with(|slot| {
         let slot = slot.borrow();
         let runner = slot.as_ref()?;
-        let mut app = runner.app_mut::<rsxp_ui::SharedApp>()?;
+        let mut app = runner.app_mut::<fanplay_ui::SharedApp>()?;
         Some(f(&mut app))
     })
 }
@@ -160,7 +160,7 @@ fn pump_extensions() {
                     .and_then(serde_json::Value::as_str),
             ) {
                 browser_webview_call(
-                    "__rsxp_openPluginWebview",
+                    "__fanplay_openPluginWebview",
                     serde_json::json!({
                         "plugin_id": plugin_id,
                         "view_id": view_id,
@@ -186,7 +186,7 @@ fn pump_extensions() {
                 .and_then(serde_json::Value::as_str)
             {
                 browser_webview_call(
-                    "__rsxp_closePluginWebview",
+                    "__fanplay_closePluginWebview",
                     serde_json::json!({"plugin_id": plugin_id, "view_id": view_id}).to_string(),
                 );
             }
@@ -212,7 +212,7 @@ fn pump_extensions() {
             });
             continue;
         };
-        match rsxp::api_bridge::send_from_ui(operation, args) {
+        match fanplay_rgss::api_bridge::send_from_ui(operation, args) {
             Ok(bridge_id) => EXTENSION_BRIDGE.with(|pending| {
                 pending
                     .borrow_mut()
@@ -233,7 +233,7 @@ fn pump_extensions() {
     let pending: Vec<_> =
         EXTENSION_BRIDGE.with(|pending| pending.borrow().keys().copied().collect());
     for bridge_id in pending {
-        let Some(reply) = rsxp::api_bridge::take_ui_response(bridge_id) else {
+        let Some(reply) = fanplay_rgss::api_bridge::take_ui_response(bridge_id) else {
             continue;
         };
         let Some((id, generation)) =
@@ -284,10 +284,10 @@ pub fn web_eframe_plugin_http(
     target: &str,
     _body: &str,
 ) -> Result<(), JsValue> {
-    let route = rsxp::api_bridge::route_http(&method.to_ascii_uppercase(), target);
+    let route = fanplay_rgss::api_bridge::route_http(&method.to_ascii_uppercase(), target);
     let result = match route {
         Ok((operation, args)) => {
-            rsxp::api_bridge::send_from_ui(&operation, args).map_err(|error| (500, error))
+            fanplay_rgss::api_bridge::send_from_ui(&operation, args).map_err(|error| (500, error))
         }
         Err((status, error)) => Err((status, error)),
     };
@@ -322,7 +322,7 @@ pub fn web_eframe_take_plugin_http_responses() -> String {
         let response = match state {
             Err((status, error)) => Some((status, serde_json::json!({"error": error}).to_string())),
             Ok(bridge_id) => {
-                rsxp::api_bridge::take_ui_response(bridge_id).map(|reply| match reply {
+                fanplay_rgss::api_bridge::take_ui_response(bridge_id).map(|reply| match reply {
                     Ok(body) => (200, body),
                     Err(error) => (500, serde_json::json!({"error": error}).to_string()),
                 })
@@ -375,7 +375,7 @@ fn legacy_extension_call(request: &OperationRequest) -> Option<(&str, Vec<String
         );
         return Some((
             "ruby_inject",
-            vec![patch_name, rsxp::api_bridge::hex_encode(source)],
+            vec![patch_name, fanplay_rgss::api_bridge::hex_encode(source)],
         ));
     }
     if request.operation.ends_with(".__ruby.unload") {
@@ -420,7 +420,7 @@ pub fn web_eframe_activate_extensions() {
 pub fn web_eframe_launcher(title: &str, status: &str, busy: bool) {
     let _ = with_eframe_app(|app| {
         let panel = app.workspace.session.get_or_insert_with(Default::default);
-        panel.capabilities = rsxp_ui::session::SessionCapabilities::BROWSER;
+        panel.capabilities = fanplay_ui::session::SessionCapabilities::BROWSER;
         panel.status = status.into();
         panel.busy = busy;
         panel.recent = if title.is_empty() {
@@ -490,7 +490,7 @@ pub fn web_control_openapi() -> String {
 
 #[wasm_bindgen]
 pub fn web_control_routes() -> String {
-    rsxp::api_bridge::extension_routes_json()
+    fanplay_rgss::api_bridge::extension_routes_json()
 }
 
 /// Queues a game operation through the shared bridge. The page appends body
@@ -499,15 +499,15 @@ pub fn web_control_routes() -> String {
 pub fn web_control_request(method: &str, target: &str) -> Result<u32, JsValue> {
     let method = method.to_ascii_uppercase();
     let (operation, arguments) =
-        rsxp::api_bridge::route_http(&method, target).map_err(|(_, error)| JsValue::from_str(&error))?;
-    rsxp::api_bridge::send_from_ui(&operation, arguments)
+        fanplay_rgss::api_bridge::route_http(&method, target).map_err(|(_, error)| JsValue::from_str(&error))?;
+    fanplay_rgss::api_bridge::send_from_ui(&operation, arguments)
         .map(|id| id as u32)
         .map_err(|error| JsValue::from_str(&error))
 }
 
 #[wasm_bindgen]
 pub fn web_control_take_response(id: u32) -> String {
-    match rsxp::api_bridge::take_ui_response(u64::from(id)) {
+    match fanplay_rgss::api_bridge::take_ui_response(u64::from(id)) {
         None => serde_json::json!({"ready": false}).to_string(),
         Some(Ok(body)) => {
             let value = serde_json::from_str::<serde_json::Value>(&body)
@@ -532,31 +532,31 @@ fn browser_control_status() -> serde_json::Value {
     })
     .unwrap_or_default();
     serde_json::json!({
-        "server": "rsxp-control",
+        "server": "fanplay-control",
         "mode": "browser",
-        "base_url": "browser://rsxp",
+        "base_url": "browser://fanplay",
         "game_running": active,
         "game_available": active,
         "launcher_available": false,
         "paused": paused,
         "game": { "title": title, "source": source },
-        "notes": "Browsers cannot bind a loopback TCP listener. Use window.RSXP.control.request() for the same catalog. Save snapshots and settings are stored in browser local storage."
+        "notes": "Browsers cannot bind a loopback TCP listener. Use window.FANPLAY.control.request() for the same catalog. Save snapshots and settings are stored in browser local storage."
     })
 }
 
-fn browser_control_catalog() -> rsxp_control::Catalog {
-    let mut catalog = rsxp_control::Catalog::standard();
+fn browser_control_catalog() -> fanplay_control::Catalog {
+    let mut catalog = fanplay_control::Catalog::standard();
     // The browser cannot launch external files or open native folders, but the
     // launcher pause/live endpoints remain meaningful and the rest are reported
     // as unavailable by the request handler.
-    catalog.remove_scope(rsxp_control::Scope::Saves);
-    catalog.remove_scope(rsxp_control::Scope::Settings);
+    catalog.remove_scope(fanplay_control::Scope::Saves);
+    catalog.remove_scope(fanplay_control::Scope::Settings);
     // Keep the browser-specific save and settings operations documented so an
     // external caller still sees the same shape.
     catalog.extend(browser_save_endpoints());
     catalog.extend(browser_settings_endpoints());
     let routes = serde_json::from_str::<serde_json::Value>(
-        &rsxp::api_bridge::extension_routes_json(),
+        &fanplay_rgss::api_bridge::extension_routes_json(),
     )
     .ok();
     if let Some(routes) = routes
@@ -566,13 +566,13 @@ fn browser_control_catalog() -> rsxp_control::Catalog {
             let method = route.get("method")?.as_str()?;
             let path = route.get("path")?.as_str()?;
             let operation = route.get("operation")?.as_str()?;
-            let mut endpoint = rsxp_control::Endpoint::new(
+            let mut endpoint = fanplay_control::Endpoint::new(
                 operation,
                 method,
                 path,
                 format!("Game operation {operation}"),
                 "Route supplied by a loaded Rhai plugin and executed by the browser game bridge.",
-                rsxp_control::Scope::Extensions,
+                fanplay_control::Scope::Extensions,
             );
             for argument in route
                 .get("arguments")
@@ -582,15 +582,15 @@ fn browser_control_catalog() -> rsxp_control::Catalog {
                 .filter_map(serde_json::Value::as_str)
             {
                 let location = if path.contains(&format!("{{{argument}}}")) {
-                    rsxp_control::ParameterLocation::Path
+                    fanplay_control::ParameterLocation::Path
                 } else {
-                    rsxp_control::ParameterLocation::Query
+                    fanplay_control::ParameterLocation::Query
                 };
-                endpoint = endpoint.parameter(rsxp_control::Parameter::new(
+                endpoint = endpoint.parameter(fanplay_control::Parameter::new(
                     argument,
                     location,
-                    rsxp_control::ParameterType::String,
-                    location == rsxp_control::ParameterLocation::Path,
+                    fanplay_control::ParameterType::String,
+                    location == fanplay_control::ParameterLocation::Path,
                     "Plugin route argument",
                 ));
             }
@@ -600,8 +600,8 @@ fn browser_control_catalog() -> rsxp_control::Catalog {
     catalog
 }
 
-fn browser_save_endpoints() -> Vec<rsxp_control::Endpoint> {
-    use rsxp_control::{Endpoint, Parameter, ParameterType, Scope};
+fn browser_save_endpoints() -> Vec<fanplay_control::Endpoint> {
+    use fanplay_control::{Endpoint, Parameter, ParameterType, Scope};
     vec![
         Endpoint::new(
             "saves.info",
@@ -644,8 +644,8 @@ fn browser_save_endpoints() -> Vec<rsxp_control::Endpoint> {
     ]
 }
 
-fn browser_settings_endpoints() -> Vec<rsxp_control::Endpoint> {
-    use rsxp_control::{Endpoint, Parameter, ParameterType, Scope};
+fn browser_settings_endpoints() -> Vec<fanplay_control::Endpoint> {
+    use fanplay_control::{Endpoint, Parameter, ParameterType, Scope};
     vec![
         Endpoint::new(
             "settings.common.get",
@@ -709,7 +709,7 @@ pub fn web_eframe_game_stopped(message: &str) {
     EXTENSIONS_ACTIVATED.with(|active| active.set(false));
     EXTENSION_BRIDGE.with(|pending| pending.borrow_mut().clear());
     PLUGIN_HTTP_BRIDGE.with(|pending| pending.borrow_mut().clear());
-    browser_webview_call("__rsxp_closeAllPluginWebviews", "{}".into());
+    browser_webview_call("__fanplay_closeAllPluginWebviews", "{}".into());
     let _ = with_eframe_app(|app| {
         app.reset_extensions();
         app.workspace.game_stopped(message);
@@ -746,9 +746,9 @@ pub fn web_eframe_wants_keyboard() -> bool {
 
 #[wasm_bindgen]
 pub fn web_eframe_take_reset() -> bool {
-    let requested = rsxp::runtime_settings::reset_requested();
+    let requested = fanplay_rgss::runtime_settings::reset_requested();
     if requested {
-        rsxp::runtime_settings::clear_reset();
+        fanplay_rgss::runtime_settings::clear_reset();
     }
     requested
 }
@@ -756,14 +756,14 @@ pub fn web_eframe_take_reset() -> bool {
 /// Applies common/per-game fast-forward before the browser session starts.
 #[wasm_bindgen]
 pub fn web_runtime_fast_forward(enabled: bool) {
-    rsxp::runtime_settings::set_fast_forward(enabled);
+    fanplay_rgss::runtime_settings::set_fast_forward(enabled);
 }
 
 #[wasm_bindgen]
 pub fn web_runtime_settings() -> String {
     serde_json::json!({
-        "fast_forward": rsxp::runtime_settings::fast_forward(),
-        "fps": rsxp::runtime_settings::rate_override(),
+        "fast_forward": fanplay_rgss::runtime_settings::fast_forward(),
+        "fps": fanplay_rgss::runtime_settings::rate_override(),
     })
     .to_string()
 }
@@ -771,9 +771,9 @@ pub fn web_runtime_settings() -> String {
 #[wasm_bindgen]
 pub fn web_runtime_set_rate(fps: u32) {
     if fps == 0 {
-        rsxp::runtime_settings::clear_rate_override();
+        fanplay_rgss::runtime_settings::clear_rate_override();
     } else {
-        rsxp::runtime_settings::set_rate_override(fps);
+        fanplay_rgss::runtime_settings::set_rate_override(fps);
     }
 }
 
@@ -803,7 +803,7 @@ pub fn web_eframe_copy_runtime_output() {    let _ = with_eframe_app(|app| {
         web_sys::window().and_then(|window| {
             let text = app.workspace.logs.join("\n");
             window
-                .get("__rsxp_copyText")?
+                .get("__fanplay_copyText")?
                 .dyn_into::<js_sys::Function>()
                 .ok()
                 .and_then(|function| {
@@ -912,13 +912,13 @@ pub fn web_scroll(delta: i32) {
 /// Uses the same nonblocking command queue as the desktop workspace.
 #[wasm_bindgen]
 pub fn web_game_request(operation: &str, args: Vec<String>) -> Result<u64, JsValue> {
-    rsxp::api_bridge::send_from_ui(operation, args).map_err(|error| JsValue::from_str(&error))
+    fanplay_rgss::api_bridge::send_from_ui(operation, args).map_err(|error| JsValue::from_str(&error))
 }
 
 /// Takes a completed JSON reply; absent while the game has not processed it.
 #[wasm_bindgen]
 pub fn web_game_response(id: u64) -> Result<Option<String>, JsValue> {
-    rsxp::api_bridge::take_ui_response(id)
+    fanplay_rgss::api_bridge::take_ui_response(id)
         .transpose()
         .map_err(|error| JsValue::from_str(&error))
 }
@@ -926,20 +926,20 @@ pub fn web_game_response(id: u64) -> Result<Option<String>, JsValue> {
 /// Import a game-folder patch using the same catalog as the desktop loader.
 #[wasm_bindgen]
 pub fn web_register_user_patch(name: &str, source: &str) -> bool {
-    rsxp::runtime_patch::register_user_patch(name, source.into())
+    fanplay_rgss::runtime_patch::register_user_patch(name, source.into())
 }
 
 #[wasm_bindgen]
 pub fn web_controls() -> String {
-    rsxp_ui::controls::encode()
+    fanplay_ui::controls::encode()
 }
 #[wasm_bindgen]
 pub fn web_controls_load(value: &str) {
-    rsxp_ui::controls::decode(value);
+    fanplay_ui::controls::decode(value);
 }
 #[wasm_bindgen]
 pub fn web_controllers_connected(count: usize) {
-    let mut mapping = rsxp_ui::controls::get();
+    let mut mapping = fanplay_ui::controls::get();
     mapping.connected = count;
-    rsxp_ui::controls::set(mapping);
+    fanplay_ui::controls::set(mapping);
 }

@@ -1,11 +1,11 @@
-// rsxp:id = essentials-itemdex
-// rsxp:name = Essentials Itemdex
-// rsxp:version = 0.1.0
-// rsxp:capabilities = ruby.inject,ruby.unload,ui.webview,pokemon_essentials.read,pokemon_essentials.write
-// rsxp:operation = pokemon_essentials_itemdex
-// rsxp:operation-capabilities = pokemon_essentials_itemdex pokemon_essentials.read
-// rsxp:route = GET /v1/pokemon-essentials/itemdex pokemon_essentials_itemdex refresh
-// rsxp:panel = itemdex,Essentials Itemdex
+// fanplay:id = essentials-itemdex
+// fanplay:name = Essentials Itemdex
+// fanplay:version = 0.1.0
+// fanplay:capabilities = ruby.inject,ruby.unload,ui.webview,pokemon_essentials.read,pokemon_essentials.write
+// fanplay:operation = pokemon_essentials_itemdex
+// fanplay:operation-capabilities = pokemon_essentials_itemdex pokemon_essentials.read
+// fanplay:route = GET /v1/pokemon-essentials/itemdex pokemon_essentials_itemdex refresh
+// fanplay:panel = itemdex,Essentials Itemdex
 
 // Item data, filtering, presentation, and the catalog adapter belong to this
 // plugin. The Rust host only supplies the generic webview, route, and Ruby
@@ -16,7 +16,7 @@ fn itemdex_html() {
 
 fn on_activate() {
     let ruby = text_block("ruby");
-    let apply = "{ apply: proc { " + ruby + "; RSXP::ItemdexPlugin.install }, revert: proc { RSXP::ItemdexPlugin.uninstall if defined?(RSXP::ItemdexPlugin) } }";
+    let apply = "{ apply: proc { " + ruby + "; FANPLAY::ItemdexPlugin.install }, revert: proc { FANPLAY::ItemdexPlugin.uninstall if defined?(FANPLAY::ItemdexPlugin) } }";
     let pending = ruby_inject("essentials-itemdex", apply);
     state_set("pending", pending);
     if pending < 0 {
@@ -58,7 +58,7 @@ fn on_shutdown() {
     }
 }
 
-/* rsxp:text html-begin
+/* fanplay:text html-begin
 <!doctype html>
 <html lang="en">
 <head>
@@ -183,7 +183,7 @@ fn on_shutdown() {
       for (const row of state.rows) { const value = number(row.price); const field = number(row.field_use), battle = number(row.battle_use); if (score(row) == null || pocket && row.pocket_name !== pocket || tag && !tags(row).includes(tag) || usage === 'field' && (field == null || field === 0) || usage === 'battle' && (battle == null || battle === 0) || usage === 'none' && (field !== 0 && battle !== 0) || $('consumable').checked && row.consumable !== true || min != null && (value == null || value < min) || max != null && (value == null || value > max)) continue; rows.push({ row, score: score(row) }); }
       const sort = $('sort').value; rows.sort((a, b) => sort === 'name' ? text(a.row.name).localeCompare(text(b.row.name)) : sort === 'price' ? (number(b.row.price) || -1) - (number(a.row.price) || -1) : sort === 'number' ? (number(a.row.number) || 999999) - (number(b.row.number) || 999999) : a.score - b.score || text(a.row.name).localeCompare(text(b.row.name))); return rows.map(value => value.row);
     }
-    function assetSource(descriptor) { if (!descriptor || !window.RSXP || typeof window.RSXP.asset !== 'function') return Promise.resolve(null); const request = window.RSXP.asset(descriptor.category, descriptor.name).catch(() => null); return Promise.race([request, new Promise(resolve => setTimeout(() => resolve(null), 2500))]); }
+    function assetSource(descriptor) { if (!descriptor || !window.FANPLAY || typeof window.FANPLAY.asset !== 'function') return Promise.resolve(null); const request = window.FANPLAY.asset(descriptor.category, descriptor.name).catch(() => null); return Promise.race([request, new Promise(resolve => setTimeout(() => resolve(null), 2500))]); }
     function icon(image, descriptor, size) { if (!image || !descriptor) return; assetSource(descriptor).then(src => { if (src) { image.src = src; image.hidden = false; image.style.width = `${size}px`; image.style.height = `${size}px`; } }); }
     function renderFilters() { const pockets = [...new Set(state.rows.map(row => row.pocket_name).filter(Boolean))].sort(); const kinds = [...new Set(state.rows.flatMap(tags))].sort(); $('pocket').innerHTML = '<option value="">All pockets</option>' + pockets.map(value => `<option>${esc(value)}</option>`).join(''); $('tag-filter').innerHTML = '<option value="">All item kinds</option>' + kinds.map(value => `<option>${esc(value)}</option>`).join(''); }
     function iconMarkup(row, cls = '') { return row.icon ? `<span class="orb ${cls}"><img hidden data-icon='${esc(JSON.stringify(row.icon))}' alt=""></span>` : `<span class="orb ${cls}">${esc(text(row.pocket_name, 'ITEM').slice(0, 5).toUpperCase())}</span>`; }
@@ -205,19 +205,19 @@ fn on_shutdown() {
   </script>
 </body>
 </html>
-rsxp:text html-end */
+fanplay:text html-end */
 
-/* rsxp:text ruby-begin
+/* fanplay:text ruby-begin
 # The catalog adapter is installed by this plugin. Shared reflective helpers
 # remain in the generic Essentials bridge; the item registry and legacy shape
 # conversion do not belong to the Rust host or its route table.
-module RSXP
+module FANPLAY
   module ItemdexPlugin
     def self.install
-      @api = RSXP::GameAPI
+      @api = FANPLAY::GameAPI
       @original = @api.method(:pokemon_essentials_itemdex) if @api.respond_to?(:pokemon_essentials_itemdex)
       @api.define_singleton_method(:pokemon_essentials_itemdex) do |refresh = false|
-        RSXP::ItemdexPlugin.pokemon_essentials_itemdex(refresh)
+        FANPLAY::ItemdexPlugin.pokemon_essentials_itemdex(refresh)
       end
     end
 
@@ -314,4 +314,4 @@ module RSXP
     end
   end
 end
-rsxp:text ruby-end */
+fanplay:text ruby-end */

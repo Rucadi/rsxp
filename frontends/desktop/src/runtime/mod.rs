@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Desktop application lifecycle for the `rsxp` binary.
+//! Desktop application lifecycle for the `fanplay` binary.
 //!
 //! [`run`] parses [`options::RunOptions`], remembers the launch directory, prepares
 //! the game working directory and archives ([`game::GameConfig`]), builds the
@@ -11,10 +11,10 @@
 //! Environment and lifecycle details:
 //! - [`set_startup_env`]/[`remove_startup_env`] must run on the single-threaded main
 //!   thread before `winit`, CPAL or Ruby create threads.
-//! - Scripted input comes from `RSXP_INPUT`; generic runtime patches come from
-//!   `runtime_patch::load_user_patches` plus `RSXP_PATCH`; Essentials-specific
-//!   behavior is injected by the Rhai plugin host; `RSXP_JIT` selects
-//!   `yjit` (default), `zjit`, or `off`. Legacy `RSXP_YJIT=0` disables the default.
+//! - Scripted input comes from `FANPLAY_INPUT`; generic runtime patches come from
+//!   `runtime_patch::load_user_patches` plus `FANPLAY_PATCH`; Essentials-specific
+//!   behavior is injected by the Rhai plugin host; `FANPLAY_JIT` selects
+//!   `yjit` (default), `zjit`, or `off`. Legacy `FANPLAY_YJIT=0` disables the default.
 //! - [`validate`] only parses arguments. A reset requested during the run restarts the
 //!   process from the launch directory via [`restart`], rebuilding the engine, Ruby and
 //!   game exactly as a fresh launch would.
@@ -24,8 +24,8 @@
 #[cfg(feature = "rgss")]
 use crate::host::DesktopHost;
 #[cfg(feature = "rgss")]
-use rsxp::engine::{self, RuntimeOptions};
-use rsxp_core::Content;
+use fanplay_rgss::engine::{self, RuntimeOptions};
+use fanplay_core::Content;
 use std::ffi::OsStr;
 use std::{error::Error, path::Path};
 #[cfg(feature = "rgss")]
@@ -57,7 +57,7 @@ pub fn validate(args: &[String]) -> Result<(), Box<dyn Error>> {
 
 pub fn run(args: &[String]) -> Result<u8, Box<dyn Error>> {
     let settings = args.windows(2).find(|a| a[0] == "--game")
-        .map(|a| rsxp_provision::settings::for_game(Path::new(&a[1])))
+        .map(|a| fanplay_provision::settings::for_game(Path::new(&a[1])))
         .transpose().map_err(|e| e.to_string())?.unwrap_or_default();
     for (key,value) in settings.environment() { set_startup_env(key,value); }
     let options::RunOptions {
@@ -70,17 +70,17 @@ pub fn run(args: &[String]) -> Result<u8, Box<dyn Error>> {
         mut version,
     } = options::RunOptions::parse(args)?;
     if version.is_none() { version = settings.rgss; }
-    let data_root = rsxp_provision::root(game.as_deref());
-    set_startup_env("RSXP_HOME", data_root.clone());
+    let data_root = fanplay_provision::root(game.as_deref());
+    set_startup_env("FANPLAY_HOME", data_root.clone());
     if headless
-        && std::env::var_os("RSXP_API").is_none()
-        && rsxp_provision::config::path(&data_root).exists()
+        && std::env::var_os("FANPLAY_API").is_none()
+        && fanplay_provision::config::path(&data_root).exists()
     {
-        if let Ok(config) = rsxp_provision::config::load(&data_root)
+        if let Ok(config) = fanplay_provision::config::load(&data_root)
             && config.api.enabled
         {
-            set_startup_env("RSXP_API", "1");
-            set_startup_env("RSXP_API_PORT", config.api.port.to_string());
+            set_startup_env("FANPLAY_API", "1");
+            set_startup_env("FANPLAY_API_PORT", config.api.port.to_string());
         }
     }
     #[cfg(not(feature = "rgss"))]
@@ -99,7 +99,7 @@ pub fn run(args: &[String]) -> Result<u8, Box<dyn Error>> {
         let game::GameConfig { version, archives } =
             game::GameConfig::prepare(script, game, version)?;
         let (width, height) = if version == 1 { (640, 480) } else { (544, 416) };
-        let scripted = match std::env::var("RSXP_INPUT") {
+        let scripted = match std::env::var("FANPLAY_INPUT") {
             Ok(value) => engine::parse_scripted(&value)?,
             Err(_) => Vec::new(),
         };
@@ -117,29 +117,29 @@ pub fn run(args: &[String]) -> Result<u8, Box<dyn Error>> {
             host: Box::new(host),
         })?;
         engine::set_runtime(runtime);
-        rsxp::api_bridge::start_from_env().map_err(std::io::Error::other)?;
+        fanplay_rgss::api_bridge::start_from_env().map_err(std::io::Error::other)?;
         // Live frame-rate/fast-forward/reset controls start from their defaults;
         // the workspace UI drives them from here.
-        rsxp::runtime_settings::reset();
-        rsxp::runtime_settings::set_fast_forward(settings.fast_forward);
-        if let Some(fps) = settings.fps { rsxp::runtime_settings::set_rate_override(fps); }
+        fanplay_rgss::runtime_settings::reset();
+        fanplay_rgss::runtime_settings::set_fast_forward(settings.fast_forward);
+        if let Some(fps) = settings.fps { fanplay_rgss::runtime_settings::set_rate_override(fps); }
         // Pre-enable runtime patches so headless runs and CI can exercise them
         // without the workspace UI.
-        rsxp::runtime_patch::reset();
-        rsxp::runtime_patch::load_user_patches(&std::env::current_dir()?)?;
-        if let Ok(value) = std::env::var("RSXP_PATCH") {
-            for id in rsxp::runtime_patch::enable_from(&value) {
+        fanplay_rgss::runtime_patch::reset();
+        fanplay_rgss::runtime_patch::load_user_patches(&std::env::current_dir()?)?;
+        if let Ok(value) = std::env::var("FANPLAY_PATCH") {
+            for id in fanplay_rgss::runtime_patch::enable_from(&value) {
                 eprintln!("Runtime patch enabled: {id}");
             }
         }
-        for (id,value) in &settings.patch_values { rsxp::runtime_patch::set_value(id,*value); }
+        for (id,value) in &settings.patch_values { fanplay_rgss::runtime_patch::set_value(id,*value); }
         let ruby = ruby_rgss_core::RubyCore::new().map_err(std::io::Error::other)?;
         let status = ruby.startup_status();
         // Run Ruby finalizers while the Rust resource registry is still available.
         drop(ruby);
         // The workspace "Reset game" button stops the game here so everything is
         // recreated from the beginning.
-        if rsxp::runtime_settings::reset_requested() {
+        if fanplay_rgss::runtime_settings::reset_requested() {
             return restart(launch_dir.as_path());
         }
         let mut runtime = engine::take_runtime().ok_or("runtime closed unexpectedly")?;
@@ -160,9 +160,9 @@ pub fn run(args: &[String]) -> Result<u8, Box<dyn Error>> {
 ///
 /// A directory is treated as cartridge content only when it contains exactly
 /// one file claimed by a non-RGSS core; otherwise it remains an RGSS project.
-fn cartridge_content(path: &Path) -> Option<(Content, rsxp_core::CoreRegistration)> {
+fn cartridge_content(path: &Path) -> Option<(Content, fanplay_core::CoreRegistration)> {
     use std::fs;
-    let catalog = rsxp_cores::catalog();
+    let catalog = fanplay_cores::catalog();
     let content = if path.is_dir() {
         // Never steal a directory that the catalog already identifies as an
         // RGSS project, even if it also ships a single ROM file.
@@ -204,7 +204,7 @@ fn restart(launch_dir: &Path) -> Result<u8, Box<dyn Error>> {
     let exe = std::env::current_exe()?;
     let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
     std::env::set_current_dir(launch_dir)?;
-    eprintln!("rsxp: resetting the game…");
+    eprintln!("fanplay: resetting the game…");
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -225,7 +225,7 @@ mod tests {
 
     fn temp(label: &str) -> std::path::PathBuf {
         let path = std::env::temp_dir().join(format!(
-            "rsxp-runtime-{label}-{}-{}",
+            "fanplay-runtime-{label}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

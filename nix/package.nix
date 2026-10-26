@@ -22,7 +22,7 @@ let
   );
 in
 pkgs.rustPlatform.buildRustPackage {
-  pname = "rsxp";
+  pname = "fanplay";
   version = "0.1.0";
   src = root;
 
@@ -40,15 +40,15 @@ pkgs.rustPlatform.buildRustPackage {
   };
   cargoBuildFlags = [
     "-p"
-    "rsxp-desktop"
+    "fanplay-desktop"
     "--bin"
-    "rsxp"
+    "fanplay"
   ];
   cargoInstallFlags = [
     "-p"
-    "rsxp-desktop"
+    "fanplay-desktop"
     "--bin"
-    "rsxp"
+    "fanplay"
   ];
 
   # Dust uses nightly-only language features and is in the desktop defaults.
@@ -67,24 +67,24 @@ pkgs.rustPlatform.buildRustPackage {
   ]
   ++ lib.optionals isLinux [ pkgs.makeWrapper ];
   postFixup = lib.optionalString isLinux ''
-    wrapProgram $out/bin/rsxp --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath runtimeLibraries} --prefix PATH : ${lib.makeBinPath [ pkgs.curl ]}
+    wrapProgram $out/bin/fanplay --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath runtimeLibraries} --prefix PATH : ${lib.makeBinPath [ pkgs.curl ]}
   '';
   inherit doCheck;
 
   doInstallCheck = true;
   installCheckPhase = ''
     runHook preInstallCheck
-    $out/bin/rsxp --version
-    $out/bin/rsxp --headless --frames 2 --output smoke.ppm
+    $out/bin/fanplay --version
+    $out/bin/fanplay --headless --frames 2 --output smoke.ppm
     test -s smoke.ppm
-    $out/bin/rsxp run --script ${root}/crates/rsxp-rgss/testdata/rgss_smoke.rb --headless
+    $out/bin/fanplay run --script ${root}/crates/fanplay-rgss/testdata/rgss_smoke.rb --headless
     runHook postInstallCheck
   '';
 
   meta = with lib; {
-    description = "Native Rust engine for RPG Maker RGSS games";
+    description = "Fanplay fangame player for RPG Maker, GBA and Nintendo DS";
     license = licenses.gpl2Plus;
-    mainProgram = "rsxp";
+    mainProgram = "fanplay";
     platforms = platforms.linux ++ platforms.darwin;
   };
 }

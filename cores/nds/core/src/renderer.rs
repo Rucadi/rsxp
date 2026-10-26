@@ -67,7 +67,7 @@ fn new_software() -> (Box<dyn RendererTx>, Box<dyn SoftRendererRx>) {
 
 pub fn new() -> Renderers {
     #[cfg(not(target_arch = "wasm32"))]
-    if std::env::var("RSXP_NDS_RENDERER").as_deref() == Ok("wgpu") {
+    if std::env::var("FANPLAY_NDS_RENDERER").as_deref() == Ok("wgpu") {
         match new_wgpu() {
             Ok(renderers) => {
                 eprintln!("Nintendo DS: Dust wgpu 2D/3D renderers enabled");

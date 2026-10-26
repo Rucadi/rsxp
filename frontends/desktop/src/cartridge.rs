@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Desktop host for cartridge cores.
 //!
-//! Content is routed by [`rsxp_frontend::CoreCatalog`], so this module has no
+//! Content is routed by [`fanplay_frontend::CoreCatalog`], so this module has no
 //! knowledge of GBA or DS. It supplies the generic media bridge:
 //!
 //! - a reusable ARGB frame buffer converted once per frame and sent to the
@@ -13,16 +13,16 @@
 //!   owns emulation.
 //!
 //! Core-specific behavior (screen layout, touch mapping, buttons) comes from
-//! [`CoreInfo`](rsxp_core::CoreInfo), not from an extension branch here.
+//! [`CoreInfo`](fanplay_core::CoreInfo), not from an extension branch here.
 
 use crate::session::{Runner, TransportInput};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use rsxp_core::{
+use fanplay_core::{
     AudioConfig, AudioSink, Button, Content, CoreControl, CoreEvent, CoreLoadInfo,
     CoreRegistration, EventSink, FrameError, PcmBuffer, PcmRing, PcmRingConsumer, PcmRingProducer,
     PcmStatus, Platform, PlatformError, PlatformResult, SessionConfig, VideoFrame, VideoSink,
 };
-use rsxp_frontend::{video::convert_argb, ContentId, SaveStore, StorageSubmitter, StorageWorker};
+use fanplay_frontend::{video::convert_argb, ContentId, SaveStore, StorageSubmitter, StorageWorker};
 use std::collections::VecDeque;
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -56,7 +56,7 @@ pub fn run(
         .to_path_buf();
     let title = content.label.clone();
     let content_id = ContentId::of(&content)?;
-    let base = rsxp_provision::root(Some(&content.path)).join("saves");
+    let base = fanplay_provision::root(Some(&content.path)).join("saves");
     let store = SaveStore::new(&base, registration.info.id, content_id)?;
     if let Ok(copied) = store.migrate_from(&legacy_data_dir(&title))
         && copied > 0
@@ -68,7 +68,7 @@ pub fn run(
         .join("rsxp/saves")
         .join(registration.info.id)
         .join(content_id.hex());
-    rsxp_provision::migrate_data(
+    fanplay_provision::migrate_data(
         &old,
         &base.join(registration.info.id).join(content_id.hex()),
     )
@@ -88,7 +88,7 @@ pub fn run(
 
     let control = Arc::new(CoreControl::new());
     control.set_frame_limit(frames);
-    control.set_fast_forward(rsxp_provision::settings::for_game(&content.path).map_err(|e| e.to_string())?.fast_forward);
+    control.set_fast_forward(fanplay_provision::settings::for_game(&content.path).map_err(|e| e.to_string())?.fast_forward);
 
     let runner = if headless { None } else { Runner::connect()? };
     if !headless && runner.is_none() && frames.is_none() && output.is_none() {
@@ -107,7 +107,7 @@ pub fn run(
         let host_input = HostInput::new(Arc::clone(&control), registration.info.input.buttons);
         let thread_control = Arc::clone(&control);
         let join = std::thread::Builder::new()
-            .name(format!("rsxp-{}-session", registration.info.id))
+            .name(format!("fanplay-{}-session", registration.info.id))
             .spawn(move || {
                 session_loop(runner, frames_in, recycle_out, host_input, thread_control)
             })?;
@@ -122,7 +122,7 @@ pub fn run(
         None => Box::new(SilentAudio),
     };
     let save_dir = store.native_save_dir().unwrap_or_else(|| base.clone());
-    let context = rsxp_core::CoreContext::new(
+    let context = fanplay_core::CoreContext::new(
         Arc::new(CartridgePlatform {
             root,
             save_dir,
@@ -139,7 +139,7 @@ pub fn run(
     )
     .with_session(session);
 
-    let handle = rsxp_frontend::spawn_core(registration, content, context)
+    let handle = fanplay_frontend::spawn_core(registration, content, context)
         .map_err(|error| format!("could not start cartridge core: {error}"))?;
     let result = handle
         .join()
@@ -606,7 +606,7 @@ fn write_ppm(path: &Path, frame: &Frame) -> Result<(), Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rsxp_core::PixelFormat;
+    use fanplay_core::PixelFormat;
 
     fn frame(format: PixelFormat, pixels: &[u8]) -> VideoFrame<'_> {
         VideoFrame::new(2, 1, pixels.len(), format, pixels)

@@ -1,18 +1,18 @@
-// rsxp:id = essentials-pokedex
-// rsxp:name = Essentials Pokédex
-// rsxp:version = 0.1.0
-// rsxp:capabilities = ruby.inject,ruby.unload,ui.webview,pokemon_essentials.read,pokemon_essentials.write
-// rsxp:operation = pokemon_essentials_pokedex
-// rsxp:operation-capabilities = pokemon_essentials_pokedex pokemon_essentials.read
-// rsxp:route = GET /v1/pokemon-essentials/pokedex pokemon_essentials_pokedex refresh
-// rsxp:operation = pokemon_essentials_species_entry
-// rsxp:operation-capabilities = pokemon_essentials_species_entry pokemon_essentials.read
-// rsxp:route = GET /v1/pokemon-essentials/species/{species} pokemon_essentials_species_entry species
-// rsxp:operation = pokemon_essentials_wild_encounter
-// rsxp:operation-capabilities = pokemon_essentials_wild_encounter pokemon_essentials.write
-// rsxp:operation-mutates = pokemon_essentials_wild_encounter
-// rsxp:route = POST /v1/pokemon-essentials/wild-encounter pokemon_essentials_wild_encounter species,level,shiny,form,gender,nature,ability,item,max_ivs,friendship
-// rsxp:panel = pokedex,Essentials Pokédex
+// fanplay:id = essentials-pokedex
+// fanplay:name = Essentials Pokédex
+// fanplay:version = 0.1.0
+// fanplay:capabilities = ruby.inject,ruby.unload,ui.webview,pokemon_essentials.read,pokemon_essentials.write
+// fanplay:operation = pokemon_essentials_pokedex
+// fanplay:operation-capabilities = pokemon_essentials_pokedex pokemon_essentials.read
+// fanplay:route = GET /v1/pokemon-essentials/pokedex pokemon_essentials_pokedex refresh
+// fanplay:operation = pokemon_essentials_species_entry
+// fanplay:operation-capabilities = pokemon_essentials_species_entry pokemon_essentials.read
+// fanplay:route = GET /v1/pokemon-essentials/species/{species} pokemon_essentials_species_entry species
+// fanplay:operation = pokemon_essentials_wild_encounter
+// fanplay:operation-capabilities = pokemon_essentials_wild_encounter pokemon_essentials.write
+// fanplay:operation-mutates = pokemon_essentials_wild_encounter
+// fanplay:route = POST /v1/pokemon-essentials/wild-encounter pokemon_essentials_wild_encounter species,level,shiny,form,gender,nature,ability,item,max_ivs,friendship
+// fanplay:panel = pokedex,Essentials Pokédex
 
 // The complete explorer is one portable plugin. Its UI is HTML so the same
 // source runs in the native Wry window and in the browser iframe host.
@@ -20,7 +20,7 @@ fn pokedex_html() {
     text_block("html")
 }
 
-/* rsxp:text html-begin
+/* fanplay:text html-begin
 <!doctype html>
 <html>
 <head>
@@ -386,8 +386,8 @@ fn pokedex_html() {
       }
       function request(path, options = {}) {
         const method = String(options.method || "GET").toUpperCase();
-        if (window.RSXP && typeof window.RSXP.api === "function" && path.startsWith("/v1/")) {
-          return window.RSXP.api(method, path, options.body || "");
+        if (window.FANPLAY && typeof window.FANPLAY.api === "function" && path.startsWith("/v1/")) {
+          return window.FANPLAY.api(method, path, options.body || "");
         }
         return fetch(path, options);
       }
@@ -421,10 +421,10 @@ fn pokedex_html() {
         );
       }
       function assetSource(descriptor) {
-        if (!descriptor || !window.RSXP || typeof window.RSXP.asset !== "function") {
+        if (!descriptor || !window.FANPLAY || typeof window.FANPLAY.asset !== "function") {
           return Promise.resolve(null);
         }
-        const request = window.RSXP.asset(descriptor.category, descriptor.name)
+        const request = window.FANPLAY.asset(descriptor.category, descriptor.name)
           .catch(() => null);
         // A host that is shutting down or has no asset backend must not leave
         // a plugin promise pending forever (notably the shiny availability
@@ -673,11 +673,11 @@ fn pokedex_html() {
 </body>
 </html>
 
-rsxp:text html-end */
+fanplay:text html-end */
 
 fn on_activate() {
     let ruby = text_block("ruby");
-    let apply = "{ apply: proc { " + ruby + " }, revert: proc { RSXP::PokedexPlugin.uninstall if defined?(RSXP::PokedexPlugin) } }";
+    let apply = "{ apply: proc { " + ruby + " }, revert: proc { FANPLAY::PokedexPlugin.uninstall if defined?(FANPLAY::PokedexPlugin) } }";
     state_set("pending", ruby_inject("essentials-pokedex", apply));
 }
 
@@ -706,18 +706,18 @@ fn on_shutdown() {
     if handle != () { ruby_unload(handle); }
 }
 
-/* rsxp:text ruby-begin
+/* fanplay:text ruby-begin
 # The Ruby in this block is deliberately plugin-owned. It supplies the
 # Pokedex index/detail builders and installs only the generic operation names
 # that the core dispatcher already forwards to the active game API module.
-module RSXP
+module FANPLAY
   module PokedexPlugin
     def self.install
-      @api = RSXP::GameAPI
+      @api = FANPLAY::GameAPI
       @originals ||= {}
       %i[pokemon_essentials_pokedex pokemon_essentials_species_entry pokemon_essentials_wild_encounter start_pending_wild_encounter].each do |name|
         @originals[name] = @api.method(name) if @api.respond_to?(name) && !@originals.key?(name)
-        @api.define_singleton_method(name) { |*args| RSXP::PokedexPlugin.public_send(name, *args) }
+        @api.define_singleton_method(name) { |*args| FANPLAY::PokedexPlugin.public_send(name, *args) }
       end
     end
 
@@ -1131,5 +1131,5 @@ module RSXP
     end
   end
 end
-RSXP::PokedexPlugin.install
-rsxp:text ruby-end */
+FANPLAY::PokedexPlugin.install
+fanplay:text ruby-end */

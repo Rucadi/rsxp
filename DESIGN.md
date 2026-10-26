@@ -1,15 +1,15 @@
-# RSXP Design System — Adventure Journal
+# Fanplay Design System — Adventure Journal
 
 Theme presets live in [`themes/`](themes/). Each preset has its own design
 brief: [Adventure Journal](themes/adventure-journal/DESIGN.md), [Arcade
 Neon](themes/arcade-neon/DESIGN.md), [Moonlit Grove](themes/moonlit-grove/DESIGN.md),
 and [Field Guide](themes/field-guide/DESIGN.md).
-The launcher ships all three and can load additional definitions from
+The launcher ships all four and can load additional definitions from
 `config/themes.json`.
 
 ## Direction
 
-RSXP should feel like opening a well-loved handheld RPG: welcoming, colorful,
+FANPLAY should feel like opening a well-loved handheld RPG: welcoming, colorful,
 and ready for another journey. Its main audience plays Pokémon fangames and
 RPG Maker XP adventures. Use the visual language of route maps, party menus,
 save screens, and framed dialogue boxes to make that purpose recognizable.
@@ -31,7 +31,7 @@ with touch-friendly adaptations where supported.
 2. **Adventure over arcade.** Prefer a journal tab, map marker, or menu cursor
    to glowing scoreboards, scanlines, and high-score language.
 3. **Familiar without imitation.** Use original landscape motifs and RPG menu
-   framing. RSXP's identity should not depend on Pokémon logos, Poké Balls,
+   framing. FANPLAY's identity should not depend on Pokémon logos, Poké Balls,
    official characters, or a replica of a particular game's interface.
 4. **Room for every world.** Pokémon fangames inform the character of the shell,
    but other RPG Maker games and supported cores must feel equally at home.

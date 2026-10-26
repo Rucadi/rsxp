@@ -1,20 +1,20 @@
-// rsxp:id = essentials-world-map
-// rsxp:name = Essentials World Map
-// rsxp:version = 0.1.0
-// rsxp:capabilities = ruby.inject,ruby.unload,ui.webview
-// rsxp:operation = world_map
-// rsxp:operation-capabilities = world_map game.read
-// rsxp:operation = map_preview
-// rsxp:operation-capabilities = map_preview game.read
-// rsxp:route = GET /v1/game/world-map world_map
-// rsxp:route = GET /v1/game/maps/{map_id}/tiles map_preview map_id
-// rsxp:panel = world-map,Connected World Map
+// fanplay:id = essentials-world-map
+// fanplay:name = Essentials World Map
+// fanplay:version = 0.1.0
+// fanplay:capabilities = ruby.inject,ruby.unload,ui.webview
+// fanplay:operation = world_map
+// fanplay:operation-capabilities = world_map game.read
+// fanplay:operation = map_preview
+// fanplay:operation-capabilities = map_preview game.read
+// fanplay:route = GET /v1/game/world-map world_map
+// fanplay:route = GET /v1/game/maps/{map_id}/tiles map_preview map_id
+// fanplay:panel = world-map,Connected World Map
 
 fn world_map_html() { text_block("html") }
 
 fn on_activate() {
     let ruby = text_block("ruby");
-    let apply = "{ apply: proc { " + ruby + "; RSXP::WorldMapPlugin.install }, revert: proc { RSXP::WorldMapPlugin.uninstall if defined?(RSXP::WorldMapPlugin) } }";
+    let apply = "{ apply: proc { " + ruby + "; FANPLAY::WorldMapPlugin.install }, revert: proc { FANPLAY::WorldMapPlugin.uninstall if defined?(FANPLAY::WorldMapPlugin) } }";
     let pending = ruby_inject("essentials-world-map", apply);
     state_set("pending", pending);
     if pending < 0 { state_set("error", last_error()); }
@@ -50,15 +50,15 @@ fn on_shutdown() {
     if handle != () { ruby_unload(handle); }
 }
 
-/* rsxp:text ruby-begin
-module RSXP
+/* fanplay:text ruby-begin
+module FANPLAY
   module WorldMapPlugin
     def self.install
-      @api = RSXP::GameAPI
+      @api = FANPLAY::GameAPI
       @original_world_map = @api.method(:world_map) if @api.respond_to?(:world_map)
       @original_map_preview = @api.method(:map_preview) if @api.respond_to?(:map_preview)
-      @api.define_singleton_method(:world_map) { RSXP::WorldMapPlugin.world_map }
-      @api.define_singleton_method(:map_preview) { |map_id| RSXP::WorldMapPlugin.map_preview(map_id) }
+      @api.define_singleton_method(:world_map) { FANPLAY::WorldMapPlugin.world_map }
+      @api.define_singleton_method(:map_preview) { |map_id| FANPLAY::WorldMapPlugin.map_preview(map_id) }
     end
 
     def self.uninstall
@@ -218,9 +218,9 @@ module RSXP
     end
   end
 end
-rsxp:text ruby-end */
+fanplay:text ruby-end */
 
-/* rsxp:text html-begin
+/* fanplay:text html-begin
 <!doctype html>
 <html lang="en">
 <head>
@@ -287,8 +287,8 @@ rsxp:text ruby-end */
   async function image(category, name) {
     const key = `${category}/${name}`;
     if (state.textures.has(key)) return state.textures.get(key);
-    if (!window.RSXP || typeof window.RSXP.asset !== 'function') return null;
-    const src = await window.RSXP.asset(category, name);
+    if (!window.FANPLAY || typeof window.FANPLAY.asset !== 'function') return null;
+    const src = await window.FANPLAY.asset(category, name);
     if (!src) return null;
     const result = await new Promise(resolve => { const item = new Image(); item.onload = () => resolve(item); item.onerror = () => resolve(null); item.src = src; });
     state.textures.set(key, result); return result;
@@ -410,4 +410,4 @@ rsxp:text ruby-end */
 </script>
 </body>
 </html>
-rsxp:text html-end */
+fanplay:text html-end */

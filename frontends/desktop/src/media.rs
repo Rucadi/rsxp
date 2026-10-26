@@ -16,7 +16,7 @@
 //! Decoded fonts are cached in a thread-local list keyed by exact font bytes,
 //! capped at 16 entries (oldest evicted), so the host must call these
 //! functions on the thread that owns the cache.
-use rsxp::graphics::{Bitmap, Color};
+use fanplay_rgss::graphics::{Bitmap, Color};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -62,7 +62,7 @@ pub fn text(
         return Err("font size must be 1..512".into());
     }
     let bytes = font_bytes.unwrap_or(include_bytes!(
-        "../../../crates/rsxp-rgss/assets/liberation.ttf"
+        "../../../crates/fanplay-rgss/assets/liberation.ttf"
     ));
     let font = font(bytes)?;
     let scale = size as f32;

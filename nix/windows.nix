@@ -27,7 +27,7 @@ let
 
 in
 crossPkgs.rustPlatform.buildRustPackage {
-  pname = "rsxp";
+  pname = "fanplay";
   version = "0.1.0";
 
   src = root;
@@ -47,18 +47,18 @@ crossPkgs.rustPlatform.buildRustPackage {
 
   cargoBuildFlags = [
     "-p"
-    "rsxp-desktop"
+    "fanplay-desktop"
     "--bin"
-    "rsxp"
+    "fanplay"
     "--target"
     target
   ];
 
   cargoInstallFlags = [
     "-p"
-    "rsxp-desktop"
+    "fanplay-desktop"
     "--bin"
-    "rsxp"
+    "fanplay"
     "--target"
     target
   ];
@@ -156,8 +156,8 @@ crossPkgs.rustPlatform.buildRustPackage {
     mkdir -p "$out/bin"
 
     # Windows executable.
-    if [ ! -f "$out/bin/rsxp.exe" ]; then
-      cp "target/${target}/release/rsxp.exe" "$out/bin/"
+    if [ ! -f "$out/bin/fanplay.exe" ]; then
+      cp "target/${target}/release/fanplay.exe" "$out/bin/"
     fi
 
     # Ruby runtime DLL.
@@ -184,7 +184,7 @@ crossPkgs.rustPlatform.buildRustPackage {
     done
 
     # webview2-com-sys uses the dynamic WebView2 loader for MinGW. Ship the
-    # x64 loader next to rsxp.exe so Windows can resolve it from the portable
+    # x64 loader next to fanplay.exe so Windows can resolve it from the portable
     # distribution directory.
     webview2_src="$TMPDIR/webview2-com-sys"
     mkdir -p "$webview2_src"
@@ -202,7 +202,7 @@ crossPkgs.rustPlatform.buildRustPackage {
   '';
 
   meta = with pkgs.lib; {
-    description = "RSXP Windows desktop application";
+    description = "FANPLAY Windows desktop application";
     platforms = [ "x86_64-windows" ];
   };
 }

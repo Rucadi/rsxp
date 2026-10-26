@@ -3,8 +3,8 @@ pub fn run(args: &[String]) -> Result<u8, Box<dyn std::error::Error>> {
     let result = execute(args);
     result.map(|()| 0).map_err(|e| e.to_string().into())
 }
-fn execute(args: &[String]) -> rsxp_provision::Result<()> {
-    use rsxp_provision as p;
+fn execute(args: &[String]) -> fanplay_provision::Result<()> {
+    use fanplay_provision as p;
     let root = p::root(None);
     match args.first().map(String::as_str) {
         Some("list") if args.len() >= 2 => {
@@ -19,7 +19,7 @@ fn execute(args: &[String]) -> rsxp_provision::Result<()> {
             println!("{}", p::install(&root, &repo, game)?.display());
         }
         Some("import-base") if args.len() == 2 => println!("{}", p::import_base(&root, std::path::Path::new(&args[1]))?),
-        _ => return Err("Usage: rsxp software-provision list REPOSITORY... | install REPOSITORY GAME_ID | import-base ROM".into()),
+        _ => return Err("Usage: fanplay software-provision list REPOSITORY... | install REPOSITORY GAME_ID | import-base ROM".into()),
     }
     Ok(())
 }

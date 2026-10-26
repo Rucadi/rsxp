@@ -1,14 +1,14 @@
-// rsxp:id = essentials-encounters
-// rsxp:name = Essentials Map Encounters
-// rsxp:version = 0.1.0
-// rsxp:capabilities = ruby.inject,ruby.unload,ui.webview,pokemon_essentials.read
-// rsxp:panel = encounters,Current Map Encounters
+// fanplay:id = essentials-encounters
+// fanplay:name = Essentials Map Encounters
+// fanplay:version = 0.1.0
+// fanplay:capabilities = ruby.inject,ruby.unload,ui.webview,pokemon_essentials.read
+// fanplay:panel = encounters,Current Map Encounters
 
 // The encounter endpoint is supplied by the generic Essentials game API. This
 // plugin owns the browser UI and watches the status endpoint for map changes.
 fn on_activate() {
     let ruby = text_block("ruby");
-    let apply = "{ apply: proc { " + ruby + "; RSXP::EncountersPlugin.install }, revert: proc { RSXP::EncountersPlugin.uninstall if defined?(RSXP::EncountersPlugin) } }";
+    let apply = "{ apply: proc { " + ruby + "; FANPLAY::EncountersPlugin.install }, revert: proc { FANPLAY::EncountersPlugin.uninstall if defined?(FANPLAY::EncountersPlugin) } }";
     let pending = ruby_inject("essentials-encounters", apply);
     state_set("pending", pending);
     if pending < 0 {
@@ -50,7 +50,7 @@ fn on_shutdown() {
     }
 }
 
-/* rsxp:text html-begin
+/* fanplay:text html-begin
 <!doctype html>
 <html lang="en">
 <head>
@@ -112,7 +112,7 @@ fn on_shutdown() {
     const esc = value => text(value, '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
     const number = value => value == null || value === '' ? null : Number(value);
     function api(path, options) { return fetch(path, options).then(async response => { const body = await response.text(); let value = {}; try { value = body ? JSON.parse(body) : {}; } catch (_) { throw Error('The game returned invalid JSON.'); } if (!response.ok || value.error) throw Error(value.error || `Request failed (${response.status})`); return value; }); }
-    function assetSource(descriptor) { if (!descriptor || !window.RSXP || typeof window.RSXP.asset !== 'function') return Promise.resolve(null); const request = window.RSXP.asset(descriptor.category, descriptor.name).catch(() => null); return Promise.race([request, new Promise(resolve => setTimeout(() => resolve(null), 2500))]); }
+    function assetSource(descriptor) { if (!descriptor || !window.FANPLAY || typeof window.FANPLAY.asset !== 'function') return Promise.resolve(null); const request = window.FANPLAY.asset(descriptor.category, descriptor.name).catch(() => null); return Promise.race([request, new Promise(resolve => setTimeout(() => resolve(null), 2500))]); }
     function hydrateIcons(root = document) { root.querySelectorAll('img[data-icon]').forEach(image => { try { const descriptor = JSON.parse(image.dataset.icon); assetSource(descriptor).then(src => { if (src) { image.src = src; image.hidden = false; } }); } catch (_) {} }); }
     function lookupIcon(entry) { if (!state.iconIndex) return entry.icon || null; return entry.icon || state.iconIndex.byId[String(entry.species)] || state.iconIndex.byName[ String(entry.name || '').toLowerCase() ] || state.iconIndex.byNumber[String(entry.dex_number)] || null; }
     function iconMarkup(entry) { const descriptor = lookupIcon(entry); return descriptor ? `<div class="orb"><img hidden data-icon='${esc(JSON.stringify(descriptor))}' alt="${esc(entry.name || entry.species || 'Pokémon')}"></div>` : `<div class="orb">${esc(entry.dex_number == null ? '★' : `#${entry.dex_number}`)}</div>`; }
@@ -135,20 +135,20 @@ fn on_shutdown() {
   </script>
 </body>
 </html>
-rsxp:text html-end */
+fanplay:text html-end */
 
-/* rsxp:text ruby-begin
+/* fanplay:text ruby-begin
 # Add safe, lazy icon descriptors to encounter rows. The webview requests the
 # actual image through the generic asset bridge only when it renders a row.
-module RSXP
+module FANPLAY
   module EncountersPlugin
     def self.install
-      @api = RSXP::GameAPI
+      @api = FANPLAY::GameAPI
       @original = @api.method(:pokemon_essentials_encounters) if @api.respond_to?(:pokemon_essentials_encounters)
       return unless @original
       original = @original
       @api.define_singleton_method(:pokemon_essentials_encounters) do |*args|
-        RSXP::EncountersPlugin.add_icons(original.call(*args))
+        FANPLAY::EncountersPlugin.add_icons(original.call(*args))
       end
     end
 
@@ -178,9 +178,9 @@ module RSXP
 
     def self.icon_descriptor(entry)
       species_id = entry['species']
-      if defined?(RSXP::PokedexPlugin) && RSXP::PokedexPlugin.respond_to?(:sprite_data)
+      if defined?(FANPLAY::PokedexPlugin) && FANPLAY::PokedexPlugin.respond_to?(:sprite_data)
         summary = { 'id' => species_id, 'name' => entry['name'], 'number' => entry['dex_number'], 'form' => 0 }
-        descriptor = RSXP::PokedexPlugin.sprite_data(species_id, summary, :icon)
+        descriptor = FANPLAY::PokedexPlugin.sprite_data(species_id, summary, :icon)
         return descriptor if descriptor
       end
       record = @api.pokemon_essentials_species(species_id)
@@ -227,4 +227,4 @@ module RSXP
     end
   end
 end
-rsxp:text ruby-end */
+fanplay:text ruby-end */

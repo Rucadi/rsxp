@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! `rsxp-web`: host binary for the standalone browser player.
+//! `fanplay-web`: host binary for the standalone browser player.
 //!
 //! It embeds `platforms/web/dist/player.html` at compile time (`include_str!`) and offers
 //! three subcommands:
 //!
 //! - `serve [GAME_FOLDER] [--bind 127.0.0.1] [--port 8000]` — serves the player
 //!   plus an optional game folder over loopback HTTP. It serves `/` and
-//!   `/player.html` (the player with an injected `globalThis.RSXP_GAME` config
+//!   `/player.html` (the player with an injected `globalThis.FANPLAY_GAME` config
 //!   script), `/game/files.json` (the sorted asset list) and `/game/<asset>`
 //!   (raw bytes, matched case-insensitively against that list). Responses carry
 //!   COOP/COEP headers so the page is cross-origin isolated.
@@ -14,7 +14,7 @@
 //! - `embed GAME_FOLDER [player.html]` — writes the player with every game file
 //!   base64-encoded into `<script type="application/octet-stream">` blocks
 //!   (chunked to 768 KiB to bound DOM string size) and recorded in
-//!   `globalThis.RSXP_GAME`.
+//!   `globalThis.FANPLAY_GAME`.
 //!
 //! Asset paths are validated by `decode_path`, which rejects traversal (`..`),
 //! hidden/dot segments, backslashes and NUL bytes. `--help` prints the usage
@@ -110,7 +110,7 @@ fn game(root: &Path, output: Option<&Path>, embedded: bool) -> io::Result<(Strin
             // Keep asset bytes out of executable JavaScript and bound each DOM
             // string. Large games otherwise exceed the browser script parser.
             for (chunk, bytes) in bytes.chunks(768 * 1024).enumerate() {
-                let id = format!("rsxp-asset-{asset}-{chunk}");
+                let id = format!("fanplay-asset-{asset}-{chunk}");
                 blocks.push_str(&format!(
                     "<script id=\"{id}\" type=\"application/octet-stream\">{}</script>\n",
                     base64(bytes)
@@ -125,7 +125,7 @@ fn game(root: &Path, output: Option<&Path>, embedded: bool) -> io::Result<(Strin
     }
     Ok((
         format!(
-            "<script>globalThis.RSXP_GAME={{\"folder\":{},\"files\":[{}]}};</script>\n{blocks}",
+            "<script>globalThis.FANPLAY_GAME={{\"folder\":{},\"files\":[{}]}};</script>\n{blocks}",
             json(&root.file_name().unwrap_or_default().to_string_lossy()),
             entries.join(",")
         ),
@@ -290,19 +290,19 @@ fn run() -> io::Result<()> {
         "serve" if positional.len()<=1 => {
             let root=positional.first().map(fs::canonicalize).transpose()?;
             let (page,paths)=if let Some(root)=&root {let(config,paths)=game(root,None,false)?;(html(&config),paths)}else{(PLAYER.to_string(),vec![])};
-            let listener=TcpListener::bind(format!("{bind}:{port}"))?;println!("rsxp player: http://{}/",listener.local_addr()?);
+            let listener=TcpListener::bind(format!("{bind}:{port}"))?;println!("fanplay player: http://{}/",listener.local_addr()?);
             // Each connection owns only an Arc clone of the bundled player.
             let page=std::sync::Arc::new(page);let paths=std::sync::Arc::new(paths);
             for stream in listener.incoming() {let stream=stream?;let page=page.clone();let paths=paths.clone();let root=root.clone();std::thread::spawn(move||{if let Err(error)=request(stream,&page,root.as_deref(),&paths){eprintln!("HTTP: {error}");}});}
         }
-        "--help"|"-h"|"help"|"" => println!("rsxp-web serve [GAME_FOLDER] [--port 8000] [--bind 127.0.0.1]\nrsxp-web export [player.html]\nrsxp-web embed GAME_FOLDER [player.html]"),
-        _ => return Err(io::Error::other("Invalid command. Use rsxp-web --help")),
+        "--help"|"-h"|"help"|"" => println!("fanplay-web serve [GAME_FOLDER] [--port 8000] [--bind 127.0.0.1]\nfanplay-web export [player.html]\nfanplay-web embed GAME_FOLDER [player.html]"),
+        _ => return Err(io::Error::other("Invalid command. Use fanplay-web --help")),
     }
     Ok(())
 }
 fn main() {
     if let Err(error) = run() {
-        eprintln!("rsxp-web: {error}");
+        eprintln!("fanplay-web: {error}");
         std::process::exit(1);
     }
 }
@@ -329,7 +329,7 @@ mod tests {
     }
     #[test]
     fn bundled_player() {
-        assert!(PLAYER.contains("RSXP_GAME"));
+        assert!(PLAYER.contains("FANPLAY_GAME"));
         assert!(html("MARKER").contains("MARKER<script type=\"module\">"));
     }
 }

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Desktop adapter. Game code and the serialized/browser RGSS API stay unchanged.
-module RSXP::Retained
-  ENABLED = ENV['RSXP_NATIVE_STATE'] != '0' && Sprite::NATIVE_SYNC
+module FANPLAY::Retained
+  ENABLED = ENV['FANPLAY_NATIVE_STATE'] != '0' && Sprite::NATIVE_SYNC
   FIELDS = {
     Sprite => %i[x y z ox oy zoom_x zoom_y visible mirror blend_type angle invert bush_depth bush_opacity
                  pattern pattern_opacity pattern_tile pattern_scroll_x pattern_scroll_y pattern_zoom_x
@@ -9,7 +9,7 @@ module RSXP::Retained
     Viewport => %i[z ox oy visible rect color tone],
     Plane => %i[viewport visible z ox oy zoom_x zoom_y blend_type bitmap opacity color tone]
   }.freeze
-  DEPENDENCIES = %i[@src_rect @rect @color @tone @bitmap @viewport @pattern @__rsxp_flash_color].freeze
+  DEPENDENCIES = %i[@src_rect @rect @color @tone @bitmap @viewport @pattern @__fanplay_flash_color].freeze
   @resources = {}
   @compatibility = {}
   @pending = {}
@@ -30,7 +30,7 @@ module RSXP::Retained
       Plane
     end
     def eligible?(object, base)
-      if defined?(RSXP::TilemapSprite) && object.instance_of?(RSXP::TilemapSprite)
+      if defined?(FANPLAY::TilemapSprite) && object.instance_of?(FANPLAY::TilemapSprite)
         return @tilemap_signatures.all? { |name,method| object.method(name).unbind==method }
       end
       supported = object.class == base
@@ -40,32 +40,32 @@ module RSXP::Retained
     def register(object)
       base = kind(object)
       id = object.__id
-      reference = RSXP::ResourceRef.new(object)
+      reference = FANPLAY::ResourceRef.new(object)
       @resources[id] = [base, reference]
       @compatibility[id] = reference unless eligible?(object,base)
-      object.instance_variable_set(:@__rsxp_retained,!@compatibility.key?(id))
+      object.instance_variable_set(:@__fanplay_retained,!@compatibility.key?(id))
       # The legacy initialize methods append weak refs; this registry replaces
       # those lists, without introducing a strong reference to any resource.
       base.instance_variable_get(:@instances).clear
       rewire(object)
-      __rsxp_touch(object)
+      __fanplay_touch(object)
       object
     end
     def rewire(object)
       return unless object.instance_variable_defined?(:@__id)
       id = object.__id
-      __rsxp_unwatch(id)
+      __fanplay_unwatch(id)
       DEPENDENCIES.each do |name|
         value = object.instance_variable_get(name)
         if value.is_a?(Rect) || value.is_a?(Color) || value.is_a?(Tone) || value.is_a?(Bitmap) || value.is_a?(Viewport)
-          __rsxp_watch(value,id)
+          __fanplay_watch(value,id)
           signatures=@value_signatures[value.class]
           if (value.is_a?(Rect) || value.is_a?(Color) || value.is_a?(Tone)) &&
               (!signatures || !signatures.all? { |name,method| value.method(name).unbind == method })
-            __rsxp_volatile(id)
+            __fanplay_volatile(id)
           end
         elsif value
-          __rsxp_volatile(id)
+          __fanplay_volatile(id)
         end
       end
     end
@@ -74,7 +74,7 @@ module RSXP::Retained
       @compatibility.delete(id)
       @pending.delete(id)
       @polled_viewports.delete(id)
-      __rsxp_forget(id)
+      __fanplay_forget(id)
     end
     def references(base)
       @resources.filter_map do |id,(type,reference)|
@@ -82,7 +82,7 @@ module RSXP::Retained
         begin
           object = reference.__getobj__
           next reference unless object.disposed?
-        rescue RSXP::ResourceRef::RefError
+        rescue FANPLAY::ResourceRef::RefError
         end
         forget(id)
         nil
@@ -95,15 +95,15 @@ module RSXP::Retained
           begin
             object = reference.__getobj__
             @compatibility[id] = reference unless eligible?(object,type)
-            object.instance_variable_set(:@__rsxp_retained,!@compatibility.key?(id))
+            object.instance_variable_set(:@__fanplay_retained,!@compatibility.key?(id))
             rewire(object)
-            __rsxp_touch(object)
-          rescue RSXP::ResourceRef::RefError
+            __fanplay_touch(object)
+          rescue FANPLAY::ResourceRef::RefError
             forget(id)
           end
         end
       end
-      __rsxp_dirty_resources.each { |id| @pending[id] = true }
+      __fanplay_dirty_resources.each { |id| @pending[id] = true }
       # Only compatibility objects are polled. Native snapshots remain retained
       # until a setter, nested value mutation, or dependency invalidates them.
       # Collect matching ids directly. `keys.select` materialized both the
@@ -144,13 +144,13 @@ module RSXP::Retained
               end
               if @polled_viewports[id]!=signature
                 @polled_viewports[id]=signature
-                __rsxp_touch(object)
+                __fanplay_touch(object)
               end
             end
             object.__sync
             @stats[:synced] += 1
           end
-        rescue RSXP::ResourceRef::RefError
+        rescue FANPLAY::ResourceRef::RefError
           forget(id)
         rescue Exception
           @pending[id]=true
@@ -163,7 +163,7 @@ module RSXP::Retained
   end
 end
 
-if RSXP::Retained::ENABLED
+if FANPLAY::Retained::ENABLED
   # Observe nested mutations without changing value identity, subclass behavior,
   # floating point channels, or Marshal payloads.
   { Color => %i[red green blue alpha], Tone => %i[red green blue gray], Rect => %i[x y width height] }.each do |klass,fields|
@@ -175,8 +175,8 @@ if RSXP::Retained::ENABLED
       observer.define_method("#{field}=") do |value|
         previous = instance_variable_get(ivar)
         result = original.bind_call(self,value)
-        if @__rsxp_dependency_token && previous != instance_variable_get(ivar)
-          __rsxp_touch(self)
+        if @__fanplay_dependency_token && previous != instance_variable_get(ivar)
+          __fanplay_touch(self)
         end
         result
       end
@@ -188,30 +188,30 @@ if RSXP::Retained::ENABLED
       c=instance_variable_get(ivars[2])
       d=instance_variable_get(ivars[3])
       result = original_set.bind_call(self,*args)
-      if @__rsxp_dependency_token && (a != instance_variable_get(ivars[0]) ||
+      if @__fanplay_dependency_token && (a != instance_variable_get(ivars[0]) ||
           b != instance_variable_get(ivars[1]) || c != instance_variable_get(ivars[2]) ||
           d != instance_variable_get(ivars[3]))
-        __rsxp_touch(self)
+        __fanplay_touch(self)
       end
       result
     end
     original_copy=klass.instance_method(:initialize_copy)
     observer.define_method(:initialize_copy) do |other|
       result=original_copy.bind_call(self,other)
-      remove_instance_variable(:@__rsxp_dependency_token) if instance_variable_defined?(:@__rsxp_dependency_token)
+      remove_instance_variable(:@__fanplay_dependency_token) if instance_variable_defined?(:@__fanplay_dependency_token)
       result
     end
     klass.send(:private,:initialize_copy)
-    RSXP::Retained.instance_variable_get(:@value_signatures)[klass]=(fields.flat_map { |name| [name,"#{name}=".to_sym] } + [:set]).map { |name| [name,klass.instance_method(name)] }
+    FANPLAY::Retained.instance_variable_get(:@value_signatures)[klass]=(fields.flat_map { |name| [name,"#{name}=".to_sym] } + [:set]).map { |name| [name,klass.instance_method(name)] }
     klass.singleton_class.prepend(Module.new do
       def method_added(name)
         super
-        RSXP::Retained.invalidate!
+        FANPLAY::Retained.invalidate!
       end
     end)
   end
 
-  RSXP::Retained::FIELDS.each do |klass,fields|
+  FANPLAY::Retained::FIELDS.each do |klass,fields|
     observer = klass
     fields.each do |field|
       original=klass.instance_method("#{field}=")
@@ -223,11 +223,11 @@ if RSXP::Retained::ENABLED
         result=original.bind_call(self,value)
         unless owned
           current=instance_variable_get(ivar)
-          RSXP::Retained.rewire(self) if reference && !previous.equal?(current)
+          FANPLAY::Retained.rewire(self) if reference && !previous.equal?(current)
           if !reference && !value.nil? && value != true && value != false && !value.instance_of?(Integer) && !value.instance_of?(Float)
-            __rsxp_volatile(__id)
+            __fanplay_volatile(__id)
           end
-          __rsxp_touch(self) unless previous.equal?(current)
+          __fanplay_touch(self) unless previous.equal?(current)
         end
         result
       end
@@ -235,123 +235,123 @@ if RSXP::Retained::ENABLED
     watched_ivars=fields.map { |field| "@#{field}".to_sym }.freeze
     original_ivar_set=klass.instance_method(:instance_variable_set)
     observer.define_method(:instance_variable_set) do |name,value|
-      __rsxp_world_metadata_changed(self) if [:@x,:@y,:@z].include?(name.to_sym)
+      __fanplay_world_metadata_changed(self) if [:@x,:@y,:@z].include?(name.to_sym)
       result = original_ivar_set.bind_call(self,name,value)
       if watched_ivars.include?(name.to_sym)
-        RSXP::Retained.rewire(self)
-        __rsxp_volatile(__id)
-        __rsxp_touch(self)
+        FANPLAY::Retained.rewire(self)
+        __fanplay_volatile(__id)
+        __fanplay_touch(self)
       end
       result
     end
     original_dispose=klass.instance_method(:dispose)
     observer.define_method(:dispose) do
       id = __id
-      __rsxp_world_unbind(self) if instance_variable_defined?(:@__rsxp_world_group)
-      __rsxp_touch(self)
+      __fanplay_world_unbind(self) if instance_variable_defined?(:@__fanplay_world_group)
+      __fanplay_touch(self)
       result = original_dispose.bind_call(self)
-      RSXP::Retained.forget(id) if id
+      FANPLAY::Retained.forget(id) if id
       result
     end
     if klass != Plane
       original_flash=klass.instance_method(:flash)
       observer.define_method(:flash) do |*args|
         result = original_flash.bind_call(self,*args)
-        RSXP::Retained.rewire(self)
-        __rsxp_touch(self)
+        FANPLAY::Retained.rewire(self)
+        __fanplay_touch(self)
         result
       end
       original_update=klass.instance_method(:update)
       observer.define_method(:update) do
-        flashing = @__rsxp_flashing
+        flashing = @__fanplay_flashing
         result = original_update.bind_call(self)
-        __rsxp_touch(self) if flashing
+        __fanplay_touch(self) if flashing
         result
       end
     end
-    __rsxp_install_scalar_setters(klass, klass==Sprite ? 0 : (klass==Viewport ? 1 : 2))
+    __fanplay_install_scalar_setters(klass, klass==Sprite ? 0 : (klass==Viewport ? 1 : 2))
     original_initialize=klass.instance_method(:initialize)
     klass.define_method(:initialize) do |*args,**kwargs,&block|
       result=original_initialize.bind_call(self,*args,**kwargs,&block)
-      RSXP::Retained.register(self)
+      FANPLAY::Retained.register(self)
       result
     end
     klass.send(:private,:initialize)
     constructors = Module.new do
       def method_added(name)
         super
-        RSXP::Retained.invalidate!
+        FANPLAY::Retained.invalidate!
       end
       def prepend(*modules)
         result = super
-        RSXP::Retained.invalidate!
+        FANPLAY::Retained.invalidate!
         result
       end
       def include(*modules)
         result = super
-        RSXP::Retained.invalidate!
+        FANPLAY::Retained.invalidate!
         result
       end
       def method_removed(name)
         super
-        RSXP::Retained.invalidate!
+        FANPLAY::Retained.invalidate!
       end
       def method_undefined(name)
         super
-        RSXP::Retained.invalidate!
+        FANPLAY::Retained.invalidate!
       end
-      def instances = RSXP::Retained.references(self)
-      def __sync_all = RSXP::Retained.flush(self)
+      def instances = FANPLAY::Retained.references(self)
+      def __sync_all = FANPLAY::Retained.flush(self)
     end
     klass.singleton_class.prepend(constructors)
     names = fields.flat_map { |field| [field,"#{field}=".to_sym] } + %i[__sync update dispose]
     signatures = names.filter_map { |name| [name,klass.instance_method(name)] if klass.method_defined?(name) }
-    RSXP::Retained.instance_variable_get(:@signatures)[klass] = signatures
+    FANPLAY::Retained.instance_variable_get(:@signatures)[klass] = signatures
   end
-  module RSXP::RetainedSingletonChanges
+  module FANPLAY::RetainedSingletonChanges
     def singleton_method_added(name)
       super
-      RSXP::Retained.invalidate!
+      FANPLAY::Retained.invalidate!
     end
   end
-  [Sprite,Viewport,Plane,Rect,Color,Tone].each { |klass| klass.prepend(RSXP::RetainedSingletonChanges) }
+  [Sprite,Viewport,Plane,Rect,Color,Tone].each { |klass| klass.prepend(FANPLAY::RetainedSingletonChanges) }
   # Render-target resizing affects sprites with no viewport as well.
   graphics_class=Graphics.singleton_class
   %i[resize_screen render_size=].each do |name|
     original=Graphics.method(name)
     graphics_class.define_method(name) do |*args|
       result=original.call(*args)
-      RSXP::Retained.invalidate!
+      FANPLAY::Retained.invalidate!
       result
     end
   end
   original_bitmap_dispose=Bitmap.instance_method(:dispose)
   Bitmap.define_method(:dispose) do
-    __rsxp_touch(self)
+    __fanplay_touch(self)
     original_bitmap_dispose.bind_call(self)
   end
 end
 
 # The map adapter is installed only for the supported Essentials renderer shape.
 # It calls the game's existing refresh methods, preserving terrain/plugin hooks.
-module RSXP::RetainedMapAdapter
+module FANPLAY::RetainedMapAdapter
   def update
-    unless RSXP.retained_map_supported?(self)
-      __rsxp_world_release(@__rsxp_cell_cache.object_id,@tiles) if @__rsxp_world_active && @__rsxp_cell_cache
-      @__rsxp_world_active=false
-      @__rsxp_cell_cache=nil
-      @__rsxp_animated=nil
-      return RSXP.retained_map_original.bind_call(self) if @__rsxp_map_fallback
-      @__rsxp_map_fallback=true
+    unless FANPLAY.retained_map_supported?(self)
+      __fanplay_world_release(@__fanplay_cell_cache.object_id,@tiles) if @__fanplay_world_active && @__fanplay_cell_cache
+      @__fanplay_world_active=false
+      @__fanplay_cell_cache=nil
+      @__fanplay_animated=nil
+      return FANPLAY.retained_map_original.bind_call(self) if @__fanplay_map_fallback
+      @__fanplay_map_fallback=true
       begin
         return super
       ensure
-        @__rsxp_map_fallback=false
+        @__fanplay_map_fallback=false
       end
     end
-    @__rsxp_cell_cache ||= RSXPRetainedMap.new
-    @__rsxp_animated ||= {}
-    @__rsxp_tile_maps ||= {}
+    @__fanplay_cell_cache ||= FANPLAYRetainedMap.new
+    @__fanplay_animated ||= {}
+    @__fanplay_tile_maps ||= {}
     @tilesets.update
     @autotiles.update
     full = @need_refresh
@@ -387,7 +387,7 @@ module RSXP::RetainedMapAdapter
       index=old_column.find_index { |stack| stack.equal?(old_stack) }
       shift_y=@tiles_vertical_count-index if index
     end
-    @__rsxp_cell_cache.shift(shift_x,shift_y) if shift_x!=0 || shift_y!=0
+    @__fanplay_cell_cache.shift(shift_x,shift_y) if shift_x!=0 || shift_y!=0
     maps=$map_factory.maps
     descriptors=maps.map do |map|
       dx=(map.display_x.to_f/Game_Map::X_SUBPIXELS).round
@@ -398,15 +398,15 @@ module RSXP::RetainedMapAdapter
     end
     # Scrolling currently rotates the game's sprite pool. Force coordinate/z
     # refresh for those slots; idle frames and map edits use retained cell diffs.
-    changes=@__rsxp_cell_cache.update(@tiles_horizontal_count,@tiles_vertical_count,descriptors,!!full)
+    changes=@__fanplay_cell_cache.update(@tiles_horizontal_count,@tiles_vertical_count,descriptors,!!full)
     changes.each do |i,j,layer,map_index,tile_id|
       tile=@tiles[i][j][layer]
-      tile.instance_variable_set(:@__rsxp_map_edit,true)
+      tile.instance_variable_set(:@__fanplay_map_edit,true)
       begin
       if map_index
         map=maps[map_index]
-        @__rsxp_tile_maps[tile.__id]=map
-        tile.instance_variable_set(:@__rsxp_map_covered,true)
+        @__fanplay_tile_maps[tile.__id]=map
+        tile.instance_variable_set(:@__fanplay_map_covered,true)
         if full || tile.need_refresh || tile.tile_id != tile_id
           refresh_tile(tile,i,j,map,layer,tile_id)
         else
@@ -414,48 +414,48 @@ module RSXP::RetainedMapAdapter
           refresh_tile_z(tile,map,j,layer,tile_id) if @screen_moved_vertically
         end
         if tile.animated
-          @__rsxp_animated[tile.__id]=tile
+          @__fanplay_animated[tile.__id]=tile
         else
-          @__rsxp_animated.delete(tile.__id)
+          @__fanplay_animated.delete(tile.__id)
         end
       else
-        __rsxp_world_unbind(tile) if @__rsxp_world_active
+        __fanplay_world_unbind(tile) if @__fanplay_world_active
         tile.set_bitmap('',0,false,false,0,nil)
         tile.shows_reflection=false
         tile.bridge=false
-        @__rsxp_animated.delete(tile.__id)
-        @__rsxp_tile_maps.delete(tile.__id)
-        tile.instance_variable_set(:@__rsxp_map_covered,false)
+        @__fanplay_animated.delete(tile.__id)
+        @__fanplay_tile_maps.delete(tile.__id)
+        tile.instance_variable_set(:@__fanplay_map_covered,false)
       end
       ensure
-        tile.instance_variable_set(:@__rsxp_map_edit,false)
+        tile.instance_variable_set(:@__fanplay_map_edit,false)
       end
     end
     world=false
-    if ENV['RSXP_WORLD_CAMERA']!='0' && RSXP::Retained::ENABLED && RSXP.retained_map_bulk_supported?(self)
-      world=__rsxp_world_camera(@__rsxp_cell_cache.object_id,@tiles,changes,
+    if ENV['FANPLAY_WORLD_CAMERA']!='0' && FANPLAY::Retained::ENABLED && FANPLAY.retained_map_bulk_supported?(self)
+      world=__fanplay_world_camera(@__fanplay_cell_cache.object_id,@tiles,changes,
         @tile_offset_x,@tile_offset_y,@pixel_offset_x,@pixel_offset_y,
         self.class::DISPLAY_TILE_WIDTH,self.class::DISPLAY_TILE_HEIGHT,self.class::SOURCE_TILE_HEIGHT,
         @bridge>0,!!(full || previous_map_id!=@current_map_id))
-      RSXP::Retained.stats[:world_camera_frames]+=1 if world
+      FANPLAY::Retained.stats[:world_camera_frames]+=1 if world
     end
-    if !world && @__rsxp_world_active
-      __rsxp_world_release(@__rsxp_cell_cache.object_id,@tiles)
+    if !world && @__fanplay_world_active
+      __fanplay_world_release(@__fanplay_cell_cache.object_id,@tiles)
     end
-    @__rsxp_world_active=world
+    @__fanplay_world_active=world
     bulk=world
-    RSXP::Retained.stats[:bulk_scrolls]+=1 if world && (@screen_moved || @screen_moved_vertically)
-    if !bulk && !full && (@screen_moved || @screen_moved_vertically) && RSXP.retained_map_bulk_supported?(self)
-      bulk=__rsxp_scroll_tiles(@tiles,@pixel_offset_x,@pixel_offset_y,
+    FANPLAY::Retained.stats[:bulk_scrolls]+=1 if world && (@screen_moved || @screen_moved_vertically)
+    if !bulk && !full && (@screen_moved || @screen_moved_vertically) && FANPLAY.retained_map_bulk_supported?(self)
+      bulk=__fanplay_scroll_tiles(@tiles,@pixel_offset_x,@pixel_offset_y,
         self.class::DISPLAY_TILE_WIDTH,self.class::DISPLAY_TILE_HEIGHT,self.class::SOURCE_TILE_HEIGHT,
-        @screen_moved,@screen_moved_vertically,@bridge>0,RSXP::Retained::ENABLED)
-      RSXP::Retained.stats[:bulk_scrolls]+=1 if bulk
+        @screen_moved,@screen_moved_vertically,@bridge>0,FANPLAY::Retained::ENABLED)
+      FANPLAY::Retained.stats[:bulk_scrolls]+=1 if bulk
     end
     if !bulk && !full && (@screen_moved || @screen_moved_vertically)
       @tiles.each_with_index do |col,i|
         col.each_with_index do |stack,j|
           stack.each_with_index do |tile,layer|
-            map=@__rsxp_tile_maps[tile.__id]
+            map=@__fanplay_tile_maps[tile.__id]
             next unless map
             refresh_tile_coordinates(tile,i,j) if @screen_moved
             refresh_tile_z(tile,map,j,layer,tile.tile_id) if @screen_moved_vertically
@@ -464,44 +464,44 @@ module RSXP::RetainedMapAdapter
       end
     end
     if @autotiles.changed
-      @__rsxp_animated.each_value { |tile| refresh_tile_frame(tile,tile.tile_id) }
+      @__fanplay_animated.each_value { |tile| refresh_tile_frame(tile,tile.tile_id) }
     end
     @need_refresh=false
     @autotiles.changed=false
-    RSXP::Retained.stats[:map_changed_cells] += changes.length
+    FANPLAY::Retained.stats[:map_changed_cells] += changes.length
     false
   end
   def dispose
-    return RSXP.retained_map_dispose_original.bind_call(self) if @__rsxp_map_disposing
-    @__rsxp_map_disposing=true
+    return FANPLAY.retained_map_dispose_original.bind_call(self) if @__fanplay_map_disposing
+    @__fanplay_map_disposing=true
     begin
-      __rsxp_world_release(@__rsxp_cell_cache.object_id,@tiles) if @__rsxp_world_active && @__rsxp_cell_cache
-      @__rsxp_world_active=false
-      @__rsxp_cell_cache=nil
-      @__rsxp_animated&.clear
-      @__rsxp_tile_maps&.clear
+      __fanplay_world_release(@__fanplay_cell_cache.object_id,@tiles) if @__fanplay_world_active && @__fanplay_cell_cache
+      @__fanplay_world_active=false
+      @__fanplay_cell_cache=nil
+      @__fanplay_animated&.clear
+      @__fanplay_tile_maps&.clear
       super
     ensure
-      @__rsxp_map_disposing=false
+      @__fanplay_map_disposing=false
     end
   end
 end
-module RSXP
+module FANPLAY
   @retained_table_read=Table.instance_method(:[])
   @retained_table_get=Table.instance_method(:__get)
   class << self
-    alias_method :__rsxp_install_tile_atlas, :install_native_tilemap
+    alias_method :__fanplay_install_tile_atlas, :install_native_tilemap
     def install_native_tilemap
-      __rsxp_install_tile_atlas
-      return if ENV['RSXP_RETAINED_MAP']=='0' || !defined?(TilemapRenderer)
+      __fanplay_install_tile_atlas
+      return if ENV['FANPLAY_RETAINED_MAP']=='0' || !defined?(TilemapRenderer)
       klass=TilemapRenderer
       return unless %i[update refresh_tile check_if_screen_moved].all? { |name| klass.method_defined?(name) }
       return unless %i[ZOOM_X ZOOM_Y DISPLAY_TILE_WIDTH DISPLAY_TILE_HEIGHT].all? { |name| klass.const_defined?(name) }
-      unless klass.ancestors.include?(RSXP::RetainedMapAdapter)
+      unless klass.ancestors.include?(FANPLAY::RetainedMapAdapter)
         %i[priority bridge shows_reflection].each do |field|
           original=klass::TileSprite.instance_method("#{field}=")
           klass::TileSprite.define_method("#{field}=") do |value|
-            __rsxp_world_metadata_changed(self)
+            __fanplay_world_metadata_changed(self)
             original.bind_call(self,value)
           end
         end
@@ -509,12 +509,12 @@ module RSXP
         @retained_map_dispose_original=klass.instance_method(:dispose)
         @retained_map_geometry=%i[refresh_tile_coordinates refresh_tile_z].map { |name| [name,klass.instance_method(name)] }
         @retained_tile_metadata=%i[priority bridge shows_reflection].map { |name| [name,klass::TileSprite.instance_method(name)] }
-        klass.prepend(RSXP::RetainedMapAdapter)
+        klass.prepend(FANPLAY::RetainedMapAdapter)
       end
     end
     attr_reader :retained_map_original,:retained_map_dispose_original
     def retained_map_bulk_supported?(renderer)
-      ENV['RSXP_NATIVE_SCROLL']!='0' && !RSXP::Retained.reclassification_pending? && @retained_map_geometry.all? { |name,method| renderer.method(name).unbind==method } &&
+      ENV['FANPLAY_NATIVE_SCROLL']!='0' && !FANPLAY::Retained.reclassification_pending? && @retained_map_geometry.all? { |name,method| renderer.method(name).unbind==method } &&
         @retained_tile_metadata.all? { |name,method| TilemapRenderer::TileSprite.instance_method(name)==method }
     end
     def retained_map_supported?(renderer)
@@ -526,40 +526,40 @@ module RSXP
   end
 end
 
-if RSXP::Retained::ENABLED
-  module RSXP::RetainedFinalizers
+if FANPLAY::Retained::ENABLED
+  module FANPLAY::RetainedFinalizers
     def finalizer(op,id)
       original=super
       proc do
         begin
           original.call
         ensure
-          RSXP::Retained.forget(id)
+          FANPLAY::Retained.forget(id)
         end
       end
     end
   end
-  RSXP.singleton_class.prepend(RSXP::RetainedFinalizers)
+  FANPLAY.singleton_class.prepend(FANPLAY::RetainedFinalizers)
 end
 
 # Native RGSS1 tilemaps own their render sprites. Capture the engine's Sprite
 # API before game plugins install screen-resizer wrappers on public Sprites.
 # This mirrors a real RGSS Tilemap, whose internals are not game Sprite objects.
-if RSXP::Retained::ENABLED
-  class RSXP::TilemapSprite < Sprite; end
+if FANPLAY::Retained::ENABLED
+  class FANPLAY::TilemapSprite < Sprite; end
   (Sprite.instance_methods(false)+[:initialize]).uniq.each do |name|
-    RSXP::TilemapSprite.define_method(name,Sprite.instance_method(name))
+    FANPLAY::TilemapSprite.define_method(name,Sprite.instance_method(name))
   end
-  RSXP::TilemapSprite.send(:private,:initialize)
-  signatures=(RSXP::Retained::FIELDS[Sprite].flat_map { |field| [field,"#{field}=".to_sym] } + %i[__sync update dispose]).map { |name| [name,RSXP::TilemapSprite.instance_method(name)] }
-  RSXP::Retained.instance_variable_set(:@tilemap_signatures,signatures)
+  FANPLAY::TilemapSprite.send(:private,:initialize)
+  signatures=(FANPLAY::Retained::FIELDS[Sprite].flat_map { |field| [field,"#{field}=".to_sym] } + %i[__sync update dispose]).map { |name| [name,FANPLAY::TilemapSprite.instance_method(name)] }
+  FANPLAY::Retained.instance_variable_set(:@tilemap_signatures,signatures)
 end
 
-module RSXP::LegacyTilemapCache
+module FANPLAY::LegacyTilemapCache
   READ=Table.instance_method(:[])
   TILE=Tilemap.instance_method(:__tile)
   def __sync
-    supported=ENV['RSXP_RETAINED_TILEMAP']!='0' && RSXP::Retained::ENABLED &&
+    supported=ENV['FANPLAY_RETAINED_TILEMAP']!='0' && FANPLAY::Retained::ENABLED &&
       @ox.instance_of?(Integer) && @oy.instance_of?(Integer) &&
       @map_data.instance_of?(Table) && @map_data.method(:[]).unbind==READ &&
       (!@priorities || (@priorities.instance_of?(Table) && @priorities.method(:[]).unbind==READ)) &&
@@ -568,42 +568,42 @@ module RSXP::LegacyTilemapCache
       (@viewport || ((!defined?($ResizeOffsetX) || $ResizeOffsetX==0) &&
         (!defined?($ResizeOffsetY) || $ResizeOffsetY==0)))
     unless supported
-      @__rsxp_layout=nil
-      @__rsxp_batch_tiles=false
+      @__fanplay_layout=nil
+      @__fanplay_batch_tiles=false
       return super
     end
     width=@viewport ? @viewport.rect.width : Graphics.width
     height=@viewport ? @viewport.rect.height : Graphics.height
-    key=[@visible,@map_data,@map_data.__rsxp_revision,@priorities,@priorities&.__rsxp_revision,
+    key=[@visible,@map_data,@map_data.__fanplay_revision,@priorities,@priorities&.__fanplay_revision,
       @viewport,@viewport&.disposed?,width,height,@ox.div(32),@oy.div(32),
       (@ox+width-1).div(32),(@oy+height-1).div(32),
       @tileset,@tileset&.disposed?,@color.to_a,[@tone.red,@tone.green,@tone.blue,@tone.gray],
       *Array.new(7) { |i| bitmap=@autotiles[i]; [bitmap,bitmap&.disposed?] }]
-    dx=@ox-(@__rsxp_last_ox || @ox)
-    dy=@oy-(@__rsxp_last_oy || @oy)
-    if key==@__rsxp_layout && ((dx==0 && dy==0) || __rsxp_scroll_rgss_tiles(@sprites,dx,dy))
-      if @__rsxp_last_animation!=@animation/16
+    dx=@ox-(@__fanplay_last_ox || @ox)
+    dy=@oy-(@__fanplay_last_oy || @oy)
+    if key==@__fanplay_layout && ((dx==0 && dy==0) || __fanplay_scroll_rgss_tiles(@sprites,dx,dy))
+      if @__fanplay_last_animation!=@animation/16
         updated=0
-        (@__rsxp_animated_tiles || []).each do |sprite,base,step,frames|
+        (@__fanplay_animated_tiles || []).each do |sprite,base,step,frames|
           x=base+(@animation/16%frames)*step
           next if sprite.src_rect.x==x
           sprite.src_rect.x=x
           updated+=1
         end
-        RSXP::Retained.stats[:legacy_tilemap_animated_tiles]+=updated
+        FANPLAY::Retained.stats[:legacy_tilemap_animated_tiles]+=updated
       end
-      RSXP::Retained.stats[:legacy_tilemap_reused]+=1
+      FANPLAY::Retained.stats[:legacy_tilemap_reused]+=1
     else
-      @__rsxp_batch_tiles=ENV['RSXP_NATIVE_TILEMAP_BATCH']!='0' && [Rect,Color,Tone].all? do |klass|
-        RSXP::Retained.instance_variable_get(:@value_signatures).fetch(klass).all? { |name,method| klass.instance_method(name)==method }
+      @__fanplay_batch_tiles=ENV['FANPLAY_NATIVE_TILEMAP_BATCH']!='0' && [Rect,Color,Tone].all? do |klass|
+        FANPLAY::Retained.instance_variable_get(:@value_signatures).fetch(klass).all? { |name,method| klass.instance_method(name)==method }
       end
       super
-      @__rsxp_layout=key
-      RSXP::Retained.stats[:legacy_tilemap_rebuilt]+=1
+      @__fanplay_layout=key
+      FANPLAY::Retained.stats[:legacy_tilemap_rebuilt]+=1
     end
-    @__rsxp_last_ox=@ox
-    @__rsxp_last_oy=@oy
-    @__rsxp_last_animation=@animation/16
+    @__fanplay_last_ox=@ox
+    @__fanplay_last_oy=@oy
+    @__fanplay_last_animation=@animation/16
   end
 end
-Tilemap.prepend(RSXP::LegacyTilemapCache)
+Tilemap.prepend(FANPLAY::LegacyTilemapCache)

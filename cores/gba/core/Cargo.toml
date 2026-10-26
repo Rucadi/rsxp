@@ -1,18 +1,18 @@
 [package]
-name = "rsxp-core-gba"
+name = "fanplay-core-gba"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
 license = "GPL-2.0-or-later"
-description = "Game Boy Advance core adapter for RSXP (RustBoyAdvance-NG backend)"
+description = "Game Boy Advance core adapter for FANPLAY (RustBoyAdvance-NG backend)"
 publish = false
 
 [lib]
-name = "rsxp_core_gba"
+name = "fanplay_core_gba"
 path = "src/lib.rs"
 
 [dependencies]
-rsxp-core = { path = "../../../crates/rsxp-core" }
+fanplay-core = { path = "../../../crates/fanplay-core" }
 # RustBoyAdvance-NG is MIT licensed and exposes its emulator as a library
 # (rustboyadvance-core). Pin the revision so builds are reproducible; the
 # workspace's Cargo.lock also records it.

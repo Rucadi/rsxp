@@ -4,7 +4,7 @@ use dust_core::{
     utils::BoxedByteSlice,
     SaveContents,
 };
-use rsxp_core::{CoreError, CoreResult};
+use fanplay_core::{CoreError, CoreResult};
 
 pub fn device(rom: &[u8], existing: Option<Vec<u8>>) -> CoreResult<Spi> {
     let code = u32::from_le_bytes(rom[12..16].try_into().unwrap());

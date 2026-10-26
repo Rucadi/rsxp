@@ -1,6 +1,6 @@
-// rsxp:name = Dynamic Plugin Demo
-// rsxp:capabilities = ui.webview
-// rsxp:panel = demo,Dynamic Plugin
+// fanplay:name = Dynamic Plugin Demo
+// fanplay:capabilities = ui.webview
+// fanplay:panel = demo,Dynamic Plugin
 // A single Rhai file can be imported or pasted without a companion manifest.
 // The filename supplies the plugin ID when imported from disk.
 

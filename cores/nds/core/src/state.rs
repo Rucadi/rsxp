@@ -3,7 +3,7 @@ use super::{NdsAdapter, CORE_ID, STATE_REVISION};
 use dust_core::utils::{
     PersistentReadSavestate, PersistentWriteSavestate, ReadSavestate, WriteSavestate,
 };
-use rsxp_core::{content_hash, CoreError, CoreResult, StateEnvelope};
+use fanplay_core::{content_hash, CoreError, CoreResult, StateEnvelope};
 
 impl NdsAdapter {
     pub(super) fn save_state(&mut self) -> CoreResult<Vec<u8>> {

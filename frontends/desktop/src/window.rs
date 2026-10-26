@@ -18,7 +18,7 @@
 //! set via [`Window::set_game_pointer_rect`]). Text entry is gated on
 //! [`Window::text_input`] and deduplicated between ordinary key text and IME commits
 //! via [`keyboard_text`].
-use rsxp::input::Input;
+use fanplay_rgss::input::Input;
 use std::{
     collections::{HashSet, VecDeque},
     sync::Arc,
@@ -400,7 +400,7 @@ impl Window {
         let mut app = WindowApp {
             attributes: Some(
                 NativeWindow::default_attributes()
-                    .with_title("rsxp Rust engine")
+                    .with_title("fanplay Rust engine")
                     .with_inner_size(LogicalSize::new(width as f64, height as f64)),
             ),
             ..WindowApp::default()

@@ -1,18 +1,18 @@
 [package]
-name = "rsxp-core-rgss"
+name = "fanplay-core-rgss"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
 license = "GPL-2.0-or-later"
-description = "RGSS emulator core adapter for the RSXP multi-core contract"
+description = "RGSS emulator core adapter for the FANPLAY multi-core contract"
 publish = false
 
 [lib]
-name = "rsxp_core_rgss"
+name = "fanplay_core_rgss"
 path = "src/lib.rs"
 
 [dependencies]
-rsxp-core = { path = "../../../crates/rsxp-core" }
-rsxp = { path = "../../../crates/rsxp-rgss", default-features = false, features = ["gpu", "game-api", "portable-media"] }
-ruby_rgss_core = { package = "rsxp-rgss-ruby", path = "../ruby" }
+fanplay-core = { path = "../../../crates/fanplay-core" }
+fanplay-rgss = { path = "../../../crates/fanplay-rgss", default-features = false, features = ["gpu", "game-api", "portable-media"] }
+ruby_rgss_core = { package = "fanplay-rgss-ruby", path = "../ruby" }
 bytemuck = "1"

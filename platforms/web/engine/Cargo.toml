@@ -1,24 +1,24 @@
 [package]
-name = "rsxp-web-engine"
+name = "fanplay-web-engine"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
 license = "GPL-2.0-or-later"
-description = "Browser (WebAssembly) frontend for the rsxp engine"
+description = "Browser (WebAssembly) frontend for the fanplay engine"
 
 [lib]
-name = "rsxp_web"
+name = "fanplay_web"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-rsxp = { path = "../../../crates/rsxp-rgss", default-features = false, features = ["game-api", "portable-media"] }
-rsxp-core = { path = "../../../crates/rsxp-core" }
-rsxp-extension-api = { path = "../../../crates/rsxp-extension-api" }
-rsxp-extensions = { path = "../../../crates/rsxp-extensions" }
-rsxp-frontend = { path = "../../../crates/rsxp-frontend" }
-rsxp-control = { path = "../../../crates/rsxp-control" }
-rsxp-cores = { path = "../../../crates/rsxp-cores", default-features = false, features = ["gba", "nds"] }
-rsxp-ui = { path = "../../../crates/rsxp-ui" }
+fanplay-rgss = { path = "../../../crates/fanplay-rgss", default-features = false, features = ["game-api", "portable-media"] }
+fanplay-core = { path = "../../../crates/fanplay-core" }
+fanplay-extension-api = { path = "../../../crates/fanplay-extension-api" }
+fanplay-extensions = { path = "../../../crates/fanplay-extensions" }
+fanplay-frontend = { path = "../../../crates/fanplay-frontend" }
+fanplay-control = { path = "../../../crates/fanplay-control" }
+fanplay-cores = { path = "../../../crates/fanplay-cores", default-features = false, features = ["gba", "nds"] }
+fanplay-ui = { path = "../../../crates/fanplay-ui" }
 eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "default_fonts"] }
 # Feature-unify both browser rendering APIs for eframe's wgpu backend so
 # WebGL2 remains available when WebGPU is unavailable.

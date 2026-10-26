@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Desktop Magnus bindings owned by [`super`]'s RGSS Ruby core.
 //!
-//! This is the native boundary between the embedded Ruby VM and the `rsxp`
+//! This is the native boundary between the embedded Ruby VM and the `fanplay`
 //! engine on desktop builds. It defines the RGSS-facing classes (`Table`,
 //! `Sprite`, `Viewport`, `Plane`, `Tilemap`, `Win32API`), the internal
-//! `RSXPRetainedMap` cache, and the `__rsxp_*` global helpers the Ruby shim
+//! `FANPLAYRetainedMap` cache, and the `__fanplay_*` global helpers the Ruby shim
 //! calls to submit snapshots, dependency changes, bulk scrolls and world/camera
 //! updates. Nothing here retains a Ruby object across a frame: native state is
 //! plain IDs and numbers, mapped onto the engine's `Retained` structures.
 //!
-//! Shared data and algorithms stay in the `rsxp` library (`data`, `graphics`).
-//! Ruby source is bundled by `rsxp::ruby::RGSS_SOURCE`; serialized callbacks
+//! Shared data and algorithms stay in the `fanplay` library (`data`, `graphics`).
+//! Ruby source is bundled by `fanplay_rgss::ruby::RGSS_SOURCE`; serialized callbacks
 //! and timing live in this crate's `bridge`. Browser Ruby uses the shared source
 //! without depending on these desktop-only Magnus bindings.
 //!

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! RGSS core adapter.
 //!
-//! This is the first implementation of [`rsxp_core::Core`]. It keeps the
+//! This is the first implementation of [`fanplay_core::Core`]. It keeps the
 //! existing RGSS engine and MRI bindings inside the core crate; the frontend
 //! only sees video, audio, input, control and lifecycle events.
 //!
@@ -13,9 +13,9 @@
 mod game;
 mod host;
 
-use rsxp::engine::{self, RuntimeOptions};
-use rsxp::{api_bridge, runtime_patch, runtime_settings};
-use rsxp_core::{
+use fanplay_rgss::engine::{self, RuntimeOptions};
+use fanplay_rgss::{api_bridge, runtime_patch, runtime_settings};
+use fanplay_core::{
     Content, ContentProbe, Core, CoreCapabilities, CoreContext, CoreError, CoreInfo,
     CoreRegistration, CoreRegistry, CoreResult, ExitStatus, PixelFormat, PresentationSupport,
 };
@@ -39,8 +39,8 @@ pub const INFO: CoreInfo = CoreInfo {
         cpu_fallback: true,
     },
     pixel_formats: &[PixelFormat::Bgra8, PixelFormat::Rgba8],
-    audio: rsxp_core::AudioInfo::new(48_000, 2, false),
-    input: rsxp_core::InputInfo {
+    audio: fanplay_core::AudioInfo::new(48_000, 2, false),
+    input: fanplay_core::InputInfo {
         buttons: &[],
         pointer: true,
         pointer_button: true,
@@ -112,7 +112,7 @@ pub fn detect(probe: &ContentProbe<'_>) -> u32 {
 
 struct RgssCore {
     ruby: Option<RubyCore>,
-    control: Option<Arc<rsxp_core::CoreControl>>,
+    control: Option<Arc<fanplay_core::CoreControl>>,
 }
 
 impl Core for RgssCore {
@@ -146,7 +146,7 @@ impl Core for RgssCore {
         runtime_patch::reset();
         runtime_patch::load_user_patches(Path::new("."))
             .map_err(|error| CoreError::runtime(error.to_string()))?;
-        if let Ok(value) = std::env::var("RSXP_PATCH") {
+        if let Ok(value) = std::env::var("FANPLAY_PATCH") {
             for id in runtime_patch::enable_from(&value) {
                 eprintln!("Runtime patch enabled: {id}");
             }

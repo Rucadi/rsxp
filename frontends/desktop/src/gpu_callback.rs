@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Draws the runner's packed GPU framebuffer inside eframe's render pass.
-use rsxp::gpu::GpuRenderer;
+use fanplay_rgss::gpu::GpuRenderer;
 use std::sync::{Arc, Mutex};
 
 pub(crate) struct GameGpu {
@@ -25,7 +25,7 @@ impl GameCallback {
         format: wgpu::TextureFormat,
     ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("RSXP eframe game surface"),
+            label: Some("FANPLAY eframe game surface"),
             source: wgpu::ShaderSource::Wgsl(
                 r#"
 struct Dims { source: vec2<f32>, rect: vec4<f32> };
@@ -49,7 +49,7 @@ struct Dims { source: vec2<f32>, rect: vec4<f32> };
             ),
         });
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("RSXP game framebuffer layout"),
+            label: Some("FANPLAY game framebuffer layout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -74,12 +74,12 @@ struct Dims { source: vec2<f32>, rect: vec4<f32> };
             ],
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("RSXP game surface pipeline layout"),
+            label: Some("FANPLAY game surface pipeline layout"),
             bind_group_layouts: &[Some(&layout)],
             immediate_size: 0,
         });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("RSXP game framebuffer pipeline"),
+            label: Some("FANPLAY game framebuffer pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
@@ -104,7 +104,7 @@ struct Dims { source: vec2<f32>, rect: vec4<f32> };
             cache: None,
         });
         let dimensions = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("RSXP game framebuffer dimensions"),
+            label: Some("FANPLAY game framebuffer dimensions"),
             size: 32,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
@@ -156,7 +156,7 @@ impl egui_wgpu::CallbackTrait for GameCallback {
             .is_none_or(|(old_size, _)| *old_size != size)
         {
             let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("RSXP game framebuffer bind group"),
+                label: Some("FANPLAY game framebuffer bind group"),
                 layout: &self.layout,
                 entries: &[
                     wgpu::BindGroupEntry {

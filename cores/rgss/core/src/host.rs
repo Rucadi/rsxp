@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! RGSS `Host` implementation backed by the generic core sinks.
 
-use rsxp::graphics::{Bitmap, Color};
-use rsxp::host::{AudioBackend, AudioChannel as RgssChannel, Host};
-use rsxp::input::Input;
-use rsxp_core::{
+use fanplay_rgss::graphics::{Bitmap, Color};
+use fanplay_rgss::host::{AudioBackend, AudioChannel as RgssChannel, Host};
+use fanplay_rgss::input::Input;
+use fanplay_core::{
     AudioChannel, AudioStream, CoreContext, CoreEvent, CoreLoadInfo, InputEvent, PixelFormat,
     VideoFrame, WindowCommand,
 };
@@ -14,17 +14,17 @@ pub(crate) const GPU_PACKET_KIND: &str = "rgss-gpu-v1";
 
 pub(crate) struct CoreHost {
     context: CoreContext,
-    gpu: Option<rsxp::gpu::GpuRenderer>,
+    gpu: Option<fanplay_rgss::gpu::GpuRenderer>,
     events: Vec<InputEvent>,
 }
 
 impl CoreHost {
     pub(crate) fn new(context: CoreContext, width: u32, height: u32) -> Result<Self, String> {
-        let renderer = std::env::var("RSXP_RENDERER").unwrap_or_else(|_| "auto".into());
+        let renderer = std::env::var("FANPLAY_RENDERER").unwrap_or_else(|_| "auto".into());
         let gpu = if renderer == "software" {
             None
         } else {
-            match rsxp::gpu::GpuRenderer::new(width, height) {
+            match fanplay_rgss::gpu::GpuRenderer::new(width, height) {
                 Ok(mut gpu) => {
                     // Frontends receive portable packets, never process-local
                     // GPU handles.
@@ -75,7 +75,7 @@ impl Host for CoreHost {
         Some(self)
     }
 
-    fn gpu(&mut self) -> Option<&mut rsxp::gpu::GpuRenderer> {
+    fn gpu(&mut self) -> Option<&mut fanplay_rgss::gpu::GpuRenderer> {
         self.gpu.as_mut()
     }
 
@@ -104,7 +104,7 @@ impl Host for CoreHost {
     }
 
     fn image(&self, bytes: &[u8]) -> Result<Bitmap, String> {
-        rsxp::portable_media::image(bytes)
+        fanplay_rgss::portable_media::image(bytes)
     }
 
     fn text(
@@ -117,12 +117,12 @@ impl Host for CoreHost {
         color: Color,
         render: bool,
     ) -> Result<(u32, u32, Option<Bitmap>), String> {
-        rsxp::portable_media::text(font, size, bold, italic, text, color, render)
+        fanplay_rgss::portable_media::text(font, size, bold, italic, text, color, render)
     }
 
     fn poll(&mut self, input: &mut Input) -> bool {
         let control = &self.context.control;
-        rsxp::runtime_settings::set_fast_forward(control.fast_forward());
+        fanplay_rgss::runtime_settings::set_fast_forward(control.fast_forward());
         control.input().take_events(&mut self.events);
         for event in self.events.drain(..) {
             match event {

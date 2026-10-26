@@ -1,11 +1,11 @@
-// rsxp:id = essentials-inventory
-// rsxp:name = Essentials Inventory
-// rsxp:version = 0.1.0
-// rsxp:capabilities = pokemon_essentials.inventory.read,pokemon_essentials.inventory.write
-// rsxp:operation = pokemon_essentials_add_item
-// rsxp:operation-capabilities = pokemon_essentials_add_item pokemon_essentials.inventory.write
-// rsxp:operation-mutates = pokemon_essentials_add_item
-// rsxp:panel = inventory,Essentials Inventory
+// fanplay:id = essentials-inventory
+// fanplay:name = Essentials Inventory
+// fanplay:version = 0.1.0
+// fanplay:capabilities = pokemon_essentials.inventory.read,pokemon_essentials.inventory.write
+// fanplay:operation = pokemon_essentials_add_item
+// fanplay:operation-capabilities = pokemon_essentials_add_item pokemon_essentials.inventory.write
+// fanplay:operation-mutates = pokemon_essentials_add_item
+// fanplay:panel = inventory,Essentials Inventory
 
 // Form state, validation of obvious user input, loading state and feedback
 // belong to the plugin. The Ruby bridge remains authoritative for item

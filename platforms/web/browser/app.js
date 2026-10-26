@@ -1,12 +1,13 @@
+import { readStored } from './storage-compat.js';
 // SPDX-License-Identifier: GPL-2.0-or-later
-// Browser host for the rsxp engine.
+// Browser host for the fanplay engine.
 //
 // The Rust engine runs as WebAssembly and owns rendering, archives and input.
 // The game's Ruby runs under ruby.wasm and talks to the engine through
-// `globalThis.RSXP.native`, which carries base64-encoded native requests. Ruby
+// `globalThis.FANPLAY.native`, which carries base64-encoded native requests. Ruby
 // executes inside a Fiber that yields on every Graphics.update, so the page can
 // present frames and collect input between frames without a worker.
-import init, * as engine from './pkg/rsxp_web.js';
+import init, * as engine from './pkg/fanplay_web.js';
 import { createGamepadInput } from './gamepad.js';
 import { PRELUDE } from './ruby-host.js';
 import { createNativeDispatcher } from './native-bridge.js';
@@ -31,29 +32,29 @@ function pluginWebviewBootstrap() {
   const pending = new Map();
   let next = 1;
   const nativeFetch = window.fetch.bind(window);
-  window.RSXP = window.RSXP || {};
-  window.RSXP.api = (method, target, body) => new Promise((resolve, reject) => {
+  window.FANPLAY = window.FANPLAY || {};
+  window.FANPLAY.api = (method, target, body) => new Promise((resolve, reject) => {
     const id = next++;
     pending.set(id, { resolve, reject });
-    parent.postMessage({ type: 'rsxp-plugin-http', id, method, target, body: body || '' }, '*');
+    parent.postMessage({ type: 'fanplay-plugin-http', id, method, target, body: body || '' }, '*');
   });
   // Compatibility alias for plugins that used the original bridge name.
-  window.RSXP.http = window.RSXP.api;
-  window.RSXP.asset = (category, name) => new Promise((resolve, reject) => {
+  window.FANPLAY.http = window.FANPLAY.api;
+  window.FANPLAY.asset = (category, name) => new Promise((resolve, reject) => {
     const id = next++;
     pending.set(id, { kind: 'asset', resolve, reject });
-    parent.postMessage({ type: 'rsxp-plugin-asset', id, category, name }, '*');
+    parent.postMessage({ type: 'fanplay-plugin-asset', id, category, name }, '*');
   });
   const requestTarget = input => {
     const raw = typeof input === 'string' ? input : input.url;
     if (raw.startsWith('/')) return raw;
-    const base = location.protocol === 'about:' ? 'http://rsxp-plugin.invalid/' : location.href;
+    const base = location.protocol === 'about:' ? 'http://fanplay-plugin.invalid/' : location.href;
     const url = new URL(raw, base);
-    return url.origin === 'http://rsxp-plugin.invalid' ? url.pathname + url.search : url.href;
+    return url.origin === 'http://fanplay-plugin.invalid' ? url.pathname + url.search : url.href;
   };
   window.addEventListener('message', event => {
     const message = event.data;
-    if (!message || message.type !== 'rsxp-plugin-http-response') return;
+    if (!message || message.type !== 'fanplay-plugin-http-response') return;
     const request = pending.get(message.id);
     if (!request) return;
     pending.delete(message.id);
@@ -65,7 +66,7 @@ function pluginWebviewBootstrap() {
   });
   window.addEventListener('message', event => {
     const message = event.data;
-    if (!message || message.type !== 'rsxp-plugin-asset-response') return;
+    if (!message || message.type !== 'fanplay-plugin-asset-response') return;
     const request = pending.get(message.id);
     if (!request || request.kind !== 'asset') return;
     pending.delete(message.id);
@@ -75,7 +76,7 @@ function pluginWebviewBootstrap() {
     const target = requestTarget(input);
     if (!target.startsWith('/v1/')) return nativeFetch(input, init);
     const method = String(init.method || (typeof input === 'string' ? 'GET' : input.method) || 'GET').toUpperCase();
-    return window.RSXP.api(method, target, init.body || '');
+    return window.FANPLAY.api(method, target, init.body || '');
   };
 })();
 </script>`;
@@ -89,13 +90,13 @@ function closePluginWebview(pluginId, viewId) {
   pluginWebviews.delete(key);
 }
 
-globalThis.__rsxp_openPluginWebview = (payload) => {
+globalThis.__fanplay_openPluginWebview = (payload) => {
   const value = typeof payload === 'string' ? JSON.parse(payload) : payload;
   const key = pluginViewKey(value.plugin_id, value.view_id);
   closePluginWebview(value.plugin_id, value.view_id);
 
   const root = document.createElement('section');
-  root.className = 'rsxp-plugin-webview';
+  root.className = 'fanplay-plugin-webview';
   Object.assign(root.style, {
     position: 'fixed', left: 'min(320px, 5vw)', top: '5vh', width: 'min(720px, 90vw)',
     height: 'min(560px, 85vh)', zIndex: '10000', display: 'flex', flexDirection: 'column',
@@ -161,12 +162,12 @@ globalThis.__rsxp_openPluginWebview = (payload) => {
   pluginWebviews.set(key, { root, iframe });
 };
 
-globalThis.__rsxp_closePluginWebview = (payload) => {
+globalThis.__fanplay_closePluginWebview = (payload) => {
   const value = typeof payload === 'string' ? JSON.parse(payload) : payload;
   closePluginWebview(value.plugin_id, value.view_id);
 };
 
-globalThis.__rsxp_closeAllPluginWebviews = () => {
+globalThis.__fanplay_closeAllPluginWebviews = () => {
   for (const view of pluginWebviews.values()) view.root.remove();
   pluginWebviews.clear();
   pluginHttpSources.clear();
@@ -174,7 +175,7 @@ globalThis.__rsxp_closeAllPluginWebviews = () => {
 
 window.addEventListener('message', event => {
   const message = event.data;
-  if (!message || message.type !== 'rsxp-plugin-http') return;
+  if (!message || message.type !== 'fanplay-plugin-http') return;
   const view = [...pluginWebviews.values()].find(candidate => candidate.iframe.contentWindow === event.source);
   if (!view) return;
   const id = nextPluginHttpRequest++;
@@ -183,20 +184,20 @@ window.addEventListener('message', event => {
     engine.web_eframe_plugin_http(id, String(message.method || 'GET'), String(message.target || '/'), String(message.body || ''));
   } catch (error) {
     pluginHttpSources.delete(id);
-    event.source.postMessage({ type: 'rsxp-plugin-http-response', id: Number(message.id), status: 500, body: JSON.stringify({ error: String(error) }) }, '*');
+    event.source.postMessage({ type: 'fanplay-plugin-http-response', id: Number(message.id), status: 500, body: JSON.stringify({ error: String(error) }) }, '*');
   }
 });
 
 window.addEventListener('message', event => {
   const message = event.data;
-  if (!message || message.type !== 'rsxp-plugin-asset') return;
+  if (!message || message.type !== 'fanplay-plugin-asset') return;
   const view = [...pluginWebviews.values()].find(candidate => candidate.iframe.contentWindow === event.source);
   if (!view) return;
   let src = '';
   try {
     src = engine.web_eframe_plugin_asset(String(message.category || ''), String(message.name || ''));
   } catch (_) { /* missing assets are represented by an empty source */ }
-  event.source.postMessage({ type: 'rsxp-plugin-asset-response', id: Number(message.id), src }, '*');
+  event.source.postMessage({ type: 'fanplay-plugin-asset-response', id: Number(message.id), src }, '*');
 });
 
 function pumpPluginHttp() {
@@ -207,7 +208,7 @@ function pumpPluginHttp() {
     const pending = pluginHttpSources.get(reply.id);
     pluginHttpSources.delete(reply.id);
     pending?.source.postMessage({
-      type: 'rsxp-plugin-http-response', ...reply, id: pending.localId,
+      type: 'fanplay-plugin-http-response', ...reply, id: pending.localId,
     }, '*');
   }
 }
@@ -215,7 +216,7 @@ function pumpPluginHttp() {
 // The workspace UI (toolbar, panels, performance, runtime patches, save
 // export/import) is drawn by egui inside the engine. The page only hosts the
 // canvas and the Ruby VM, so there is no HTML chrome to keep in sync.
-const status = (text) => { console.log(text); globalThis.RSXP_PLAYER?.status?.(text); };
+const status = (text) => { console.log(text); globalThis.FANPLAY_PLAYER?.status?.(text); };
 
 function fallbackCopyText(text) {
   const field = document.createElement('textarea');
@@ -230,7 +231,7 @@ function fallbackCopyText(text) {
   return copied;
 }
 
-globalThis.__rsxp_copyText = (text) => {
+globalThis.__fanplay_copyText = (text) => {
   const value = String(text);
   if (navigator.clipboard?.writeText) {
     navigator.clipboard.writeText(value).then(
@@ -245,7 +246,7 @@ const setStatus = status;
 const nextAnimationFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
 
 const params = new URLSearchParams(location.search);
-const player = globalThis.RSXP_PLAYER;
+const player = globalThis.FANPLAY_PLAYER;
 const localGame = player?.game;
 const gameRoot = localGame?.storageId || params.get('game') || 'game/';
 const assetList = params.get('assets') || 'assets.json';
@@ -321,7 +322,7 @@ function bytesToBase64(bytes) {
 }
 
 function encodeNativeResponse(response) {
-  if (response === undefined) return '__RSXP_STOP__';
+  if (response === undefined) return '__FANPLAY_STOP__';
   if (response.length === 0) return '';
   try {
     return `U${new TextDecoder('utf-8', { fatal: true }).decode(response)}`;
@@ -335,17 +336,17 @@ function encodeNativeResponse(response) {
 // so saves are mirrored to localStorage. Export/Import move them between
 // browsers as a small JSON bundle of the save files.
 // ---------------------------------------------------------------------------
-const saveStoreKey = `rsxp-saves:${gameRoot}`;
+const saveStoreKey = `fanplay-saves:${gameRoot}`;
 let saveStore = {};
 try {
-  saveStore = JSON.parse(localStorage.getItem(saveStoreKey) || '{}') || {};
+  saveStore = JSON.parse(readStored(localStorage, saveStoreKey) || '{}') || {};
 } catch {
   saveStore = {};
 }
-const backupStoreKey = `rsxp-backups:${gameRoot}`;
+const backupStoreKey = `fanplay-backups:${gameRoot}`;
 let backupStore = {};
 try {
-  backupStore = JSON.parse(localStorage.getItem(backupStoreKey) || '{}') || {};
+  backupStore = JSON.parse(readStored(localStorage, backupStoreKey) || '{}') || {};
 } catch {
   backupStore = {};
 }
@@ -400,7 +401,7 @@ function exportSaves() {
   const blob = new Blob([JSON.stringify(saveStore)], { type: 'application/json' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
-  link.download = 'rsxp-saves.json';
+  link.download = 'fanplay-saves.json';
   link.click();
   URL.revokeObjectURL(link.href);
 }
@@ -461,10 +462,10 @@ importInput.addEventListener('change', () => {
   if (importInput.files[0]) importSaves(importInput.files[0]);
   importInput.value = '';
 });
-globalThis.__rsxp_exportSaves = exportSaves;
-globalThis.__rsxp_importSaves = () => importInput.click();
-globalThis.__rsxp_createSaveBackup = createSaveBackup;
-globalThis.__rsxp_restoreLatestSaveBackup = restoreLatestSaveBackup;
+globalThis.__fanplay_exportSaves = exportSaves;
+globalThis.__fanplay_importSaves = () => importInput.click();
+globalThis.__fanplay_createSaveBackup = createSaveBackup;
+globalThis.__fanplay_restoreLatestSaveBackup = restoreLatestSaveBackup;
 
 function pumpPlayerActions() {
   if (engine.web_eframe_player_actions === undefined) return;
@@ -478,7 +479,7 @@ function pumpPlayerActions() {
     status('Browsers cannot open native folders. Use Export saves or the desktop player for filesystem folders.');
   }
   if (actions.start_api || actions.stop_api) {
-    status('The browser control API is always available as window.RSXP.control; it has no TCP listener.');
+    status('The browser control API is always available as window.FANPLAY.control; it has no TCP listener.');
   }
 }
 
@@ -488,7 +489,7 @@ const dispatchNative = createNativeDispatcher(engine, (enabled) => {
 });
 
 // The bridge Ruby calls. Returns base64, or null to signal a clean stop.
-globalThis.RSXP = {
+globalThis.FANPLAY = {
   source: '',
   manifestText: '',
   // Save files restored into ruby.wasm's filesystem at startup.
@@ -509,7 +510,7 @@ globalThis.RSXP = {
   native(requestBase64) {
     const request = Uint8Array.from(atob(requestBase64), (c) => c.charCodeAt(0));
     const response = dispatchNative(request);
-    if (response === undefined) return '__RSXP_STOP__';
+    if (response === undefined) return '__FANPLAY_STOP__';
     if (response.length === 0) return '';
     return bytesToBase64(response);
   },
@@ -518,7 +519,7 @@ globalThis.RSXP = {
     return encodeNativeResponse(response);
   },
 };
-globalThis.MKXP = globalThis.RSXP;
+globalThis.MKXP = globalThis.FANPLAY;
 
 // ---------------------------------------------------------------------------
 // Typed control bridge. A browser cannot bind a TCP listener, so the same
@@ -526,9 +527,9 @@ globalThis.MKXP = globalThis.RSXP;
 // browser-owned settings/saves use local storage, and game operations go
 // through the shared Ruby bridge.
 // ---------------------------------------------------------------------------
-const browserSettingsKey = 'rsxp-settings';
+const browserSettingsKey = 'fanplay-settings';
 function browserSettings() {
-  try { return JSON.parse(localStorage.getItem(browserSettingsKey) || '{}') || {}; }
+  try { return JSON.parse(readStored(localStorage, browserSettingsKey) || '{}') || {}; }
   catch { return {}; }
 }
 function saveBrowserSettings(settings) {
@@ -571,7 +572,7 @@ function browserBackupInfo(name) {
 }
 async function controlRequest(method, target, body) {
   const upper = String(method || 'GET').toUpperCase();
-  const url = new URL(String(target || '/'), 'http://rsxp.invalid');
+  const url = new URL(String(target || '/'), 'http://fanplay.invalid');
   const path = url.pathname.replace(/\/+$/, '') || '/';
   const payload = body === undefined || body === null || body === ''
     ? {}
@@ -580,7 +581,7 @@ async function controlRequest(method, target, body) {
 
   if (upper === 'GET' && (path === '/' || path === '/v1')) {
     const discovery = JSON.parse(engine.web_control_discovery());
-    return { server: 'rsxp-control', api_version: discovery.api_version, discovery: 'browser://rsxp/v1/discovery', openapi: 'browser://rsxp/v1/openapi.json', status: 'browser://rsxp/v1/status' };
+    return { server: 'fanplay-control', api_version: discovery.api_version, discovery: 'browser://fanplay/v1/discovery', openapi: 'browser://fanplay/v1/openapi.json', status: 'browser://fanplay/v1/status' };
   }
   if (upper === 'GET' && path === '/v1/discovery') return JSON.parse(engine.web_control_discovery());
   if (upper === 'GET' && path === '/v1/openapi.json') return JSON.parse(engine.web_control_openapi());
@@ -701,7 +702,7 @@ async function controlRequest(method, target, body) {
     await new Promise(resolve => setTimeout(resolve, 16));
   }
 }
-globalThis.RSXP.control = {
+globalThis.FANPLAY.control = {
   discovery: async () => JSON.parse(engine.web_control_discovery()),
   openapi: async () => JSON.parse(engine.web_control_openapi()),
   request: controlRequest,
@@ -723,7 +724,7 @@ globalThis.RSXP.control = {
 // On-demand asset loading. The engine decodes images/audio while it runs and
 // cannot await, so this uses a synchronous request and caches the result.
 const assetCache = new Map();
-globalThis.RSXP.readFile = (path) => {
+globalThis.FANPLAY.readFile = (path) => {
   if (localGame) return null; // All selected assets are preloaded into Rust.
   if (assetCache.has(path)) return assetCache.get(path);
   let bytes = null;
@@ -758,7 +759,7 @@ async function fetchBytes(url) {
 
 // Game files are cached in the browser so a reload does not download them
 // again. `?nocache=1` bypasses the cache (useful while editing assets).
-const gameCacheName = 'rsxp-assets-v1';
+const gameCacheName = 'fanplay-assets-v1';
 let gameCachePromise;
 function openGameCache() {
   if (gameCachePromise === undefined) {
@@ -792,7 +793,7 @@ async function fetchCached(path) {
 function startControllerLoop() {
   let savedControls;
   try {
-    savedControls = localStorage.getItem('rsxp.controls');
+    savedControls = readStored(localStorage, 'fanplay.controls');
     if (savedControls) engine.web_controls_load(savedControls);
   } catch { /* Storage may be disabled. Controls still work for this run. */ }
   const pollGamepads = createGamepadInput({
@@ -805,7 +806,7 @@ function startControllerLoop() {
     pollGamepads(document.hasFocus() && !document.hidden && !textInput);
     const encoded = engine.web_controls();
     if (encoded !== savedControls) {
-      try { localStorage.setItem('rsxp.controls', encoded); } catch {}
+      try { localStorage.setItem('fanplay.controls', encoded); } catch {}
       savedControls = encoded;
     }
     requestAnimationFrame(controllerFrame);
@@ -861,7 +862,7 @@ async function main() {
   if (!player?.engineInitialized) await init(player ? { module_or_path: player.engineBytes } : undefined);
   if (player) player.engineBytes = undefined;
   engineReady = true;
-  engine.web_set_reader(globalThis.RSXP.readFile);
+  engine.web_set_reader(globalThis.FANPLAY.readFile);
   if (localGame?.rom) return mainCartridge();
 
   // Read Game.ini first so the engine (and the WebGPU surface) has the right
@@ -870,7 +871,7 @@ async function main() {
   let width = 640;
   let height = 480;
   let scriptPath = 'Data/Scripts.rxdata';
-  let title = 'rsxp';
+  let title = 'fanplay';
   try {
     const ini = new TextDecoder().decode(await fetchCached('Game.ini'));
     for (const line of ini.split(/\r?\n/)) {
@@ -982,8 +983,8 @@ async function main() {
   const { DefaultRubyVM } = globalThis['ruby-wasm-wasi'];
   const { vm } = await captureRubyOutput(() => DefaultRubyVM(rubyWasm, {
     env: {
-      RSXP_SCRIPTS: scriptPath,
-      RSXP_GAME_TITLE: title,
+      FANPLAY_SCRIPTS: scriptPath,
+      FANPLAY_GAME_TITLE: title,
       HOME: '/',
       USER: 'player',
       LANG: 'en_US.UTF-8',
@@ -1000,14 +1001,14 @@ async function main() {
   setStatus('Preparing Ruby runtime…');
   await nextAnimationFrame();
 
-  globalThis.RSXP.source = player ? player.rgssSource : await (await fetch('rgss.rb')).text();
-  globalThis.RSXP.manifestText = manifest.join('\n');
+  globalThis.FANPLAY.source = player ? player.rgssSource : await (await fetch('rgss.rb')).text();
+  globalThis.FANPLAY.manifestText = manifest.join('\n');
   vm.eval(PRELUDE);
   setStatus('Preparing game scripts…');
   await nextAnimationFrame();
-  vm.eval('$rsxp_source = JS.global[:RSXP][:source].to_s');
-  vm.eval('$rsxp_fiber = Fiber.new { eval($rsxp_source, TOPLEVEL_BINDING, "rgss.rb", 1) }');
-  const gameFiber = vm.eval('$rsxp_fiber');
+  vm.eval('$fanplay_source = JS.global[:FANPLAY][:source].to_s');
+  vm.eval('$fanplay_fiber = Fiber.new { eval($fanplay_source, TOPLEVEL_BINDING, "rgss.rb", 1) }');
+  const gameFiber = vm.eval('$fanplay_fiber');
   await nextAnimationFrame();
   engine.web_eframe_activate_extensions();
 

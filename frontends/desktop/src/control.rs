@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Desktop host for the unified launcher/player control API.
 //!
-//! One [`rsxp_control::ServerHandle`] owns the loopback port for the lifetime of
+//! One [`fanplay_control::ServerHandle`] owns the loopback port for the lifetime of
 //! the dashboard. Launcher operations are handled here directly from the
 //! persistent configuration. Game operations are forwarded through the same
 //! `api_bridge` queue the workspace already uses, so a client can control the
@@ -12,11 +12,11 @@
 //! the next UI frame. The HTTP handler waits with a bounded timeout; a stopped
 //! UI therefore fails cleanly instead of hanging a client forever.
 
-use rsxp_control::{
+use fanplay_control::{
     Catalog, ControlHandler, ControlRequest, ControlResponse, Endpoint, Parameter, ParameterType,
     Scope, ServerHandle,
 };
-use rsxp_provision as provision;
+use fanplay_provision as provision;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -58,7 +58,7 @@ impl ControlServer {
             actions,
             repaint: Arc::clone(&repaint),
         });
-        let handle = rsxp_control::start_with_catalog(port, Catalog::standard(), handler)?;
+        let handle = fanplay_control::start_with_catalog(port, Catalog::standard(), handler)?;
         Ok(Self {
             handle,
             state,
@@ -192,7 +192,7 @@ impl DesktopControl {
         } else {
             format!("{path}?{query}")
         };
-        let (operation, arguments) = match rsxp::api_bridge::route_http(&invocation.method, &target)
+        let (operation, arguments) = match fanplay_rgss::api_bridge::route_http(&invocation.method, &target)
         {
             Ok(route) => route,
             Err((status, message)) => {
@@ -206,13 +206,13 @@ impl DesktopControl {
                 );
             }
         };
-        let id = match rsxp::api_bridge::send_from_ui(&operation, arguments) {
+        let id = match fanplay_rgss::api_bridge::send_from_ui(&operation, arguments) {
             Ok(id) => id,
             Err(error) => return ControlResponse::unavailable(error),
         };
         let started = Instant::now();
         loop {
-            if let Some(reply) = rsxp::api_bridge::take_ui_response(id) {
+            if let Some(reply) = fanplay_rgss::api_bridge::take_ui_response(id) {
                 return match reply {
                     Ok(body) => match serde_json::from_str::<Value>(&body) {
                         Ok(value) => ControlResponse::ok(value),
@@ -317,7 +317,7 @@ impl GameLocation {
         let title = provision::folders::title(&path);
         let (key, _) = provision::settings::key_for_path(&path);
         let save_directory = if cartridge {
-            let id = rsxp_frontend::ContentId::of_file(&path)
+            let id = fanplay_frontend::ContentId::of_file(&path)
                 .map_err(|error| format!("cannot identify cartridge: {error}"))?;
             root.join("saves")
                 .join(
@@ -363,7 +363,7 @@ impl ControlHandler for DesktopControl {
             "server.status" | "launcher.status" => return ControlResponse::ok(self.status()),
             "extensions.routes" => {
                 return match serde_json::from_str::<Value>(
-                    &rsxp::api_bridge::extension_routes_json(),
+                    &fanplay_rgss::api_bridge::extension_routes_json(),
                 ) {
                     Ok(value) => ControlResponse::ok(value),
                     Err(error) => ControlResponse::error(500, error.to_string()),
@@ -453,7 +453,7 @@ impl ControlHandler for DesktopControl {
     }
 
     fn dynamic_endpoints(&self) -> Vec<Endpoint> {
-        let Ok(value) = serde_json::from_str::<Value>(&rsxp::api_bridge::extension_routes_json())
+        let Ok(value) = serde_json::from_str::<Value>(&fanplay_rgss::api_bridge::extension_routes_json())
         else {
             return Vec::new();
         };
@@ -533,7 +533,7 @@ impl DesktopControl {
         })
     }
 
-    fn game_settings(&self, invocation: &rsxp_control::Invocation) -> ControlResponse {
+    fn game_settings(&self, invocation: &fanplay_control::Invocation) -> ControlResponse {
         let path = invocation.string("path").map(PathBuf::from).or_else(|| {
             invocation
                 .string("key")
@@ -644,7 +644,7 @@ impl DesktopControl {
         }
     }
 
-    fn library(&self, invocation: &rsxp_control::Invocation) -> ControlResponse {
+    fn library(&self, invocation: &fanplay_control::Invocation) -> ControlResponse {
         let query = invocation.string("query").unwrap_or("").to_lowercase();
         let platform = invocation.string("platform").unwrap_or("");
         let only_catalog = invocation.string("catalog");
@@ -736,7 +736,7 @@ impl DesktopControl {
         ControlResponse::ok(json!({ "games": games, "count": games.len() }))
     }
 
-    fn library_add(&self, invocation: &rsxp_control::Invocation) -> ControlResponse {
+    fn library_add(&self, invocation: &fanplay_control::Invocation) -> ControlResponse {
         let Some(path) = invocation.string("path") else {
             return ControlResponse::bad_request("missing `path`");
         };
@@ -749,7 +749,7 @@ impl DesktopControl {
             .and_then(Value::as_bool)
             .unwrap_or(false);
         if launch {
-            return self.launch(&rsxp_control::Invocation {
+            return self.launch(&fanplay_control::Invocation {
                 endpoint: "launcher.launch".into(),
                 method: "POST".into(),
                 target: "/v1/launcher/launch".into(),
@@ -760,7 +760,7 @@ impl DesktopControl {
         ControlResponse::ok(json!({ "added": path, "library": recent.len() }))
     }
 
-    fn launch(&self, invocation: &rsxp_control::Invocation) -> ControlResponse {
+    fn launch(&self, invocation: &fanplay_control::Invocation) -> ControlResponse {
         if let Some(path) = invocation.string("path") {
             return self.launch_path(path.to_owned());
         }
@@ -829,7 +829,7 @@ impl DesktopControl {
 
     fn folder_location(
         &self,
-        invocation: &rsxp_control::Invocation,
+        invocation: &fanplay_control::Invocation,
     ) -> Result<GameLocation, ControlResponse> {
         let source = invocation
             .string("path")
@@ -858,7 +858,7 @@ impl DesktopControl {
         GameLocation::new(&self.root, &path_buf).map_err(ControlResponse::bad_request)
     }
 
-    fn open_folder(&self, invocation: &rsxp_control::Invocation) -> ControlResponse {
+    fn open_folder(&self, invocation: &fanplay_control::Invocation) -> ControlResponse {
         let location = match self.folder_location(invocation) {
             Ok(location) => location,
             Err(response) => return response,
@@ -909,7 +909,7 @@ impl DesktopControl {
         ControlResponse::ok(json!({ "catalogs": values, "count": values.len() }))
     }
 
-    fn catalog_add(&self, invocation: &rsxp_control::Invocation) -> ControlResponse {
+    fn catalog_add(&self, invocation: &fanplay_control::Invocation) -> ControlResponse {
         let Some(source) = invocation.string("source") else {
             return ControlResponse::bad_request("missing `source`");
         };
@@ -937,7 +937,7 @@ impl DesktopControl {
         ControlResponse::ok(json!({ "catalog": entry }))
     }
 
-    fn catalog_remove(&self, invocation: &rsxp_control::Invocation) -> ControlResponse {
+    fn catalog_remove(&self, invocation: &fanplay_control::Invocation) -> ControlResponse {
         let Some(id) = invocation.string("id") else {
             return ControlResponse::bad_request("missing catalog id");
         };
@@ -947,7 +947,7 @@ impl DesktopControl {
         }
     }
 
-    fn catalog_select(&self, invocation: &rsxp_control::Invocation) -> ControlResponse {
+    fn catalog_select(&self, invocation: &fanplay_control::Invocation) -> ControlResponse {
         let Some(id) = invocation.string("id") else {
             return ControlResponse::bad_request("missing catalog id");
         };
@@ -960,12 +960,12 @@ impl DesktopControl {
         }
     }
 
-    fn catalog_refresh(&self, invocation: &rsxp_control::Invocation) -> ControlResponse {
+    fn catalog_refresh(&self, invocation: &fanplay_control::Invocation) -> ControlResponse {
         let (entries, warnings) = provision::catalog::refresh(&self.root, invocation.string("id"));
         ControlResponse::ok(json!({ "catalogs": entries, "warnings": warnings }))
     }
 
-    fn catalog_games(&self, invocation: &rsxp_control::Invocation) -> ControlResponse {
+    fn catalog_games(&self, invocation: &fanplay_control::Invocation) -> ControlResponse {
         let Some(id) = invocation.string("id") else {
             return ControlResponse::bad_request("missing catalog id");
         };
@@ -975,7 +975,7 @@ impl DesktopControl {
         }
     }
 
-    fn saves_info(&self, invocation: &rsxp_control::Invocation) -> ControlResponse {
+    fn saves_info(&self, invocation: &fanplay_control::Invocation) -> ControlResponse {
         let location = match self.resolve_game(&ControlRequest {
             invocation: invocation.clone(),
             remote: String::new(),
@@ -993,7 +993,7 @@ impl DesktopControl {
         }))
     }
 
-    fn saves_backup(&self, invocation: &rsxp_control::Invocation) -> ControlResponse {
+    fn saves_backup(&self, invocation: &fanplay_control::Invocation) -> ControlResponse {
         let location = match self.resolve_game(&ControlRequest {
             invocation: invocation.clone(),
             remote: String::new(),
@@ -1016,7 +1016,7 @@ impl DesktopControl {
         }
     }
 
-    fn saves_restore(&self, invocation: &rsxp_control::Invocation) -> ControlResponse {
+    fn saves_restore(&self, invocation: &fanplay_control::Invocation) -> ControlResponse {
         if self.snapshot().running {
             return ControlResponse::unavailable("stop the game before restoring saves");
         }
@@ -1043,7 +1043,7 @@ impl DesktopControl {
         }
     }
 
-    fn saves_delete(&self, invocation: &rsxp_control::Invocation) -> ControlResponse {
+    fn saves_delete(&self, invocation: &fanplay_control::Invocation) -> ControlResponse {
         let location = match self.resolve_game(&ControlRequest {
             invocation: invocation.clone(),
             remote: String::new(),
@@ -1097,7 +1097,7 @@ mod tests {
 
     fn temp(label: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!(
-            "rsxp-control-{label}-{}-{}",
+            "fanplay-control-{label}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

@@ -112,7 +112,7 @@ mod tests {
     use super::*;
     #[test]
     fn ruby_paths_follow_the_installation_directory() {
-        let base = env::temp_dir().join("RSXP moved directory");
+        let base = env::temp_dir().join("FANPLAY moved directory");
         let joined = paths(&base, &serde_json::json!(["ruby/lib", "ruby/arch"])).unwrap();
         assert_eq!(
             env::split_paths(&joined).collect::<Vec<_>>(),

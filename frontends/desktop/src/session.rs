@@ -4,7 +4,7 @@
 //!
 //! The dashboard selects TCP on non-Windows platforms and standard process
 //! pipes on Windows. The runner enables the API relay and spawns a background
-//! `rsxp-session-controls` thread that decodes control messages into a bounded
+//! `fanplay-session-controls` thread that decodes control messages into a bounded
 //! channel. If no dashboard transport is configured, connect returns `Ok(None)`.
 //!
 //! Frames are sent one-way: a JSON header from [`Runner::frame_header`] (fps/frame
@@ -46,7 +46,7 @@ pub trait TransportInput {
 }
 
 #[cfg(feature = "rgss")]
-impl TransportInput for rsxp::input::Input {
+impl TransportInput for fanplay_rgss::input::Input {
     fn key_down(&mut self, code: i32) {
         self.key_down(code);
     }
@@ -65,21 +65,21 @@ impl TransportInput for rsxp::input::Input {
         self.push_text(text);
     }
     fn fast_forward(&mut self, enabled: bool) {
-        rsxp::runtime_settings::set_fast_forward(enabled);
+        fanplay_rgss::runtime_settings::set_fast_forward(enabled);
     }
     fn rate_override(&mut self, rate: Option<u32>) {
         if let Some(rate) = rate {
-            rsxp::runtime_settings::set_rate_override(rate);
+            fanplay_rgss::runtime_settings::set_rate_override(rate);
         }
     }
     fn patch(&mut self, id: &str, enabled: bool, value: Option<f64>) {
-        rsxp::runtime_patch::set_enabled(id, enabled);
+        fanplay_rgss::runtime_patch::set_enabled(id, enabled);
         if let Some(value) = value {
-            rsxp::runtime_patch::set_value(id, value);
+            fanplay_rgss::runtime_patch::set_value(id, value);
         }
     }
     fn relay_api(&mut self, request: &str) {
-        rsxp::api_bridge::relay_requests(request.as_bytes());
+        fanplay_rgss::api_bridge::relay_requests(request.as_bytes());
     }
 }
 
@@ -121,14 +121,14 @@ impl Runner {
     pub fn connect() -> Result<Option<Self>, String> {
         #[cfg(windows)]
         let (stream, control_stream): (Box<dyn WriteStream>, Box<dyn Read + Send>) = {
-            if std::env::var_os("RSXP_SESSION_STDIO").is_none() {
+            if std::env::var_os("FANPLAY_SESSION_STDIO").is_none() {
                 return Ok(None);
             }
             (Box::new(std::io::stdout()), Box::new(std::io::stdin()))
         };
         #[cfg(not(windows))]
         let (stream, control_stream): (Box<dyn WriteStream>, Box<dyn Read + Send>) = {
-            let Ok(address) = std::env::var("RSXP_SESSION_ADDR") else {
+            let Ok(address) = std::env::var("FANPLAY_SESSION_ADDR") else {
                 return Ok(None);
             };
             let mut stream = TcpStream::connect(&address)
@@ -136,7 +136,7 @@ impl Runner {
             stream
                 .set_nodelay(true)
                 .map_err(|e| format!("dashboard IPC set_nodelay failed: {e}"))?;
-            let token = json!({"token": std::env::var("RSXP_SESSION_TOKEN").unwrap_or_default()});
+            let token = json!({"token": std::env::var("FANPLAY_SESSION_TOKEN").unwrap_or_default()});
             write_message(&mut stream, &token)
                 .map_err(|error| format!("dashboard IPC handshake write failed: {error}"))?;
             let mut control_stream = TcpStream::connect(&address)
@@ -151,7 +151,7 @@ impl Runner {
         };
         let (send, controls) = std::sync::mpsc::sync_channel(8);
         std::thread::Builder::new()
-            .name("rsxp-session-controls".into())
+            .name("fanplay-session-controls".into())
             .spawn(move || {
                 let mut reader = control_stream;
                 loop {
@@ -165,7 +165,7 @@ impl Runner {
             })
             .map_err(|e| e.to_string())?;
         #[cfg(feature = "rgss")]
-        rsxp::api_bridge::relay_enable();
+        fanplay_rgss::api_bridge::relay_enable();
         Ok(Some(Self {
             stream,
             controls,
@@ -190,12 +190,12 @@ impl Runner {
             self.fps_start = std::time::Instant::now();
         }
         #[cfg(feature = "rgss")]
-        let replies = rsxp::api_bridge::relay_replies();
+        let replies = fanplay_rgss::api_bridge::relay_replies();
         #[cfg(not(feature = "rgss"))]
         let replies = Value::Null;
         #[cfg(feature = "rgss")]
         let reported_rate = if self.reported_rate == 0 {
-            rsxp::runtime_settings::current_rate()
+            fanplay_rgss::runtime_settings::current_rate()
         } else {
             self.reported_rate
         };
@@ -224,12 +224,12 @@ impl Runner {
     }
 
     #[cfg(feature = "rgss")]
-    pub fn frame(&mut self, frame: &rsxp::graphics::Bitmap) -> Result<(), String> {
+    pub fn frame(&mut self, frame: &fanplay_rgss::graphics::Bitmap) -> Result<(), String> {
         self.frame_argb(frame.width(), frame.height(), frame.pixels())
     }
 
     #[cfg(all(feature = "gpu", feature = "rgss"))]
-    pub fn gpu_frame(&mut self, frame: rsxp::gpu::GpuFrame) -> Result<(), String> {
+    pub fn gpu_frame(&mut self, frame: fanplay_rgss::gpu::GpuFrame) -> Result<(), String> {
         let (width, height) = frame.size();
         let bytes = frame.encode();
         let mut header = self.frame_header(width, height);
@@ -334,7 +334,7 @@ impl Runner {
 #[cfg(all(test, feature = "rgss"))]
 mod tests {
     use super::*;
-    use rsxp::input::Input;
+    use fanplay_rgss::input::Input;
     #[test]
     fn game_poll_does_not_wait_for_the_next_control_reply() {
         use std::net::TcpStream;

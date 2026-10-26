@@ -1,5 +1,5 @@
 #!/bin/sh
-# AppImage entry point: expose the bundled libraries and Ruby, then run rsxp.
+# AppImage entry point: expose the bundled libraries and Ruby, then run fanplay.
 #
 # The executable itself relocates Ruby through the ruby-runtime.json manifest
 # beside it (see frontends/desktop/src/bundled_runtime.rs); LD_LIBRARY_PATH covers the
@@ -9,4 +9,4 @@ set -e
 here="$(dirname "$(readlink -f "$0")")"
 export PATH="$here/usr/bin:$PATH"
 export LD_LIBRARY_PATH="$here/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-exec "$here/usr/bin/rsxp" "$@"
+exec "$here/usr/bin/fanplay" "$@"

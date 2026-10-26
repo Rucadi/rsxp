@@ -2,17 +2,17 @@
 //! `session-bench`: compares the isolated runner transport with an identical
 //! scene, GPU workload and control stream.
 //!
-//! Usage: `cargo run --release -p rsxp-desktop --example session-bench -- /path/to/rsxp
-//! [SCRIPT] [FRAME_LIMIT]`. The example spawns the given `rsxp` binary with
-//! `run --script ... --renderer wgpu --frames N` and `RSXP_SESSION_ADDR`/
-//! `RSXP_SESSION_TOKEN` pointing at a local listener (`RSXP_API=0`), then drives
+//! Usage: `cargo run --release -p fanplay-desktop --example session-bench -- /path/to/fanplay
+//! [SCRIPT] [FRAME_LIMIT]`. The example spawns the given `fanplay` binary with
+//! `run --script ... --renderer wgpu --frames N` and `FANPLAY_SESSION_ADDR`/
+//! `FANPLAY_SESSION_TOKEN` pointing at a local listener (`FANPLAY_API=0`), then drives
 //! the length-prefixed JSON session protocol: it answers `poll` messages and
 //! consumes one frame packet per frame, applying GPU command frames or uploading
 //! pixels as a baseline. The first 60 frames are warmup and excluded, and the
 //! GPU is fenced at both measurement edges. It prints a JSON summary (frames,
 //! seconds, fps, ms/frame, payload bytes) plus any `BENCH`/`GPU:` diagnostics.
 //! When no script is given it generates a temporary sprite-spinning script.
-use rsxp::gpu::{GpuFrame, GpuRenderer};
+use fanplay_rgss::gpu::{GpuFrame, GpuRenderer};
 use serde_json::{json, Value};
 use std::{
     io::{Read, Write},
@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args_os().skip(1);
     let binary = args
         .next()
-        .ok_or("usage: session-bench /path/to/rsxp [script frame-limit]")?;
+        .ok_or("usage: session-bench /path/to/fanplay [script frame-limit]")?;
     let custom_script = args.next().map(std::path::PathBuf::from);
     let limit = args
         .next()
@@ -48,7 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .transpose()?
         .unwrap_or(360);
     let generated =
-        std::env::temp_dir().join(format!("rsxp-session-bench-{}.rb", std::process::id()));
+        std::env::temp_dir().join(format!("fanplay-session-bench-{}.rb", std::process::id()));
     std::fs::write(
         &generated,
         r#"
@@ -80,9 +80,9 @@ end
             "wgpu",
         ])
         .args(["--frames", &limit.to_string()])
-        .env("RSXP_SESSION_ADDR", listener.local_addr()?.to_string())
-        .env("RSXP_SESSION_TOKEN", "local-benchmark")
-        .env("RSXP_API", "0")
+        .env("FANPLAY_SESSION_ADDR", listener.local_addr()?.to_string())
+        .env("FANPLAY_SESSION_TOKEN", "local-benchmark")
+        .env("FANPLAY_API", "0")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;

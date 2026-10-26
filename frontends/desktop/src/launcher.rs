@@ -6,10 +6,10 @@
 //!
 //! The presentation follows the Adventure Journal design system: a calm
 //! library for discovering and returning to RPG adventures.
-use rsxp_ui::theme::{self, ButtonKind, ButtonSize, Tone};
-use rsxp_provision::catalog::CatalogEntry;
-use rsxp_provision::settings::Settings;
-use rsxp_provision::{self as provision, Repository};
+use fanplay_ui::theme::{self, ButtonKind, ButtonSize, Tone};
+use fanplay_provision::catalog::CatalogEntry;
+use fanplay_provision::settings::Settings;
+use fanplay_provision::{self as provision, Repository};
 use std::{
     path::PathBuf,
     sync::mpsc::{self, Receiver},
@@ -252,7 +252,7 @@ impl Launcher {
     fn draw_nav(&mut self, ui: &mut egui::Ui, recent: &[String]) {
         let (rect, _) = ui.allocate_exact_size(egui::vec2(104.0, 46.0), egui::Sense::hover());
         theme::glow(ui.painter(), rect, 10, theme::PINK, 0.55);
-        theme::centered_text(ui, rect, "RSXP", theme::display_font(32.0), theme::PINK);
+        theme::centered_text(ui, rect, "FANPLAY", theme::display_font(32.0), theme::PINK);
         ui.label(theme::eyebrow("RPG adventure library"));
         ui.add_space(24.0);
         for (index, (page, label)) in [
@@ -341,12 +341,6 @@ impl Launcher {
         recent: &[String],
         launch: &mut Option<PathBuf>,
     ) {
-        self.page_header(
-            ui,
-            "Library",
-            "Your games",
-            "RPG Maker, GBA and NDS games in one place. Drop a folder or ROM anywhere to play.",
-        );
         egui::Frame::new()
             .fill(theme::surface())
             .stroke(egui::Stroke::new(1.0, theme::BORDER))
@@ -967,7 +961,7 @@ impl Launcher {
             .color(theme::TEXT_FAINT),
         );
         ui.label(
-            egui::RichText::new(format!("RSXP home: {}", self.root.display()))
+            egui::RichText::new(format!("FANPLAY home: {}", self.root.display()))
                 .font(theme::mono_font(11.0))
                 .color(theme::TEXT_FAINT),
         );
@@ -978,7 +972,7 @@ impl Launcher {
             ui,
             "Storage & saves",
             "One folder for your adventures",
-            "Everything RSXP writes lives under this portable home. Copy it between machines and your library, saves and snapshots come along.",
+            "Everything FANPLAY writes lives under this portable home. Copy it between machines and your library, saves and snapshots come along.",
         );
         egui::Frame::new()
             .fill(theme::surface())
@@ -1071,7 +1065,7 @@ impl Launcher {
             }
             ui.label(
                 egui::RichText::new(
-                    "Portable mode: create an RSXP folder beside the executable or use RSXP_HOME.",
+                    "Portable mode: create an FANPLAY folder beside the executable or use FANPLAY_HOME.",
                 )
                 .font(theme::body_font(11.0))
                 .color(theme::TEXT_FAINT),
@@ -1254,7 +1248,7 @@ mod tests {
             covers: Default::default(),
             preferences: Default::default(),
             editor: None,
-            root: PathBuf::from("/tmp/rsxp-ui-test-not-created"),
+            root: PathBuf::from("/tmp/fanplay-ui-test-not-created"),
             entries: vec![],
             catalogs: vec![],
             common: Settings::default(),

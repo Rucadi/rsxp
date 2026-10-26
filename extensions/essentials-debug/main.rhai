@@ -1,11 +1,11 @@
-// rsxp:id = pokemon-essentials-debug
-// rsxp:name = Essentials Debug
-// rsxp:version = 0.1.0
-// rsxp:capabilities = pokemon_essentials.debug.read,pokemon_essentials.debug.write
-// rsxp:operation = pokemon_essentials_debug
-// rsxp:operation-capabilities = pokemon_essentials_debug pokemon_essentials.debug.read
-// rsxp:operation-mutates = pokemon_essentials_debug
-// rsxp:panel = debug,Essentials Debug
+// fanplay:id = pokemon-essentials-debug
+// fanplay:name = Essentials Debug
+// fanplay:version = 0.1.0
+// fanplay:capabilities = pokemon_essentials.debug.read,pokemon_essentials.debug.write
+// fanplay:operation = pokemon_essentials_debug
+// fanplay:operation-capabilities = pokemon_essentials_debug pokemon_essentials.debug.read
+// fanplay:operation-mutates = pokemon_essentials_debug
+// fanplay:panel = debug,Essentials Debug
 
 // The script orchestrates the feature; the RGSS bridge remains authoritative.
 fn on_activate() {

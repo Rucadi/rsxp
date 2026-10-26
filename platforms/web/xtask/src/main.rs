@@ -13,9 +13,9 @@
 //!    `wasm-opt -O3` (`WASM_OPT` overrides the binary);
 //! 4. packages `platforms/web/dist/player.html` by inlining the JS modules in `MODULES`,
 //!    the engine and Ruby wasm (base64), the compile-time RGSS bundle, license texts and the
-//!    `platforms/web/browser/assets.json` manifest into the `__RSXP_PAYLOAD__`
+//!    `platforms/web/browser/assets.json` manifest into the `__FANPLAY_PAYLOAD__`
 //!    placeholder; and
-//! 5. builds `platforms/web/target/release/rsxp-web`.
+//! 5. builds `platforms/web/target/release/fanplay-web`.
 //!
 //! The payload is serialized JSON with `<` escaped as `\u003c` so no module text
 //! can close the surrounding `<script>` tag. Requires the
@@ -29,6 +29,7 @@ use std::{
 
 const MODULES: &[&str] = &[
     "app.js",
+    "storage-compat.js",
     "ruby-host.js",
     "native-bridge.js",
     "game-pump.js",
@@ -39,7 +40,7 @@ const MODULES: &[&str] = &[
     "game-import.js",
     "vendor/zip.js",
     "vendor/webtorrent.js",
-    "pkg/rsxp_web.js",
+    "pkg/fanplay_web.js",
     "ruby/browser.umd.js",
 ];
 fn base64(bytes: &[u8]) -> String {
@@ -163,13 +164,13 @@ fn bindgen(web: &Path, cargo: &std::ffi::OsStr) -> io::Result<PathBuf> {
     Ok(cached)
 }
 fn render(template: &str, payload: &Value) -> io::Result<String> {
-    if template.matches("__RSXP_PAYLOAD__").count() != 1 {
+    if template.matches("__FANPLAY_PAYLOAD__").count() != 1 {
         return Err(io::Error::other(
             "Player template must have exactly one payload placeholder",
         ));
     }
     let serialized = serde_json::to_string(payload)?.replace('<', "\\u003c");
-    Ok(template.replacen("__RSXP_PAYLOAD__", &serialized, 1))
+    Ok(template.replacen("__FANPLAY_PAYLOAD__", &serialized, 1))
 }
 fn optimize(wasm: &Path) -> io::Result<()> {
     let tool = env::var_os("WASM_OPT").unwrap_or_else(|| "wasm-opt".into());
@@ -204,9 +205,9 @@ fn package(root: &Path, dist: &Path) -> io::Result<()> {
             "zip.js": fs::read_to_string(www.join("vendor/zip.LICENSE"))?,
             "webtorrent": fs::read_to_string(www.join("vendor/webtorrent.LICENSE"))?,
         },
-        "engine": base64(&fs::read(dist.join("pkg/rsxp_web_bg.wasm"))?),
+        "engine": base64(&fs::read(dist.join("pkg/fanplay_web_bg.wasm"))?),
         "ruby": base64(&fs::read(dist.join("ruby/ruby+stdlib.wasm"))?),
-        "rgss": rsxp::ruby::RGSS_SOURCE,
+        "rgss": fanplay_rgss::ruby::RGSS_SOURCE,
         "manifest": serde_json::from_str::<Value>(&fs::read_to_string(www.join("assets.json"))?)?,
     });
     let html = render(&fs::read_to_string(www.join("player.html"))?, &payload)?;
@@ -227,7 +228,7 @@ fn run() -> io::Result<()> {
     let mut args = env::args().skip(1);
     let command = args.next().unwrap_or_default();
     if command != "web" {
-        println!("cargo xtask web [--ruby-runtime DIR]\nBuild WASM, optimize with wasm-opt -O3, package dist/player.html and build platforms/web/target/release/rsxp-web.\nRequires wasm32-unknown-unknown, npm, wasm-ld, and wasm-opt (provided by nix-shell).\nAutomatically provisions Ruby WASM and matching wasm-bindgen when missing.");
+        println!("cargo xtask web [--ruby-runtime DIR]\nBuild WASM, optimize with wasm-opt -O3, package dist/player.html and build platforms/web/target/release/fanplay-web.\nRequires wasm32-unknown-unknown, npm, wasm-ld, and wasm-opt (provided by nix-shell).\nAutomatically provisions Ruby WASM and matching wasm-bindgen when missing.");
         return if command.is_empty() || command == "--help" {
             Ok(())
         } else {
@@ -276,9 +277,9 @@ fn run() -> io::Result<()> {
             .arg("web")
             .arg("--out-dir")
             .arg(dist.join("pkg"))
-            .arg(web.join("engine/target/wasm32-unknown-unknown/release/rsxp_web.wasm")),
+            .arg(web.join("engine/target/wasm32-unknown-unknown/release/fanplay_web.wasm")),
     )?;
-    optimize(&dist.join("pkg/rsxp_web_bg.wasm"))?;
+    optimize(&dist.join("pkg/fanplay_web_bg.wasm"))?;
     package(root, &dist)?;
     execute(
         Command::new(cargo)
@@ -286,7 +287,7 @@ fn run() -> io::Result<()> {
             .args(["build", "--release", "--manifest-path", "platforms/web/Cargo.toml"])
             .env("CARGO_TARGET_DIR", web.join("target")),
     )?;
-    println!("Built {}", web.join("target/release/rsxp-web").display());
+    println!("Built {}", web.join("target/release/fanplay-web").display());
     Ok(())
 }
 fn main() -> ExitCode {
@@ -303,7 +304,7 @@ mod tests {
     use super::*;
     #[test]
     fn missing_runtime_is_provisioned_and_cached() {
-        let web = env::temp_dir().join(format!("rsxp-xtask-runtime-{}", std::process::id()));
+        let web = env::temp_dir().join(format!("fanplay-xtask-runtime-{}", std::process::id()));
         fs::create_dir_all(&web).unwrap();
         runtime_with(&web, None, |web| {
             let js = web.join("node_modules/@ruby/wasm-wasi/dist");
@@ -326,7 +327,7 @@ mod tests {
     #[test]
     fn safe_payload() {
         let payload = json!({"modules":{"app.js":"</script><script>bad</script>"}});
-        let rendered = render("<script>__RSXP_PAYLOAD__</script>", &payload).unwrap();
+        let rendered = render("<script>__FANPLAY_PAYLOAD__</script>", &payload).unwrap();
         assert_eq!(rendered.matches("</script>").count(), 1);
         let json = &rendered[8..rendered.len() - 9];
         assert_eq!(serde_json::from_str::<Value>(json).unwrap(), payload);
@@ -334,7 +335,7 @@ mod tests {
     #[test]
     fn template_requires_one_placeholder() {
         assert!(render("none", &json!({})).is_err());
-        assert!(render("__RSXP_PAYLOAD____RSXP_PAYLOAD__", &json!({})).is_err());
+        assert!(render("__FANPLAY_PAYLOAD____FANPLAY_PAYLOAD__", &json!({})).is_err());
     }
     #[test]
     fn binary_encoding() {

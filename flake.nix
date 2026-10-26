@@ -1,5 +1,5 @@
 {
-  description = "Native Rust engine for RPG Maker RGSS games";
+  description = "Fanplay fangame player for RPG Maker, GBA and Nintendo DS";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   inputs.nix-appimage.url = "github:ralismark/nix-appimage";
@@ -28,7 +28,7 @@
         in
         {
           default = package;
-          rsxp = package;
+          fanplay = package;
         }
         // lib.optionalAttrs (system == "x86_64-linux") {
           appimage = nix-appimage.bundlers.${system}.default package;

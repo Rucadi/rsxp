@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Pure-Rust desktop host: winit windows, wgpu presentation and Rust media APIs.
 //!
-//! [`DesktopHost`] implements [`rsxp::host::Host`], supplying the engine with
+//! [`DesktopHost`] implements [`fanplay_rgss::host::Host`], supplying the engine with
 //! windowing, input, audio, image/text rendering, timing, and presentation.
 //! It runs in one of three modes chosen by `new`:
 //! - a local windowed session with a winit [`Window`], a wgpu surface and a
@@ -19,16 +19,16 @@
 //!
 //! Notable behavior: [`case_path`] resolves paths case-insensitively so
 //! Windows-authored game data loads on case-sensitive filesystems; when
-//! `RSXP_RECORD` is set, every file read is appended (slash-normalized) to a
+//! `FANPLAY_RECORD` is set, every file read is appended (slash-normalized) to a
 //! process-global log via a thread-local writer; a paused remote runner mutes
 //! all four audio channels and restores their volumes on resume. The GPU
 //! surface is declared before the window
 //! and device so it is dropped first.
 use crate::media;
 use crate::window::Window;
-use rsxp::graphics::{Bitmap, Color};
-use rsxp::host::Host;
-use rsxp::input::Input;
+use fanplay_rgss::graphics::{Bitmap, Color};
+use fanplay_rgss::host::Host;
+use fanplay_rgss::input::Input;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -73,7 +73,7 @@ pub struct DesktopHost {
     #[cfg(feature = "gpu")]
     display: Option<crate::gpu_present::GpuDisplay>,
     #[cfg(feature = "gpu")]
-    gpu: Option<rsxp::gpu::GpuRenderer>,
+    gpu: Option<fanplay_rgss::gpu::GpuRenderer>,
     window: Option<Window>,
     #[cfg(feature = "gpu")]
     gpu_composition: bool,
@@ -89,7 +89,7 @@ thread_local! {
 
 impl DesktopHost {
     pub fn new(width: u32, height: u32, headless: bool, renderer: &str) -> Result<Self, String> {
-        if let Ok(path) = std::env::var("RSXP_RECORD") {
+        if let Ok(path) = std::env::var("FANPLAY_RECORD") {
             let file = std::fs::File::create(path).map_err(|error| error.to_string())?;
             RECORD.with(|slot| *slot.borrow_mut() = Some(std::io::BufWriter::new(file)));
         }
@@ -119,13 +119,13 @@ impl DesktopHost {
                     .create_surface(window.native())
                     .map_err(|error| error.to_string())?;
                 let gpu =
-                    rsxp::gpu::GpuRenderer::new_for_surface(width, height, instance, &surface)?;
+                    fanplay_rgss::gpu::GpuRenderer::new_for_surface(width, height, instance, &surface)?;
                 let display =
                     crate::gpu_present::GpuDisplay::new(&gpu, surface, window.physical_size())?;
                 eprintln!("Renderer: wgpu ({})", gpu.adapter_name);
                 (Some(gpu), Some(display))
             } else if renderer == "wgpu" || (remote && renderer != "software") {
-                let mut gpu = rsxp::gpu::GpuRenderer::new(width, height)?;
+                let mut gpu = fanplay_rgss::gpu::GpuRenderer::new(width, height)?;
                 if remote {
                     gpu.enable_remote();
                 }
@@ -204,7 +204,7 @@ impl DesktopHost {
 }
 
 impl Host for DesktopHost {
-    fn audio(&mut self) -> Option<&mut dyn rsxp::host::AudioBackend> {
+    fn audio(&mut self) -> Option<&mut dyn fanplay_rgss::host::AudioBackend> {
         Some(&mut self.audio)
     }
 
@@ -229,7 +229,7 @@ impl Host for DesktopHost {
     }
 
     #[cfg(feature = "gpu")]
-    fn gpu(&mut self) -> Option<&mut rsxp::gpu::GpuRenderer> {
+    fn gpu(&mut self) -> Option<&mut fanplay_rgss::gpu::GpuRenderer> {
         if self.gpu_composition {
             self.gpu.as_mut()
         } else {
@@ -282,7 +282,7 @@ impl Host for DesktopHost {
 
     fn poll(&mut self, input: &mut Input) -> bool {
         if let Some(runner) = &mut self.runner {
-            use rsxp::host::{AudioBackend, AudioChannel};
+            use fanplay_rgss::host::{AudioBackend, AudioChannel};
             const CHANNELS: [AudioChannel; 4] = [
                 AudioChannel::Bgm,
                 AudioChannel::Bgs,

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Game-specific adapter for the Rust-owned TCP/MCP bridge.
 
-module RSXP
+module FANPLAY
   module GameAPI
     SCANCODES = {
       'up' => 82, 'down' => 81, 'left' => 80, 'right' => 79,
@@ -25,14 +25,14 @@ module RSXP
       # Start an encounter scheduled by a previous request first, so its API/MCP
       # reply was already sent and a long battle cannot block the caller.
       start_pending_wild_encounter
-      RSXP.call('api_poll').force_encoding(Encoding::UTF_8).each_line do |line|
+      FANPLAY.call('api_poll').force_encoding(Encoding::UTF_8).each_line do |line|
         id, method, *args = line.chomp.split("\t")
         begin
           result = dispatch(method, args)
-          RSXP.call('api_respond', id.to_i, payload: JSON.generate(result))
+          FANPLAY.call('api_respond', id.to_i, payload: JSON.generate(result))
         rescue StandardError => error
           payload = JSON.generate({ 'error' => "#{error.class}: #{error.message}" })
-          RSXP.call('api_respond', id.to_i, payload: payload)
+          FANPLAY.call('api_respond', id.to_i, payload: payload)
         end
       end
     end
@@ -101,12 +101,12 @@ module RSXP
       when 'ruby_inject'
         name = args.fetch(0)
         source = decode_hex(args.fetch(1))
-        patch_id = RSXP.call('runtime_patch_register', name, payload: source)
+        patch_id = FANPLAY.call('runtime_patch_register', name, payload: source)
         { 'patch_id' => patch_id, 'registered' => true }
       when 'ruby_unload'
         patch_id = args.fetch(0)
         raise ArgumentError, 'unknown Ruby patch handle' unless RuntimePatches.disable(patch_id)
-        RSXP.call('runtime_patch_unregister', patch_id)
+        FANPLAY.call('runtime_patch_unregister', patch_id)
         { 'patch_id' => patch_id, 'unloaded' => true }
       when 'start_cable_club'
         start_cable_club
@@ -185,7 +185,7 @@ module RSXP
       raise ArgumentError, "unknown item: #{item}" if item && !encounter_item_valid?(item)
       require_overworld_for_encounter!
 
-      @rsxp_pending_encounter = {
+      @fanplay_pending_encounter = {
         'species' => species_id, 'level' => level, 'shiny' => shiny, 'form' => form,
         'gender' => gender, 'nature' => nature, 'ability' => ability, 'item' => item,
         'max_ivs' => max_ivs, 'friendship' => friendship
@@ -199,9 +199,9 @@ module RSXP
     # Called at the start of each frame poll. The one-frame delay lets the API
     # response reach the caller before a potentially long battle begins.
     def self.start_pending_wild_encounter
-      spec = @rsxp_pending_encounter
+      spec = @fanplay_pending_encounter
       return unless spec
-      @rsxp_pending_encounter = nil
+      @fanplay_pending_encounter = nil
       return unless encounter_overworld?
       if legacy_essentials?
         start_legacy_wild_encounter(spec)
@@ -934,7 +934,7 @@ module RSXP
 end
 # The explorer reads the loaded registries, preserving game modifications and
 # translations. Its session cache avoids walking every encounter for each click.
-module RSXP::GameAPI
+module FANPLAY::GameAPI
   def self.dex_records
     raise RuntimeError, 'This game does not expose a GameData::Species registry' unless defined?(GameData::Species) && GameData::Species.respond_to?(:each)
     rows = []
@@ -990,8 +990,8 @@ module RSXP::GameAPI
 
   def self.pokemon_essentials_pokedex(refresh = false)
     return legacy_pokemon_essentials_pokedex(refresh) if legacy_essentials?
-    @rsxp_dex = nil if refresh
-    return @rsxp_dex['index'] if @rsxp_dex
+    @fanplay_dex = nil if refresh
+    return @fanplay_dex['index'] if @fanplay_dex
     records = dex_records
     by_id = records.to_h { |record| [dex_id(record), record] }
     numbers = {}
@@ -1055,9 +1055,9 @@ module RSXP::GameAPI
         'types' => Array(read(record, :types) || [read(record, :type1), read(record, :type2)]).compact.uniq.map(&:to_s),
         'source' => obtainable[id], 'map_count' => locations[id].map { |row| row['map_id'] }.uniq.length }
     end
-    @rsxp_dex = { 'records' => by_id, 'locations' => locations,
+    @fanplay_dex = { 'records' => by_id, 'locations' => locations,
       'index' => { 'species' => index, 'note' => 'Known sources include wild encounters, party, evolution and breeding. Scripted gifts, trades, quests and conditional forms may not be indexed. No known source does not mean unobtainable.' } }
-    @rsxp_dex['index']
+    @fanplay_dex['index']
   end
 
   def self.dex_move(id, method, level = nil)
@@ -1072,11 +1072,11 @@ module RSXP::GameAPI
   def self.pokemon_essentials_species_entry(id)
     return legacy_species_entry(id) if legacy_essentials?
     pokemon_essentials_pokedex
-    record = @rsxp_dex['records'][id.to_s]
+    record = @fanplay_dex['records'][id.to_s]
     raise ArgumentError, "Unknown game species: #{id}" unless record
-    summary = @rsxp_dex['index']['species'].find { |row| row['id'] == id.to_s }
+    summary = @fanplay_dex['index']['species'].find { |row| row['id'] == id.to_s }
     evolutions = dex_evolutions(record)
-    previous = @rsxp_dex['records'].values.flat_map do |other|
+    previous = @fanplay_dex['records'].values.flat_map do |other|
       dex_evolutions(other).filter_map do |edge|
         next unless edge['id'] == id.to_s
         edge.merge('id' => dex_id(other), 'name' => read(other, :name) || dex_id(other))
@@ -1100,13 +1100,13 @@ module RSXP::GameAPI
       'stats' => json_value(stats || {}), 'facts' => facts,
       'abilities' => Array(read(record, :abilities)).map { |ability| dex_named(:Ability, ability) },
       'hidden_abilities' => Array(read_alias(record, :hidden_abilities, :hiddenAbilities)).map { |ability| dex_named(:Ability, ability) },
-      'locations' => @rsxp_dex['locations'][id.to_s], 'moves' => moves,
+      'locations' => @fanplay_dex['locations'][id.to_s], 'moves' => moves,
       'evolutions' => evolutions, 'previous' => previous,
       'raw' => extension_data(record))
   end
 end
 
-module RSXP::GameAPI
+module FANPLAY::GameAPI
   def self.dex_registry(kind)
     unless defined?(GameData) && GameData.const_defined?(kind, false) && GameData.const_get(kind, false).respond_to?(:each)
       raise RuntimeError, "This game does not expose a GameData::#{kind} registry"
@@ -1118,7 +1118,7 @@ module RSXP::GameAPI
 
 end
 
-module RSXP::GameAPI
+module FANPLAY::GameAPI
   # Executed on the game thread. Preflight capacity so standard bag methods that
   # can otherwise add a partial stack do not silently mutate a full inventory.
   def self.pokemon_essentials_add_item(item, requested_quantity)
@@ -1162,7 +1162,7 @@ end
 # instead of the newer `GameData::*` registries. These helpers read that layout
 # so the Pokédex, Movedex and current-map encounters work for both data
 # models. Everything runs on the game thread and only reads existing game state.
-module RSXP::GameAPI
+module FANPLAY::GameAPI
   LEGACY_MOVE_FLAGS = {
     0x0001 => 'Contact', 0x0002 => 'Protect', 0x0004 => 'Magic Coat',
     0x0008 => 'Snatch', 0x0010 => 'Mirror Move', 0x0020 => "King's Rock",
@@ -1204,27 +1204,27 @@ module RSXP::GameAPI
   end
 
   def self.legacy_species_names
-    @rsxp_legacy_species_names ||= legacy_constant_names(defined?(PBSpecies) ? PBSpecies : nil)
+    @fanplay_legacy_species_names ||= legacy_constant_names(defined?(PBSpecies) ? PBSpecies : nil)
   end
 
   def self.legacy_move_names
-    @rsxp_legacy_move_names ||= legacy_constant_names(defined?(PBMoves) ? PBMoves : nil)
+    @fanplay_legacy_move_names ||= legacy_constant_names(defined?(PBMoves) ? PBMoves : nil)
   end
 
   def self.legacy_item_names
-    @rsxp_legacy_item_names ||= legacy_constant_names(defined?(PBItems) ? PBItems : nil)
+    @fanplay_legacy_item_names ||= legacy_constant_names(defined?(PBItems) ? PBItems : nil)
   end
 
   def self.legacy_type_keys
-    @rsxp_legacy_type_keys ||= legacy_constant_names(defined?(PBTypes) ? PBTypes : nil)
+    @fanplay_legacy_type_keys ||= legacy_constant_names(defined?(PBTypes) ? PBTypes : nil)
   end
 
   def self.legacy_item_ids
-    @rsxp_legacy_item_ids ||= legacy_item_names.each_with_object({}) { |(id, name), out| out[name] = id }
+    @fanplay_legacy_item_ids ||= legacy_item_names.each_with_object({}) { |(id, name), out| out[name] = id }
   end
 
   def self.legacy_species_ids
-    @rsxp_legacy_species_ids ||= legacy_species_names.each_with_object({}) { |(id, name), out| out[name] = id }
+    @fanplay_legacy_species_ids ||= legacy_species_names.each_with_object({}) { |(id, name), out| out[name] = id }
   end
 
   def self.legacy_species_id(value)
@@ -1368,11 +1368,11 @@ module RSXP::GameAPI
   # evolutions.dat stores five bytes per edge: a type/data byte, a parameter word
   # and the destination species word. Only forward edges are exposed here.
   def self.legacy_evolutions_by_species
-    return @rsxp_legacy_evolutions if @rsxp_legacy_evolutions
+    return @fanplay_legacy_evolutions if @fanplay_legacy_evolutions
     result = {}
-    return @rsxp_legacy_evolutions = result unless defined?(PBSpecies)
+    return @fanplay_legacy_evolutions = result unless defined?(PBSpecies)
     file = legacy_kernel(:pbRgssOpen, 'Data/evolutions.dat', 'rb')
-    return @rsxp_legacy_evolutions = result unless file
+    return @fanplay_legacy_evolutions = result unless file
     begin
       (1..PBSpecies.maxValue).each do |species|
         file.pos = (species - 1) * 8
@@ -1396,7 +1396,7 @@ module RSXP::GameAPI
     ensure
       (file.close rescue nil)
     end
-    @rsxp_legacy_evolutions = result
+    @fanplay_legacy_evolutions = result
   end
 
   def self.legacy_evolution_param_type(method)
@@ -1491,7 +1491,7 @@ module RSXP::GameAPI
   # tm.dat is a move-indexed list of compatible species. It may be an Array
   # (older layout) or a Hash (projects that rewrote the compatibility table).
   def self.legacy_tm_data
-    @rsxp_legacy_tm ||= (load_game_data('Data/tm.dat') rescue nil)
+    @fanplay_legacy_tm ||= (load_game_data('Data/tm.dat') rescue nil)
   end
 
   def self.legacy_machine_moves(species)
@@ -1552,10 +1552,10 @@ module RSXP::GameAPI
   # Item records come from items.dat (or the live bag cache). Field layout:
   # id, name, plural, pocket, price, description, field use, battle use, type, machine.
   def self.legacy_item_records
-    return @rsxp_legacy_items if @rsxp_legacy_items
+    return @fanplay_legacy_items if @fanplay_legacy_items
     list = (defined?($ItemData) && $ItemData) || legacy_kernel(:readItemList, 'Data/items.dat')
     records = {}
-    return @rsxp_legacy_items = records unless list
+    return @fanplay_legacy_items = records unless list
     max = defined?(PBItems) ? PBItems.maxValue : 0
     (1..max).each do |id|
       record = (list[id] rescue nil)
@@ -1563,7 +1563,7 @@ module RSXP::GameAPI
       next unless (record[0] || 0).to_i == id
       records[id] = record
     end
-    @rsxp_legacy_items = records
+    @fanplay_legacy_items = records
   end
 
   def self.legacy_item_id(item)
@@ -1656,12 +1656,12 @@ module RSXP::GameAPI
   # Each slot row is [species, min level, max level]; the slot weight comes from
   # the matching EncounterTypes::EnctypeChances table.
   def self.legacy_encounter_locations
-    return @rsxp_legacy_locations if @rsxp_legacy_locations
+    return @fanplay_legacy_locations if @fanplay_legacy_locations
     locations = Hash.new { |hash, key| hash[key] = [] }
     data = (load_game_data('Data/encounters.dat') rescue nil)
     infos = (load_game_data('Data/MapInfos.rxdata') rescue nil)
     infos = {} unless infos.is_a?(Hash)
-    return @rsxp_legacy_locations = locations unless data.is_a?(Hash)
+    return @fanplay_legacy_locations = locations unless data.is_a?(Hash)
     data.each do |map_id, entry|
       next unless entry.is_a?(Array) && entry[1].is_a?(Array)
       entry[1].each_with_index do |rows, type|
@@ -1683,7 +1683,7 @@ module RSXP::GameAPI
         end
       end
     end
-    @rsxp_legacy_locations = locations
+    @fanplay_legacy_locations = locations
   end
 
   def self.legacy_current_encounter_type
@@ -1744,8 +1744,8 @@ module RSXP::GameAPI
   end
 
   def self.legacy_pokemon_essentials_pokedex(refresh = false)
-    @rsxp_legacy_dex = nil if refresh
-    return @rsxp_legacy_dex['index'] if @rsxp_legacy_dex
+    @fanplay_legacy_dex = nil if refresh
+    return @fanplay_legacy_dex['index'] if @fanplay_legacy_dex
     names = legacy_species_names
     locations = legacy_encounter_locations
     records = {}
@@ -1785,22 +1785,22 @@ module RSXP::GameAPI
         'form_name' => nil, 'types' => record['types'],
         'source' => obtainable[species], 'map_count' => locations[species].map { |row| row['map_id'] }.uniq.length }
     end
-    @rsxp_legacy_dex = {
+    @fanplay_legacy_dex = {
       'records' => records.each_with_object({}) { |(species, record), out| out[record['key']] = record },
       'locations' => locations,
       'index' => { 'species' => index, 'note' => 'Known sources include wild encounters, party, evolution and breeding. Scripted gifts, trades, quests and conditional forms may not be indexed. No known source does not mean unobtainable.' }
     }
-    @rsxp_legacy_dex['index']
+    @fanplay_legacy_dex['index']
   end
 
   def self.legacy_species_entry(id)
     legacy_pokemon_essentials_pokedex
-    record = @rsxp_legacy_dex['records'][id.to_s] ||
-             @rsxp_legacy_dex['records'].values.find { |row| row['id'].to_s == id.to_s }
+    record = @fanplay_legacy_dex['records'][id.to_s] ||
+             @fanplay_legacy_dex['records'].values.find { |row| row['id'].to_s == id.to_s }
     raise ArgumentError, "Unknown game species: #{id}" unless record
     species = record['id']
     bytes = record['bytes'] || legacy_dex_bytes(species)
-    summary = @rsxp_legacy_dex['index']['species'].find { |row| row['id'] == record['key'] } || {}
+    summary = @fanplay_legacy_dex['index']['species'].find { |row| row['id'] == record['key'] } || {}
     moves = legacy_level_moves(species).filter_map do |level, move|
       legacy_dex_move(move, 'Level-up', level) if move.to_i.positive?
     end
@@ -1812,7 +1812,7 @@ module RSXP::GameAPI
       'facts' => legacy_species_facts(species, bytes),
       'abilities' => legacy_species_abilities(bytes),
       'hidden_abilities' => legacy_species_hidden_abilities(bytes),
-      'locations' => @rsxp_legacy_dex['locations'][species],
+      'locations' => @fanplay_legacy_dex['locations'][species],
       'moves' => moves,
       'evolutions' => legacy_evolutions(species),
       'previous' => legacy_previous_evolutions(species),

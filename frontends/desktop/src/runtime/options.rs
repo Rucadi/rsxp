@@ -3,9 +3,9 @@
 //!
 //! [`RunOptions::parse`] consumes the argument list into the renderer selection,
 //! exactly one of `--script` or `--game`, `--headless`, `--frames`, `--output`, an
-//! optional `--rgss` version override. The renderer defaults to `RSXP_RENDERER`
+//! optional `--rgss` version override. The renderer defaults to `FANPLAY_RENDERER`
 //! or `auto` and must be `auto`, `software` or `wgpu`. `--trace-scripts` sets
-//! `RSXP_TRACE=1`. Unknown arguments are an error.
+//! `FANPLAY_TRACE=1`. Unknown arguments are an error.
 //!
 //! Relative `--output` paths are resolved against the current (launch) directory
 //! before `GameConfig::prepare` switches it to the game directory.
@@ -24,7 +24,7 @@ pub(super) struct RunOptions {
 
 impl RunOptions {
     pub fn parse(args: &[String]) -> Result<Self, Box<dyn Error>> {
-        let mut renderer = std::env::var("RSXP_RENDERER").unwrap_or_else(|_| "auto".into());
+        let mut renderer = std::env::var("FANPLAY_RENDERER").unwrap_or_else(|_| "auto".into());
         let mut script = None;
         let mut game = None;
         let mut headless = false;
@@ -51,7 +51,7 @@ impl RunOptions {
                     ))
                 }
                 "--headless" => headless = true,
-                "--trace-scripts" => set_startup_env("RSXP_TRACE", "1"),
+                "--trace-scripts" => set_startup_env("FANPLAY_TRACE", "1"),
                 "--frames" => {
                     let n: u64 = args
                         .next()

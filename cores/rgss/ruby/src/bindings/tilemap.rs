@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Apply engine-owned RGSS1 tile plans in one call. No Ruby values are retained.
 //!
-//! `__rsxp_apply_rgss_tiles(sprites, plan, color, tone, viewport, clip)` is the
+//! `__fanplay_apply_rgss_tiles(sprites, plan, color, tone, viewport, clip)` is the
 //! batch entry point used by the legacy `Tilemap` adapter. It preflights that
 //! every sprite is retained and not frozen, converts `color`/`tone` once, then
 //! walks `plan`, a parallel array of `[bitmap, src_x, src_y, src_size, x, y, z,
 //! priority]` rows. For each row it writes the tile's `@bitmap`, `@src_rect`,
-//! `@x`/`@y`/`@z`, `@visible`, `@__rsxp_rgss_priority`, `@color` and `@tone`
+//! `@x`/`@y`/`@z`, `@visible`, `@__fanplay_rgss_priority`, `@color` and `@tone`
 //! ivars, clears the `@__sync_state`/`@__native_state` snapshot caches, calls
-//! `RSXP::Retained.rewire` when the bitmap identity changed, and builds a
+//! `FANPLAY::Retained.rewire` when the bitmap identity changed, and builds a
 //! `NativeTileUpdate`. Sprites beyond the plan are hidden. One
 //! `engine::with_runtime_mut` call applies the updates; the whole call runs under
 //! the native `tilemap_sync_native` bridge. Returns
 //! `false` (game fallback) on any unsupported sprite.
 use magnus::{function, prelude::*, Error, RArray, RModule, RObject, Ruby, TryConvert, Value};
-use rsxp::{
+use fanplay_rgss::{
     engine::{self, NativeTileUpdate},
     graphics::{Color, Rect, Tone},
 };
@@ -31,7 +31,7 @@ fn apply(
     {
         for index in 0..sprites.len() {
             let tile: RObject = sprites.entry(index as isize)?;
-            if !tile.ivar_get::<_, Value>("@__rsxp_retained")?.to_bool() || tile.is_frozen() {
+            if !tile.ivar_get::<_, Value>("@__fanplay_retained")?.to_bool() || tile.is_frozen() {
                 return Ok(false);
             }
         }
@@ -58,8 +58,8 @@ fn apply(
             clip.entry(2)?,
             clip.entry(3)?,
         );
-        let rsxp: RModule = ruby.class_object().const_get("RSXP")?;
-        let retained: RModule = rsxp.const_get("Retained")?;
+        let fanplay: RModule = ruby.class_object().const_get("FANPLAY")?;
+        let retained: RModule = fanplay.const_get("Retained")?;
         let mut updates = Vec::with_capacity(plan.len());
         for index in 0..plan.len() {
             let row: RArray = plan.entry(index as isize)?;
@@ -88,7 +88,7 @@ fn apply(
             tile.ivar_set("@y", y)?;
             tile.ivar_set("@z", z)?;
             tile.ivar_set("@visible", true)?;
-            tile.ivar_set("@__rsxp_rgss_priority", priority)?;
+            tile.ivar_set("@__fanplay_rgss_priority", priority)?;
             let owned_color: RObject = tile.ivar_get("@color")?;
             let owned_tone: RObject = tile.ivar_get("@tone")?;
             for (index, field) in ["@red", "@green", "@blue", "@alpha"]
@@ -136,6 +136,6 @@ fn apply(
     }
 }
 pub(super) fn bind(ruby: &Ruby) -> Result<(), Error> {
-    ruby.define_global_function("__rsxp_apply_rgss_tiles", function!(apply, 6))?;
+    ruby.define_global_function("__fanplay_apply_rgss_tiles", function!(apply, 6))?;
     Ok(())
 }

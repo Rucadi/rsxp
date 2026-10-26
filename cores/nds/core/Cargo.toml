@@ -1,12 +1,12 @@
 [package]
-name = "rsxp-core-nds"
+name = "fanplay-core-nds"
 version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 publish = false
 
 [dependencies]
-rsxp-core = { path = "../../../crates/rsxp-core" }
+fanplay-core = { path = "../../../crates/fanplay-core" }
 serde_json = "1"
 chrono = "0.4"
 dust-core = { git = "https://github.com/kelpsyberry/dust", rev = "76d79f25e4ea3ce355c4ac868f5ac9a233e64b89", features = ["xq-audio"] }

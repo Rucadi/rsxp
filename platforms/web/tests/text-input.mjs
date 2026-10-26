@@ -2,25 +2,25 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { rubySource } from '../../../tools/ruby-sources.mjs';
-import init, * as engine from '../dist/pkg/rsxp_web.js';
+import init, * as engine from '../dist/pkg/fanplay_web.js';
 import { DefaultRubyVM } from '../node_modules/@ruby/wasm-wasi/dist/esm/browser.js';
 import { PRELUDE } from '../browser/ruby-host.js';
 import { createGamePump, captureRubyOutput } from '../browser/game-pump.js';
 import { createNativeDispatcher } from '../browser/native-bridge.js';
 
-await init({ module_or_path: readFileSync(new URL('../dist/pkg/rsxp_web_bg.wasm', import.meta.url)) });
+await init({ module_or_path: readFileSync(new URL('../dist/pkg/fanplay_web_bg.wasm', import.meta.url)) });
 engine.web_init(64, 48, 1, 40, undefined);
 const modes = [];
 const dispatch = createNativeDispatcher(engine, enabled => modes.push(enabled));
 const encoder = new TextEncoder();
-globalThis.RSXP = {
+globalThis.FANPLAY = {
   native_text(request) {
     const response = dispatch(encoder.encode(request));
-    return response === undefined ? '__RSXP_STOP__' : `U${new TextDecoder().decode(response)}`;
+    return response === undefined ? '__FANPLAY_STOP__' : `U${new TextDecoder().decode(response)}`;
   },
   native(request) {
     const response = dispatch(Buffer.from(request, 'base64'));
-    return response === undefined ? '__RSXP_STOP__' : Buffer.from(response).toString('base64');
+    return response === undefined ? '__FANPLAY_STOP__' : Buffer.from(response).toString('base64');
   },
 };
 const output = [];
@@ -42,8 +42,8 @@ assert.equal(vm.eval('Input.gets').toString(), '', 'text is consumed once');
 vm.eval('Input.text_input = false');
 assert.deepEqual(modes, [true, false]);
 // Legacy binary bridge calls use exactly the same dispatch and mode callback.
-globalThis.RSXP.native(Buffer.from('input_text_mode_set\t1\n').toString('base64'));
-globalThis.RSXP.native(Buffer.from('input_text_mode_set\t0\n').toString('base64'));
+globalThis.FANPLAY.native(Buffer.from('input_text_mode_set\t1\n').toString('base64'));
+globalThis.FANPLAY.native(Buffer.from('input_text_mode_set\t0\n').toString('base64'));
 assert.deepEqual(modes, [true, false, true, false]);
 assert.throws(() => dispatch(encoder.encode('input_text_mode_set\tinvalid\n')));
 assert.equal(modes.length, 4, 'rejected commands must not change browser focus');

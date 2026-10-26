@@ -2,15 +2,15 @@
 //! Change-driven synchronization. Only IDs cross frame boundaries; Ruby owns
 //! object lifetimes and the engine owns the last resolved rendering state.
 //!
-//! This module installs the `__rsxp_*` global functions consumed by the bundled
-//! `retained.rb` adapter (also exposed verbatim as `__rsxp_retained_source` via
+//! This module installs the `__fanplay_*` global functions consumed by the bundled
+//! `retained.rb` adapter (also exposed verbatim as `__fanplay_retained_source` via
 //! `include_str!`) and the per-class scalar setters. `CHANGES` is a process-wide
 //! mutex holding the dirty/volatile ID sets and the dependency graph; it never
 //! holds Ruby values.
 //!
 //! ID model: a resource is keyed by its engine id `@__id`, while dependency-only
 //! objects (nested `Rect`/`Color`/`Tone` values) get a synthetic token with the
-//! high bit set, stored as `@__rsxp_dependency_token`. `touch` marks a resource
+//! high bit set, stored as `@__fanplay_dependency_token`. `touch` marks a resource
 //! dirty and transitively dirties its dependents; `watch`/`unwatch` maintain the
 //! edge sets; `volatile` forces an id to re-resolve every frame; `drain` returns
 //! the union of dirty and volatile ids and clears the dirty set; `forget` drops a
@@ -54,7 +54,7 @@ fn token(object: RObject) -> Result<Option<u64>, Error> {
     if id.is_some() {
         return Ok(id);
     }
-    object.ivar_get("@__rsxp_dependency_token")
+    object.ivar_get("@__fanplay_dependency_token")
 }
 fn touch(object: RObject) -> Result<(), Error> {
     if let Some(id) = token(object)? {
@@ -93,7 +93,7 @@ fn watch(object: RObject, dependent: u64) -> Result<(), Error> {
                 changes.next_token += 1;
                 (1u64 << 63) | changes.next_token
             });
-            object.ivar_set("@__rsxp_dependency_token", id)?;
+            object.ivar_set("@__fanplay_dependency_token", id)?;
             id
         }
     };
@@ -243,15 +243,15 @@ fn source() -> &'static str {
 pub(super) fn bind(ruby: &Ruby) -> Result<(), Error> {
     with_changes(|changes| *changes = Changes::default());
     ruby.define_global_function(
-        "__rsxp_install_scalar_setters",
+        "__fanplay_install_scalar_setters",
         function!(install_scalars, 2),
     )?;
-    ruby.define_global_function("__rsxp_retained_source", function!(source, 0))?;
-    ruby.define_global_function("__rsxp_touch", function!(touch, 1))?;
-    ruby.define_global_function("__rsxp_watch", function!(watch, 2))?;
-    ruby.define_global_function("__rsxp_unwatch", function!(unwatch, 1))?;
-    ruby.define_global_function("__rsxp_forget", function!(forget, 1))?;
-    ruby.define_global_function("__rsxp_volatile", function!(volatile, 1))?;
-    ruby.define_global_function("__rsxp_dirty_resources", function!(drain, 0))?;
+    ruby.define_global_function("__fanplay_retained_source", function!(source, 0))?;
+    ruby.define_global_function("__fanplay_touch", function!(touch, 1))?;
+    ruby.define_global_function("__fanplay_watch", function!(watch, 2))?;
+    ruby.define_global_function("__fanplay_unwatch", function!(unwatch, 1))?;
+    ruby.define_global_function("__fanplay_forget", function!(forget, 1))?;
+    ruby.define_global_function("__fanplay_volatile", function!(volatile, 1))?;
+    ruby.define_global_function("__fanplay_dirty_resources", function!(drain, 0))?;
     Ok(())
 }

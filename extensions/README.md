@@ -23,25 +23,25 @@ RGSS session and is discarded when that session ends.
 
 ## Dynamically loaded plugins
 
-Native hosts also load Rhai plugins from `RSXP_EXTENSIONS_DIR`. The
+Native hosts also load Rhai plugins from `FANPLAY_EXTENSIONS_DIR`. The
 variable may point to one `.rhai` file or to a directory whose immediate
 children are `.rhai` files. A
 single Rhai file uses its filename as the ID and can override identity with
-`// rsxp:key=value` metadata comments; no companion manifest is required. The
+`// fanplay:key=value` metadata comments; no companion manifest is required. The
 same header can declare capabilities, operations, panels, and routes, for
 example:
 
 ```rhai
-// rsxp:capabilities = ruby.inject,ruby.unload
-// rsxp:operation = my_operation
-// rsxp:route = GET /v1/my-operation my_operation value
-// rsxp:panel = main,My Plugin
+// fanplay:capabilities = ruby.inject,ruby.unload
+// fanplay:operation = my_operation
+// fanplay:route = GET /v1/my-operation my_operation value
+// fanplay:panel = main,My Plugin
 ```
 
 From the repository root, run:
 
 ```sh
-RSXP_EXTENSIONS_DIR="$PWD/extensions" cargo run -p rsxp-desktop --bin rsxp
+FANPLAY_EXTENSIONS_DIR="$PWD/extensions" cargo run -p fanplay-desktop --bin fanplay
 ```
 
 The bundled plugins are skipped and [`dynamic-demo.rhai`](dynamic-demo.rhai)
@@ -55,9 +55,9 @@ Rhai files that need Ruby can declare `ruby.inject,ruby.unload` in metadata and
 embed the implementation directly in the same file:
 
 ```rhai
-/* rsxp:text ruby-begin
+/* fanplay:text ruby-begin
 module MyPlugin; end
-rsxp:text ruby-end */
+fanplay:text ruby-end */
 ```
 
 The host removes that block before compiling Rhai and exposes it to

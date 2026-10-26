@@ -4,12 +4,12 @@
 //!
 //! `WORLD` is a process-wide mutex of `groups` (per-group `MapCamera`, member
 //! sprite ids, and a `valid` flag) and `tiles` (sprite id → engine `WorldTile`).
-//! `retained.rb` drives it through four globals: `__rsxp_world_camera` (12 args —
+//! `retained.rb` drives it through four globals: `__fanplay_world_camera` (12 args —
 //! group id, tile pool, changed cells, tile offsets, pixel offsets, display and
 //! source heights, bridge flag, requested reset) recomputes placements for the
 //! group as a whole or just the changed cells and pushes the camera and
-//! placements into the engine; `__rsxp_world_release` detaches a whole group;
-//! `__rsxp_world_metadata_changed` and `__rsxp_world_unbind` detach one sprite.
+//! placements into the engine; `__fanplay_world_release` detaches a whole group;
+//! `__fanplay_world_metadata_changed` and `__fanplay_world_unbind` detach one sprite.
 //!
 //! While a sprite is world-bound, its `x`/`y`/`z` getters (`install_getters`,
 //! installed for `Sprite` by `retained`) project the placement through the group
@@ -18,14 +18,14 @@
 //! `internal` detach (map edits) keeps the group `valid`, while a metadata change
 //! invalidates it so the next camera update rebuilds placements. `bound`/`forget`
 //! expose this state to `sprite.rs` and `retained.rs`. State is read fresh per
-//! call; `MapCamera`/`WorldTile` come from `rsxp::engine::world_map`.
+//! call; `MapCamera`/`WorldTile` come from `fanplay_rgss::engine::world_map`.
 use magnus::{
     function, method,
     prelude::*,
     value::{Fixnum, LazyId},
     Error, RArray, RClass, RObject, Ruby, TryConvert, Value,
 };
-use rsxp::engine::{
+use fanplay_rgss::engine::{
     self,
     world_map::{MapCamera, WorldTile},
 };
@@ -91,11 +91,11 @@ fn position(id: u64) -> Option<(i64, i64, i32)> {
     })
 }
 pub(super) fn detach(object: RObject, internal: bool) -> Result<(), Error> {
-    if get!(object, "@__rsxp_world_group", Option<u64>).is_none() {
+    if get!(object, "@__fanplay_world_group", Option<u64>).is_none() {
         return Ok(());
     }
     let id = get!(object, "@__id", u64);
-    let editing = internal || get!(object, "@__rsxp_map_edit", Value).to_bool();
+    let editing = internal || get!(object, "@__fanplay_map_edit", Value).to_bool();
     let projected = with_world(|world| {
         let tile = world.tiles.remove(&id)?;
         let group = world.groups.get_mut(&tile.group)?;
@@ -110,12 +110,12 @@ pub(super) fn detach(object: RObject, internal: bool) -> Result<(), Error> {
         set!(object, "@y", y);
         set!(object, "@z", z);
     }
-    set!(object, "@__rsxp_world_group", ());
+    set!(object, "@__fanplay_world_group", ());
     engine::with_runtime_mut(|runtime| runtime.clear_world_tile(id));
     Ok(())
 }
 fn coordinate(ruby: &Ruby, object: RObject, axis: u8) -> Result<Value, Error> {
-    if get!(object, "@__rsxp_world_group", Option<u64>).is_some() {
+    if get!(object, "@__fanplay_world_group", Option<u64>).is_some() {
         let id = get!(object, "@__id", u64);
         if let Some((x, y, z)) = position(id) {
             return Ok(ruby
@@ -223,11 +223,11 @@ fn update(ruby: &Ruby, args: &[Value]) -> Result<bool, Error> {
     // Preflight before changing group state. No persistent Ruby references.
     for &(i, j, k) in &cells {
         let tile = at(tiles, i, j, k)?;
-        if !get!(tile, "@__rsxp_retained", Value).to_bool() || tile.is_frozen() {
+        if !get!(tile, "@__fanplay_retained", Value).to_bool() || tile.is_frozen() {
             return Ok(false);
         }
         let tile_id = get!(tile, "@__id", u64);
-        if !get!(tile, "@__rsxp_map_covered", Value).to_bool() {
+        if !get!(tile, "@__fanplay_map_covered", Value).to_bool() {
             removed.push(tile_id);
             continue;
         }
@@ -259,8 +259,8 @@ fn update(ruby: &Ruby, args: &[Value]) -> Result<bool, Error> {
     }
     for &(i, j, k) in &cells {
         let tile = at(tiles, i, j, k)?;
-        if get!(tile, "@__rsxp_map_covered", Value).to_bool() {
-            set!(tile, "@__rsxp_world_group", id);
+        if get!(tile, "@__fanplay_map_covered", Value).to_bool() {
+            set!(tile, "@__fanplay_world_group", id);
         } else {
             detach(tile, true)?;
         }
@@ -324,12 +324,12 @@ fn unbind(object: RObject) -> Result<(), Error> {
 }
 pub(super) fn bind(ruby: &Ruby) -> Result<(), Error> {
     with_world(|world| *world = World::default());
-    ruby.define_global_function("__rsxp_world_camera", function!(update, -1))?;
-    ruby.define_global_function("__rsxp_world_release", function!(release, 2))?;
+    ruby.define_global_function("__fanplay_world_camera", function!(update, -1))?;
+    ruby.define_global_function("__fanplay_world_release", function!(release, 2))?;
     ruby.define_global_function(
-        "__rsxp_world_metadata_changed",
+        "__fanplay_world_metadata_changed",
         function!(metadata_changed, 1),
     )?;
-    ruby.define_global_function("__rsxp_world_unbind", function!(unbind, 1))?;
+    ruby.define_global_function("__fanplay_world_unbind", function!(unbind, 1))?;
     Ok(())
 }

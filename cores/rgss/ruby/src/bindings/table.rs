@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Ruby-GC-owned RGSS `Table` objects, bound directly through Magnus.
 //!
-//! `RubyTable` wraps `RefCell<Option<Table>>` (the engine `rsxp::table::Table`)
+//! `RubyTable` wraps `RefCell<Option<Table>>` (the engine `fanplay_rgss::table::Table`)
 //! plus a `Cell<u64>` revision counter, and is registered as the `Table` class.
 //! The game-visible API is layered on top of the private `__` methods by
 //! `rgss.rb`: `__initialize`, `__get`/`__set`, `__resize`, `__dimensions` and
-//! `__rsxp_revision`. The revision is bumped on every value-changing mutation and
+//! `__fanplay_revision`. The revision is bumped on every value-changing mutation and
 //! lets the retained map and tilemap caches detect edits without re-reading every
 //! cell.
 //!
@@ -14,7 +14,7 @@
 //! `_dump`/`_load` provide Marshal serialization, and `initialize_copy` deep
 //! copies the table and bumps the revision.
 use magnus::{function, method, prelude::*, Error, RString, Ruby};
-use rsxp::table::Table;
+use fanplay_rgss::table::Table;
 use std::cell::{Cell, RefCell};
 
 #[derive(Default)]
@@ -118,7 +118,7 @@ pub(super) fn bind(ruby: &Ruby) -> Result<(), Error> {
     class.define_method("__set", method!(RubyTable::set, 4))?;
     class.define_method("__resize", method!(RubyTable::resize, 3))?;
     class.define_method("__dimensions", method!(RubyTable::dimensions, 0))?;
-    class.define_method("__rsxp_revision", method!(RubyTable::revision, 0))?;
+    class.define_method("__fanplay_revision", method!(RubyTable::revision, 0))?;
     class.define_method("_dump", method!(RubyTable::dump, 1))?;
     class.define_singleton_method("_load", function!(RubyTable::load, 1))?;
     class.define_method("initialize_copy", method!(RubyTable::initialize_copy, 1))?;

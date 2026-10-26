@@ -1,21 +1,21 @@
-// rsxp:id = pokeapi
-// rsxp:name = PokeAPI Explorer
-// rsxp:version = 0.1.0
-// rsxp:capabilities = ui.webview
+// fanplay:id = pokeapi
+// fanplay:name = PokeAPI Explorer
+// fanplay:version = 0.1.0
+// fanplay:capabilities = ui.webview
 // The generic game/input operations are declared here so the explorer is also
 // a discoverable extension surface. Their game-thread implementation remains
 // in the injected Essentials adapter; this plugin supplies the API client UI.
-// rsxp:operation = game_status
-// rsxp:route = GET /v1/game/status game_status
-// rsxp:operation = get_surroundings
-// rsxp:route = GET /v1/game/surroundings get_surroundings radius
-// rsxp:operation = teleport
-// rsxp:route = POST /v1/game/teleport teleport map_id,x,y
-// rsxp:operation = press_key
-// rsxp:route = POST /v1/input/press press_key key,frames
-// rsxp:operation = release_all_keys
-// rsxp:route = DELETE /v1/input/held release_all_keys
-// rsxp:panel = explorer,PokeAPI Explorer
+// fanplay:operation = game_status
+// fanplay:route = GET /v1/game/status game_status
+// fanplay:operation = get_surroundings
+// fanplay:route = GET /v1/game/surroundings get_surroundings radius
+// fanplay:operation = teleport
+// fanplay:route = POST /v1/game/teleport teleport map_id,x,y
+// fanplay:operation = press_key
+// fanplay:route = POST /v1/input/press press_key key,frames
+// fanplay:operation = release_all_keys
+// fanplay:route = DELETE /v1/input/held release_all_keys
+// fanplay:panel = explorer,PokeAPI Explorer
 
 fn build_ui() {
     [
@@ -34,7 +34,7 @@ fn on_activate() { }
 fn on_operation_result(_request_id, _result) { }
 fn on_shutdown() { }
 
-/* rsxp:text html-begin
+/* fanplay:text html-begin
 <!doctype html>
 <html lang="en">
 <head>
@@ -133,4 +133,4 @@ fn on_shutdown() { }
   </script>
 </body>
 </html>
-rsxp:text html-end */
+fanplay:text html-end */

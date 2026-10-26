@@ -3,8 +3,8 @@
 //!
 //! The ROM switches to mode 3, fills pixel (0, 0) with red and then spins.
 
-use rsxp_core::audio::NullAudioSink;
-use rsxp_core::{
+use fanplay_core::audio::NullAudioSink;
+use fanplay_core::{
     Content, CoreContext, CoreControl, CoreEvent, CoreLoadInfo, EventSink, PixelFormat, Platform,
     VideoSink,
 };
@@ -18,7 +18,7 @@ struct TempDir(PathBuf);
 impl TempDir {
     fn new(label: &str) -> Self {
         let path = std::env::temp_dir().join(format!(
-            "rsxp-gba-{label}-{}-{}",
+            "fanplay-gba-{label}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -58,7 +58,7 @@ struct FrameRecorder {
 }
 
 impl VideoSink for FrameRecorder {
-    fn present(&mut self, frame: rsxp_core::VideoFrame<'_>) {
+    fn present(&mut self, frame: fanplay_core::VideoFrame<'_>) {
         if let Some(px) = frame.pixels.get(0..3) {
             *self.pixel.lock().unwrap() = Some((frame.format, px[0], px[1], px[2]));
         }
@@ -69,7 +69,7 @@ impl VideoSink for FrameRecorder {
 struct SharedVideo(Arc<FrameRecorder>);
 
 impl VideoSink for SharedVideo {
-    fn present(&mut self, frame: rsxp_core::VideoFrame<'_>) {
+    fn present(&mut self, frame: fanplay_core::VideoFrame<'_>) {
         if let Some(px) = frame.pixels.get(0..3) {
             *self.0.pixel.lock().unwrap() = Some((frame.format, px[0], px[1], px[2]));
         }
@@ -142,8 +142,8 @@ fn check_pixel_rom(rom: Vec<u8>) {
     let saved_state = Arc::new(AtomicBool::new(false));
     let control = Arc::new(CoreControl::new());
     control.set_frame_limit(Some(3));
-    control.send(rsxp_core::CoreCommand::Reset);
-    control.send(rsxp_core::CoreCommand::SaveState { slot: "1".into() });
+    control.send(fanplay_core::CoreCommand::Reset);
+    control.send(fanplay_core::CoreCommand::SaveState { slot: "1".into() });
 
     let context = CoreContext::new(
         Arc::new(TestPlatform(dir.0.clone())),
@@ -156,7 +156,7 @@ fn check_pixel_rom(rom: Vec<u8>) {
         Arc::clone(&control),
     );
 
-    let mut core = rsxp_core_gba::create();
+    let mut core = fanplay_core_gba::create();
     core.load(Content::file(&rom_path), context).unwrap();
     let info = loaded.lock().unwrap().unwrap();
     assert_eq!((info.width, info.height), (240, 160));

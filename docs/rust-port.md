@@ -1,132 +1,72 @@
-# Runtime behavior and RGSS compatibility
+# RPG Maker runtime and compatibility
 
-This page describes the implemented runtime rather than a completed compatibility
-specification. See the [README](../README.md) for launch commands and
-[architecture](architecture.md) for ownership and module boundaries.
+`fanplay-rgss` is the Rust engine package. `cores/rgss/ruby` embeds native MRI
+and supplies Magnus bindings; browser games run the Ruby shim in ruby.wasm
+and reach the engine through JavaScript. RGSS 1, 2 and 3 are selectable, but
+selection does not imply complete XP/VX/VX Ace or plugin compatibility.
 
-## Game loading
+## Startup
 
-`frontends/desktop/src/runtime/options.rs` accepts exactly one of `--script` and `--game`.
-Script mode canonicalizes the script and uses its parent as the working directory;
-game mode uses the selected directory. Relative capture output paths are resolved
-before that directory change.
+The native desktop path is `frontends/desktop/src/runtime/{mod,game,options}.rs`.
+The generic-core path is `cores/rgss/core/{lib,game,host}.rs`. Both prepare the
+game and archives before running Ruby. Keep these routes consistent when
+changing Game.ini/script selection. `--script` runs an explicit file;
+`--game` accepts a game directory or Game.ini, and the dispatcher also routes
+GBA/DS files to cartridge cores. The run parser requires one content source.
 
-`frontends/desktop/src/runtime/game.rs` reads `Title` and `Scripts` from Game.ini. `--rgss 1|2|3`
-overrides inference; otherwise the configured script extension, standard archive
-names and standard script files select the version, falling back to RGSS1.
-Default bundles are `Data/Scripts.rxdata`, `.rvdata` and `.rvdata2`. Recognized
-`Game.rgssad`, `Game.rgss2a` and `Game.rgss3a` archives are loaded into memory.
-Engine asset lookup supports loose files, archives, normalized separators and
-ASCII case-insensitive resolution.
+The Ruby shim, compatibility helpers and RPG data definitions are assembled
+from `crates/fanplay-rgss/src/ruby/`. The native bindings live under
+`cores/rgss/ruby/src/bindings/`. The engine's command dispatcher is
+`crates/fanplay-rgss/src/engine/commands.rs`; those files are the authoritative
+API surface, not a list copied from another RGSS implementation.
 
-`crates/rsxp-rgss/src/ruby/` supplies the Ruby API and script loader, assembled at compile time
-as `rsxp::ruby::RGSS_SOURCE`. Bundles contain Marshal
-arrays of `[id, name, zlib_source]`; sources are decoded and evaluated in order
-in TOPLEVEL_BINDING, with decoded text retained in `$RGSS_SCRIPTS` slot 3.
-Section names appear in error backtraces. Embedded XP/VX/VX Ace RPG class
-definitions let Marshal reconstruct RPG data objects. A game `preload.rb`
-runs before the main scripts.
+## Implemented areas
 
-This uses modern MRI, not the original RPG Maker Ruby interpreter. Legacy
-language semantics, Windows code pages and arbitrary DLL extensions are not
-automatically reproduced. The shim includes targeted adaptations such as old
-`File.exists?`/`Dir.exists?` aliases, string encoding handling, Kernel helper
-forwarding and in-memory repairs of redundant plugin self-inheritance.
+The runtime has graphics/frame execution, input, bitmap/font resources,
+sprites, planes/viewports, tilemap and retained-map paths, Tables, audio host
+calls, archive loading, animated GIF and Theora movie decoding. CPU rendering
+lives in `graphics`; optional native wgpu composition lives in `gpu`. Platform
+services such as files, text/audio and presentation are supplied by hosts.
+The game logic remains Ruby.
 
-## Implemented API areas
+Game-specific functionality such as Essentials explorers and online-play
+controls is supplied by Rhai plugins and their Ruby implementations. It is
+separate from generic RGSS compatibility. See [extensions](../extensions/README.md).
 
-The definitions in `crates/rsxp-rgss/src/ruby/`, `cores/rgss/ruby/src/bindings/`, and operations in
-`crates/rsxp-rgss/src/engine/commands.rs` are the authoritative API surface. This table is an
-overview, not a promise that every original RGSS method is supported.
+## Limits
 
-| Area | Implemented behavior |
-| --- | --- |
-| Graphics | Updates, waits, dimensions/resizing, frame counters/rate, real-time `delta`/`average_frame_rate`, display size, window resize, screenshots, frameskip/threadsafe, scene-recompositing snapshots, freeze, basic transitions, brightness/fades, Theora (`.ogv`) `play_movie` and host window controls |
-| Input | Button polling and repeat/trigger/release state, directions, extended scancodes, mouse and text input, in-process clipboard, native/browser controller actions with saved remapping, and controller presence |
-| Bitmap / Font | Creation, image loading (including animated GIF frames), text drawing/measurement, fills, linear gradients, box/radial blur, pixel access, raw RGBA data, blits/stretching, hue changes, static snapshots, PNG export, hi-res aliasing, KGL2 operations, cloning and disposal |
-| Sprite | Position/origin, source rectangle, zoom/rotation, opacity, blend modes, mirror, color/tone, bush transparency, pattern overlays and viewport membership |
-| Plane / Viewport | Tiling/scrolling, clipping, ordering, color/tone and grouped viewport composition |
-| Tilemap | RGSS1 visible tile sprites, animated autotiles and priority handling; shared native atlas/geometry optimization |
-| Table / values | Table storage/indexing/resizing and Marshal payloads; Rect, Color and Tone values and serialization |
-| Audio | BGM/BGS/ME/SE playback, stopping, fades, volume and positions through platform backends |
-| Data and system helpers | `load_data`, `save_data`, RGSS entry helpers, console message boxes, time/platform/title/data-directory helpers, and `System` compatibility (`memory`, `nproc`, `file_exist?`, `parse_csv`, `window_title`, `delta`, `desensitize`, BSD flags) plus the `CFG` config surface |
-| HTTPLite | JSON helpers; network methods explicitly raise `RSXPError` |
-| Win32API | Targeted emulation plus native desktop DLL handling; the `KGL2.klib` light-blending and shadow functions are emulated portably (`KGL2_Impl`) |
+The native interpreter is modern MRI, not RPG Maker's original embedded Ruby.
+Language differences, Windows APIs, arbitrary DLL extensions, RTP conventions
+and game/plugin assumptions can still prevent execution. Targeted compatibility
+helpers do not reproduce a complete Windows environment. Browser WASM has
+additional filesystem, networking and native-extension restrictions.
 
-Known explicit restrictions include unsupported blend values and
-filename-based pattern transitions. `Graphics.play_movie` decodes Theora video
-in-engine on every platform but does not mix the movie's Vorbis audio track yet.
-Remaining mkxp-z APIs that rsxp does not implement include the native `Window`/
-`WindowVX` and `TilemapVX`/`TilemapAutotiles` classes, `MiniFFI`, Steam
-(`SteamLite`/achievements), Bitmap frame editing (`add_frame`/`remove_frame`/
-`next_frame`/`previous_frame`/`looping`), rendered `Sprite` wave effects, OS
-clipboard (rsxp keeps an in-process clipboard), raw controller axes, battery
-and raw button-query helpers, hi-res asset replacement, and `System.launch`/
-`mount`/`unmount`. HTTP game-script methods are
-not supplied by the separate live game inspection API. RTP discovery and
-arbitrary engine/plugin extensions should not be assumed. Unsupported native
-operations return an error rather than silently gaining compatibility.
+Theora movie decoding is implemented, but the movie path does not provide a
+complete general-purpose media player. Unsupported operations/effects can fail
+or take a software path; inspect the dispatcher and renderers before claiming
+specific APIs or visual effects are supported. Browser and desktop behavior
+must be tested independently.
 
-The engine limits bitmaps and Tables to 16,777,216 pixels/elements. Desktop
-Tables use native Magnus bindings and Ruby GC; browser Tables are pure Ruby.
-Bitmap/sprite/plane/viewport objects refer to native resource IDs and release
-them on disposal or finalization.
-
-## Frame limits, input and failures
-
-`--frames N` requires a positive integer and counts completed Graphics updates
-independently of the writable `Graphics.frame_count`. A frame limit or host
-close produces the internal clean-stop signal. Ruby errors report backtraces
-and fail the process; Ruby exit status is propagated. Escape is a game input,
-so scripts decide what it does.
-
-Headless runs omit window polling/presentation and pacing; they do not skip
-Ruby logic or rendering. Desktop headless audio is silent. Inject repeatable
-input with physical scancodes:
+## Running and diagnosing
 
 ```sh
-RSXP_INPUT=60:40:3 cargo run --release -p rsxp-desktop --bin rsxp -- run \
-  --script crates/rsxp-rgss/testdata/rgss_demo.rb --headless --frames 90
+cargo run --release -p fanplay-desktop -- run --game /path/to/game --rgss 1
+cargo run --release -p fanplay-desktop -- run \
+  --script crates/fanplay-rgss/testdata/rgss_demo.rb --rgss 3 \
+  --headless --frames 60 --output /tmp/rgss.ppm
+FANPLAY_INPUT=60:40:3 cargo run --release -p fanplay-desktop -- run \
+  --script crates/fanplay-rgss/testdata/rgss_demo.rb --headless --frames 90
 ```
 
-Each comma-separated `FRAME:SCANCODE[:HOLD]` entry presses a key for HOLD updates
-(default one); scancode 40 is Return. This is separate from game-specific input
-helpers and the live game API's queued controls.
+`--frames` limits completed graphics updates. Headless execution still runs
+scripts and composition, with silent host audio; it is not a parser-only test.
+`FANPLAY_INPUT` supplies deterministic frame/scancode/hold input.
+`--trace-scripts` logs script sections. `--renderer` selects RGSS composition;
+headless auto uses software, interactive auto uses the GPU path.
 
-## Runtime controls and diagnostics
-
-Frame rate starts at 40 for RGSS1 and 60 for RGSS2/3. Workspace controls can
-set a rate override or disable pacing; uncapped execution speeds per-frame
-game logic up in wall-clock time. Use F10 for performance and F11 for uncapped
-execution. These are runtime controls, not `--fps`/`--uncapped` CLI arguments.
-
-| Setting | Purpose |
-| --- | --- |
-| `--renderer auto\|software\|wgpu`, `RSXP_RENDERER` | Select compositor; headless auto uses software |
-| `--trace-scripts` | Log script sections during loading |
-| `RSXP_JIT=yjit\|zjit\|off` | Select the Ruby JIT engine (default: YJIT). Also selectable on the game library screen before launch or restart |
-| `RSXP_YJIT=0` | Disable JIT when `RSXP_JIT` is unset (legacy setting) |
-| `RSXP_INPUT` | Scripted frame/scancode input |
-| `RSXP_PATCH=ID[,ID...]` | Enable runtime patches at startup |
-| `RSXP_GPU_BATCH=0` | Disable disjoint GPU draw grouping for comparison |
-| `RSXP_NATIVE_TILEMAP=0` | Disable native tile sprite optimization |
-| `RSXP_SCENE_CACHE=0` | Disable retained scene ordering |
-
-Generic user runtime patches are cataloged in `crates/rsxp-rgss/src/patches/mod.rs`.
-Essentials-specific behavior is supplied by `extensions/essentials-runtime-patches.rhai`:
-the plugin injects its Ruby implementation, owns the toggles and owns the
-panoramic zoom slider. Patches are game-specific modifications, not universal
-RGSS compatibility fixes.
-
-## Browser differences and validation
-
-The browser uses a separate Ruby WASM module, a serialized bridge and a Fiber
-scheduler. Its filesystem, audio, save persistence and thread/network shims have
-additional constraints; see [browser documentation](../platforms/web/README.md).
-
-`frontends/desktop/tests/cli.rs` exercises embedded Ruby, all three RGSS modes, rendering,
-Table GC/Marshal, scripted input, failures/exit status, frame limits, compressed
-bundles, encrypted games and isolated runner transport. Unit tests cover core
-rendering/input/data operations. GPU checks and some local-game checks are
-ignored by default. A passing fixture establishes that fixture's behavior,
-not full compatibility with every game using the same RGSS version.
+Native JIT settings are `off`, `yjit`, or `zjit`, subject to the actual Ruby
+build. Generic patches and frame pacing are configured through settings and
+the workspace; the `run` parser does not accept `--fps` or `--uncapped`.
+Crashes, backtraces and output appear in the host/session logs. Generated
+fixtures and unit tests are regression checks, not a compatibility list for
+all fangames.

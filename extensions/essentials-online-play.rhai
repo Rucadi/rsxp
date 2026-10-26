@@ -1,11 +1,11 @@
-// rsxp:id = essentials-online-play
-// rsxp:name = Essentials Online Play
-// rsxp:version = 0.1.0
-// rsxp:capabilities = pokemon_essentials.read,pokemon_essentials.write
-// rsxp:operation = start_cable_club
-// rsxp:operation-capabilities = start_cable_club pokemon_essentials.write
-// rsxp:operation-mutates = start_cable_club
-// rsxp:panel = online-play,Essentials Online Play
+// fanplay:id = essentials-online-play
+// fanplay:name = Essentials Online Play
+// fanplay:version = 0.1.0
+// fanplay:capabilities = pokemon_essentials.read,pokemon_essentials.write
+// fanplay:operation = start_cable_club
+// fanplay:operation-capabilities = start_cable_club pokemon_essentials.write
+// fanplay:operation-mutates = start_cable_club
+// fanplay:panel = online-play,Essentials Online Play
 
 // Cable Club is an Essentials-specific feature. This plugin owns its panel
 // state and presentation; the native host only exposes generic asynchronous

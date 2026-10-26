@@ -1,4 +1,4 @@
-# RSXP library and software provisioning
+# Fanplay library and software provisioning
 
 The desktop launcher opens a searchable game library with platform filters, local
 file/folder launch, repository management, and a storage page. Connect multiple
@@ -11,22 +11,26 @@ visible and can be retried; cached catalogs work offline. Remote downloads
 require `curl` on PATH. TLS verification is enabled and redirects are restricted
 to HTTPS.
 
-## The RSXP folder
+## The FANPLAY folder
 
 Storage selection, in priority order:
 
-1. `RSXP_HOME`, if set (use an absolute path).
-2. For a game: its enclosing `RSXP` installation, or an existing `RSXP` folder in
+1. `FANPLAY_HOME`, if set; legacy `RSXP_HOME` is a fallback. Relative paths
+   are resolved from the current directory.
+2. For a game: its enclosing `FANPLAY` installation, or an existing `FANPLAY` folder in
    its directory (beside a cartridge file).
-3. An existing `RSXP` folder beside the launcher executable.
-4. `~/RSXP` (`%USERPROFILE%/RSXP` on Windows when HOME is unset).
+3. An existing `FANPLAY` folder beside the launcher executable.
+4. `~/FANPLAY` (`%USERPROFILE%/FANPLAY` on Windows when HOME is unset).
 
-Create the folder before launching to opt into portable mode. The launcher shows
+An existing legacy `RSXP` folder is reused when the corresponding `FANPLAY`
+folder is absent; no existing library is deleted or renamed. See
+[rename compatibility](rename.md). Create the folder before launching to opt
+into portable mode. The launcher shows
 its active path in **Storage & saves**. A game-specific portable folder affects
 that game's runtime; the launcher catalog remains in the launcher's own root.
 
 ```
-RSXP/
+FANPLAY/
   config/config.json                # common/per-game settings, catalogs, API
   config/library.json
   config/games/<hash>.json          # legacy overrides, migrated on save
@@ -47,13 +51,13 @@ RSXP/
 a corrupt file is moved aside as `config.json.corrupt-<pid>` and a fresh default
 is used so the launcher still starts. The loopback control API defaults to
 `127.0.0.1:47821`; change it in `config/config.json`, the API panel, or with
-`RSXP_API_PORT`. See [unified control API](control-api.md).
+`FANPLAY_API_PORT`. See [unified control API](control-api.md).
 
 Old library preferences and saves are read/copied from their previous locations
 without deleting the originals. RPG Maker games that write relative save files
 continue writing inside their game folder: provisioned games keep those inside
-`RSXP/games`. Externally opened projects retain their existing project-local save
-behavior. RPG Maker titles using `System.data_directory` use `RSXP/saves/rgss`.
+`FANPLAY/games`. Externally opened projects retain their existing project-local save
+behavior. RPG Maker titles using `System.data_directory` use `FANPLAY/saves/rgss`.
 
 ## Repository schema (version 1)
 
@@ -75,9 +79,9 @@ Each game has:
 - For IPS: `base` with descriptive `title` and exact `sha256`, plus mandatory
   `output_sha256` for the resulting cartridge ROM. IPS is only for GBA/NDS.
 
-Use **Storage & saves → Import base ROM** or put your own ROM under `RSXP/roms`.
-RSXP finds the base by content hash, not filename. A missing or mismatched base
-blocks installation and launch of an IPS entry. RSXP never downloads base ROMs.
+Use **Storage & saves → Import base ROM** or put your own ROM under `FANPLAY/roms`.
+FANPLAY finds the base by content hash, not filename. A missing or mismatched base
+blocks installation and launch of an IPS entry. FANPLAY never downloads base ROMs.
 It verifies the downloaded IPS, applies literal and RLE records to a copy,
 supports the optional final output-size field, verifies the result, and installs
 it atomically. It rechecks installed cartridge hashes before launching.
@@ -94,11 +98,11 @@ operation at a time, with status feedback rather than byte-level progress.
 ## Command line
 
 ```
-rsxp software-provision list ./games.json https://example.org/other.json
-rsxp software-provision import-base ./my-base.gba
-rsxp software-provision install ./games.json game-id
+fanplay software-provision list ./games.json https://example.org/other.json
+fanplay software-provision import-base ./my-base.gba
+fanplay software-provision install ./games.json game-id
 ```
 
-`install` prints the entrypoint path. Run it with `rsxp run --game PATH`, or use
+`install` prints the entrypoint path. Run it with `fanplay run --game PATH`, or use
 the desktop launcher to download and launch in one action. Repository hashes
 ensure consistency with a catalog; choose repository publishers you trust.

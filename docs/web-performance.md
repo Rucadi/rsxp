@@ -1,5 +1,10 @@
 # Web synchronization and software rendering
 
+> Historical record. Measurements and implementation details below describe the
+> recorded workload/revision, not the current support matrix. Names and commands
+> have been adapted to Fanplay; timings have not been re-measured. See
+> [current architecture](architecture.md) and [development](development.md).
+
 The browser runs Ruby and the Rust engine in separate WebAssembly modules.
 Reducing Ruby allocations and work before the bridge matters even when unchanged
 sprites already avoid native calls. The changes here retain Magnus on desktop
@@ -66,14 +71,14 @@ cargo xtask web
 npm --prefix platforms/web run benchmark
 
 # Compare the legacy Ruby synchronization path using the same engine binary:
-RSXP_SPRITE_CACHE=0 npm --prefix platforms/web run benchmark
+FANPLAY_SPRITE_CACHE=0 npm --prefix platforms/web run benchmark
 
 # Compare saved before/after artifacts, including CPU renderer changes:
 node tools/benchmark-web.mjs /path/to/before/pkg /path/to/before/rgss.rb
 
-cargo test -p rsxp --lib --no-default-features
-cargo test -p rsxp-desktop --test cli
-RSXP_WEB_FIXTURE=crates/rsxp-rgss/testdata/rgss_sync_lifecycle.rb node tools/benchmark-web.mjs
+cargo test -p fanplay-rgss --lib --no-default-features
+cargo test -p fanplay-desktop --test cli
+FANPLAY_WEB_FIXTURE=crates/fanplay-rgss/testdata/rgss_sync_lifecycle.rb node tools/benchmark-web.mjs
 npm --prefix platforms/web test
 ```
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! `RSXPRetainedMap`: the Ruby-visible handle to the engine's retained
-//! Essentials visible-cell cache (`rsxp::engine::retained_map::RetainedMap`).
+//! `FANPLAYRetainedMap`: the Ruby-visible handle to the engine's retained
+//! Essentials visible-cell cache (`fanplay_rgss::engine::retained_map::RetainedMap`).
 //!
 //! The class is `#[magnus::wrap]`ped over `RefCell<RetainedMap>` and exposes
 //! three methods to `retained.rb`:
@@ -16,20 +16,20 @@
 //!   columns/rows, so the next `update` reports only newly exposed strips.
 //! * `chunk_stats` — `[builds, hits, checks, evictions, resident]` counters.
 //!
-//! The chunk cache is enabled unless `RSXP_MAP_CHUNKS=0`. Ruby calls and engine
+//! The chunk cache is enabled unless `FANPLAY_MAP_CHUNKS=0`. Ruby calls and engine
 //! borrows happen outside the `RefCell` borrows; an uninitialized `Table` raises
 //! `RuntimeError` and engine limits raise `ArgumentError`.
 use super::table::RubyTable;
 use magnus::{method, prelude::*, Error, RArray, Ruby};
-use rsxp::engine::retained_map::{MapView, RetainedMap};
+use fanplay_rgss::engine::retained_map::{MapView, RetainedMap};
 use std::cell::RefCell;
 
-#[magnus::wrap(class = "RSXPRetainedMap", free_immediately, size)]
+#[magnus::wrap(class = "FANPLAYRetainedMap", free_immediately, size)]
 struct RubyRetainedMap(RefCell<RetainedMap>);
 impl Default for RubyRetainedMap {
     fn default() -> Self {
         let mut map = RetainedMap::default();
-        map.set_chunks_enabled(std::env::var("RSXP_MAP_CHUNKS").as_deref() != Ok("0"));
+        map.set_chunks_enabled(std::env::var("FANPLAY_MAP_CHUNKS").as_deref() != Ok("0"));
         Self(RefCell::new(map))
     }
 }
@@ -105,7 +105,7 @@ impl RubyRetainedMap {
     }
 }
 pub(super) fn bind(ruby: &Ruby) -> Result<(), Error> {
-    let class = ruby.define_class("RSXPRetainedMap", ruby.class_object())?;
+    let class = ruby.define_class("FANPLAYRetainedMap", ruby.class_object())?;
     class.define_alloc_func::<RubyRetainedMap>();
     class.define_method("chunk_stats", method!(RubyRetainedMap::stats, 0))?;
     class.define_method("shift", method!(RubyRetainedMap::shift, 2))?;

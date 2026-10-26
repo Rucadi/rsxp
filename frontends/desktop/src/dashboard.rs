@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Persistent native shell: the dashboard / game-workspace window.
 //!
-//! This is what `rsxp` (no subcommand) and an interactive `rsxp run` open. It
+//! This is what `fanplay` (no subcommand) and an interactive `fanplay run` open. It
 //! is a control-plane process only: it never embeds Ruby. It launches itself
 //! again as a child with the `run` subcommand, which acts as the actual game
 //! runner, and talks to it using the length-prefixed JSON framing in
@@ -10,7 +10,7 @@
 //!
 //! Main types and flow:
 //! - [`Exchange`] is the shared state between the UI thread and the blocking
-//!   I/O thread: the latest CPU [`Bitmap`] or [`rsxp::gpu::GpuFrame`], drained
+//!   I/O thread: the latest CPU [`Bitmap`] or [`fanplay_rgss::gpu::GpuFrame`], drained
 //!   runtime logs, the pending `control` payload for the runner, the last
 //!   error, frame rate/frame counters, performance state, and text-input/cursor
 //!   requests. It is guarded by a `Mutex` inside an `Arc`.
@@ -22,7 +22,7 @@
 //!   while also pushing a bounded (300-entry), lossy UTF-8 view into
 //!   `Exchange::logs` for the embedded output panel. A closed terminal must
 //!   not stop log collection.
-//! - [`run`] starts eframe's native window and drives the shared `rsxp-ui`
+//! - [`run`] starts eframe's native window and drives the shared `fanplay-ui`
 //!   application. Its App implementation polls sessions, translates egui input,
 //!   and executes launcher actions; eframe owns the window and presentation.
 //!
@@ -36,8 +36,8 @@
 //! non-draw-list data must not be dropped.
 use crate::gpu_callback::{GameCallback, GameGpu};
 use crate::session::{read_message, write_message};
-use rsxp::{graphics::Bitmap, input::Input};
-use rsxp_extension_api::{OperationError, OperationRequest, OperationResponse};
+use fanplay_rgss::{graphics::Bitmap, input::Input};
+use fanplay_extension_api::{OperationError, OperationRequest, OperationResponse};
 use serde_json::{json, Value};
 #[cfg(not(windows))]
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -55,8 +55,8 @@ fn start_control_server(
     root: &std::path::Path,
     sender: std::sync::mpsc::Sender<crate::control::HostAction>,
 ) -> (Option<crate::control::ControlServer>, Option<String>) {
-    let config = rsxp_provision::config::load(root).unwrap_or_default();
-    let enabled = match std::env::var("RSXP_API").ok().as_deref() {
+    let config = fanplay_provision::config::load(root).unwrap_or_default();
+    let enabled = match std::env::var("FANPLAY_API").ok().as_deref() {
         Some("0") => false,
         Some("1") => true,
         _ => config.api.enabled,
@@ -64,7 +64,7 @@ fn start_control_server(
     if !enabled {
         return (None, None);
     }
-    let port = std::env::var("RSXP_API_PORT")
+    let port = std::env::var("FANPLAY_API_PORT")
         .ok()
         .and_then(|port| port.parse::<u16>().ok())
         .filter(|port| *port != 0)
@@ -78,7 +78,7 @@ fn start_control_server(
 #[derive(Default)]
 struct Exchange {
     frame: Option<Bitmap>,
-    gpu_frame: Option<rsxp::gpu::GpuFrame>,
+    gpu_frame: Option<fanplay_rgss::gpu::GpuFrame>,
     gpu_view: bool,
     logs: std::collections::VecDeque<String>,
     control: Value,
@@ -135,7 +135,7 @@ fn forward_output(
             }
             Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
             Err(error) => {
-                let message = format!("rsxp: could not read game output: {error}");
+                let message = format!("fanplay: could not read game output: {error}");
                 let _ = writeln!(terminal, "{message}");
                 let mut state = exchange.lock().unwrap();
                 if state.logs.len() >= 300 {
@@ -256,8 +256,8 @@ impl SessionTransport for TcpTransport {
 
     fn configure(&self, command: &mut Command) {
         command
-            .env("RSXP_SESSION_ADDR", self.address.to_string())
-            .env("RSXP_SESSION_TOKEN", &self.token)
+            .env("FANPLAY_SESSION_ADDR", self.address.to_string())
+            .env("FANPLAY_SESSION_TOKEN", &self.token)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
     }
@@ -366,7 +366,7 @@ impl SessionTransport for StdioTransport {
 
     fn configure(&self, command: &mut Command) {
         command
-            .env("RSXP_SESSION_STDIO", "1")
+            .env("FANPLAY_SESSION_STDIO", "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -435,7 +435,7 @@ type PlatformTransport = TcpTransport;
 impl Session {
     fn start(
         args: &[String],
-        jit: rsxp_ui::session::RubyJit,
+        jit: fanplay_ui::session::RubyJit,
         gpu_available: bool,
     ) -> Result<Self, String> {
         let transport = Arc::new(PlatformTransport::new()?);
@@ -451,16 +451,16 @@ impl Session {
         command
             .arg("run")
             .args(args)
-            .env("RSXP_API", "0")
+            .env("FANPLAY_API", "0")
             .env(
-                "RSXP_RENDERER",
+                "FANPLAY_RENDERER",
                 if gpu_available { "wgpu" } else { "software" },
             )
             .env(
-                "RSXP_NDS_RENDERER",
+                "FANPLAY_NDS_RENDERER",
                 if is_nds { "wgpu" } else { "software" },
             )
-            .env("RSXP_JIT", jit.as_str());
+            .env("FANPLAY_JIT", jit.as_str());
         if !gpu_available {
             command.args(["--renderer", "software"]);
         }
@@ -469,7 +469,7 @@ impl Session {
             .find(|a| a[0] == "--game")
             .map(|a| PathBuf::from(&a[1]))
         {
-            let settings = rsxp_provision::settings::for_game(&path).map_err(|e| e.to_string())?;
+            let settings = fanplay_provision::settings::for_game(&path).map_err(|e| e.to_string())?;
             for (key, value) in settings.environment() {
                 command.env(key, value);
             }
@@ -526,7 +526,7 @@ impl Session {
                             std::io::Read::read_exact(&mut *stream, &mut bytes).map_err(
                                 |error| format!("dashboard IPC GPU frame read failed: {error}"),
                             )?;
-                            (None, Some(rsxp::gpu::GpuFrame::decode(&bytes)?))
+                            (None, Some(fanplay_rgss::gpu::GpuFrame::decode(&bytes)?))
                         } else {
                             let mut bytes = vec![0; w as usize * h as usize * 4];
                             std::io::Read::read_exact(&mut *stream, &mut bytes).map_err(
@@ -549,7 +549,7 @@ impl Session {
                                 if let (Some(id), Some(body)) =
                                     (reply[0].as_u64(), reply[1].as_str())
                                 {
-                                    let _ = rsxp::api_bridge::respond(id, body);
+                                    let _ = fanplay_rgss::api_bridge::respond(id, body);
                                 }
                             }
                         }
@@ -613,13 +613,13 @@ pub fn run(initial: Option<Vec<String>>) -> Result<u8, Box<dyn std::error::Error
     crate::webview::prepare_runtime();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("rsxp · Game workspace")
+            .with_title("fanplay · Game workspace")
             .with_inner_size([1100.0, 740.0])
             .with_min_inner_size([460.0, 340.0]),
         ..Default::default()
     };
     eframe::run_native(
-        "rsxp · Game workspace",
+        "fanplay · Game workspace",
         options,
         Box::new(move |_| Ok(Box::new(DesktopApp::new(initial)))),
     )?;
@@ -633,9 +633,9 @@ struct DesktopApp {
     control_sender: std::sync::mpsc::Sender<crate::control::HostAction>,
     control_actions: std::sync::mpsc::Receiver<crate::control::HostAction>,
     control_error: Option<String>,
-    active_settings: rsxp_provision::settings::Settings,
+    active_settings: fanplay_provision::settings::Settings,
     controllers: crate::controller::Controllers,
-    shared: rsxp_ui::SharedApp,
+    shared: fanplay_ui::SharedApp,
     session: Option<Session>,
     input: Input,
     frame: Bitmap,
@@ -684,25 +684,25 @@ enum PluginWebViewCommand {
 
 impl DesktopApp {
     fn new(initial: Option<Vec<String>>) -> Self {
-        let mut panel = rsxp_ui::session::SessionPanel::default();
-        panel.capabilities = rsxp_ui::session::SessionCapabilities::DESKTOP;
-        panel.ruby_jit = match std::env::var("RSXP_JIT").ok().as_deref() {
-            Some("zjit") => rsxp_ui::session::RubyJit::Zjit,
-            Some("off") => rsxp_ui::session::RubyJit::Disabled,
-            Some("yjit") => rsxp_ui::session::RubyJit::Yjit,
-            _ if std::env::var("RSXP_YJIT").as_deref() == Ok("0") => {
-                rsxp_ui::session::RubyJit::Disabled
+        let mut panel = fanplay_ui::session::SessionPanel::default();
+        panel.capabilities = fanplay_ui::session::SessionCapabilities::DESKTOP;
+        panel.ruby_jit = match std::env::var("FANPLAY_JIT").ok().as_deref() {
+            Some("zjit") => fanplay_ui::session::RubyJit::Zjit,
+            Some("off") => fanplay_ui::session::RubyJit::Disabled,
+            Some("yjit") => fanplay_ui::session::RubyJit::Yjit,
+            _ if std::env::var("FANPLAY_YJIT").as_deref() == Ok("0") => {
+                fanplay_ui::session::RubyJit::Disabled
             }
-            _ => rsxp_ui::session::RubyJit::Yjit,
+            _ => fanplay_ui::session::RubyJit::Yjit,
         };
         panel.recent = super::library::load();
-        let mut shared = rsxp_ui::SharedApp::default();
+        let mut shared = fanplay_ui::SharedApp::default();
         shared.workspace.session = Some(panel);
-        let root = rsxp_provision::root(None);
+        let root = fanplay_provision::root(None);
         let (control_sender, control_actions) = crate::control::action_channel();
         let (control, control_error) = start_control_server(&root, control_sender.clone());
         if control.is_none()
-            && let Ok(config) = rsxp_provision::config::load(&root)
+            && let Ok(config) = fanplay_provision::config::load(&root)
             && let Some(panel) = shared.workspace.session.as_mut()
         {
             panel.api_port = config.api.port.to_string();
@@ -751,10 +751,10 @@ impl DesktopApp {
     fn stop_session(&mut self) {
         self.session.take();
         if self.shift_forwarded {
-            self.input.key_up(rsxp_ui::controls::keyboard_binding(225));
+            self.input.key_up(fanplay_ui::controls::keyboard_binding(225));
             self.shift_forwarded = false;
         }
-        rsxp::api_bridge::end_session();
+        fanplay_rgss::api_bridge::end_session();
         self.shared.reset_plugins();
         self.extension_bridge.clear();
         self.plugin_webview_api_bridge.clear();
@@ -875,13 +875,13 @@ impl DesktopApp {
                     reply,
                 } => {
                     if let Some(value) = fast_forward {
-                        rsxp::runtime_settings::set_fast_forward(value);
+                        fanplay_rgss::runtime_settings::set_fast_forward(value);
                     }
                     if let Some(fps) = fps {
                         if fps == 0 {
-                            rsxp::runtime_settings::clear_rate_override();
+                            fanplay_rgss::runtime_settings::clear_rate_override();
                         } else {
-                            rsxp::runtime_settings::set_rate_override(fps);
+                            fanplay_rgss::runtime_settings::set_rate_override(fps);
                         }
                     }
                     if let Some(paused) = paused
@@ -890,8 +890,8 @@ impl DesktopApp {
                         panel.paused = paused;
                     }
                     let _ = reply.send(Ok(json!({
-                        "fast_forward": rsxp::runtime_settings::fast_forward(),
-                        "fps": rsxp::runtime_settings::rate_override(),
+                        "fast_forward": fanplay_rgss::runtime_settings::fast_forward(),
+                        "fps": fanplay_rgss::runtime_settings::rate_override(),
                         "paused": self.shared.workspace.session.as_ref().is_some_and(|panel| panel.paused),
                     })));
                 }
@@ -904,9 +904,9 @@ impl DesktopApp {
     fn stop_control(&mut self) {
         if let Some(control) = self.control.take() {
             control.stop();
-            if let Ok(mut config) = rsxp_provision::config::load(&self.root) {
+            if let Ok(mut config) = fanplay_provision::config::load(&self.root) {
                 config.api.enabled = false;
-                let _ = rsxp_provision::config::save(&self.root, &config);
+                let _ = fanplay_provision::config::save(&self.root, &config);
             }
         }
     }
@@ -922,10 +922,10 @@ impl DesktopApp {
                 self.control = Some(server);
                 self.control_error = None;
                 self.shared.workspace.session.as_mut().unwrap().api_error = None;
-                if let Ok(mut config) = rsxp_provision::config::load(&self.root) {
+                if let Ok(mut config) = fanplay_provision::config::load(&self.root) {
                     config.api.enabled = true;
                     config.api.port = port;
-                    let _ = rsxp_provision::config::save(&self.root, &config);
+                    let _ = fanplay_provision::config::save(&self.root, &config);
                 }
             }
             Err(error) => {
@@ -964,11 +964,11 @@ impl DesktopApp {
             state.game_key = if panel.source.is_empty() {
                 String::new()
             } else {
-                rsxp_provision::settings::key_for_path(std::path::Path::new(&panel.source)).0
+                fanplay_provision::settings::key_for_path(std::path::Path::new(&panel.source)).0
             };
         }
-        state.fast_forward = rsxp::runtime_settings::fast_forward();
-        state.fps = rsxp::runtime_settings::rate_override();
+        state.fast_forward = fanplay_rgss::runtime_settings::fast_forward();
+        state.fps = fanplay_rgss::runtime_settings::rate_override();
         if let Some(control) = &self.control {
             control.update(state);
         }
@@ -978,7 +978,7 @@ impl DesktopApp {
         let settings = args
             .windows(2)
             .find(|a| a[0] == "--game")
-            .map(|a| rsxp_provision::settings::for_game(std::path::Path::new(&a[1])))
+            .map(|a| fanplay_provision::settings::for_game(std::path::Path::new(&a[1])))
             .transpose();
         match settings {
             Ok(settings) => self.active_settings = settings.unwrap_or_default(),
@@ -991,14 +991,14 @@ impl DesktopApp {
             .use_game_mapping(self.active_settings.gamepad.as_deref());
         self.session.take();
         self.input.release_all();
-        rsxp::runtime_settings::reset();
-        rsxp::runtime_settings::set_fast_forward(self.active_settings.fast_forward);
+        fanplay_rgss::runtime_settings::reset();
+        fanplay_rgss::runtime_settings::set_fast_forward(self.active_settings.fast_forward);
         if let Some(fps) = self.active_settings.fps {
-            rsxp::runtime_settings::set_rate_override(fps);
+            fanplay_rgss::runtime_settings::set_rate_override(fps);
         }
-        rsxp::runtime_patch::reset();
-        rsxp_ui::controls::load_keyboard(&self.active_settings.keyboard);
-        rsxp::api_bridge::end_session();
+        fanplay_rgss::runtime_patch::reset();
+        fanplay_ui::controls::load_keyboard(&self.active_settings.keyboard);
+        fanplay_rgss::api_bridge::end_session();
         self.shared.reset_plugins();
         self.extension_bridge.clear();
         self.plugin_webview_api_bridge.clear();
@@ -1006,7 +1006,7 @@ impl DesktopApp {
         self.plugin_webview = None;
         self.pending_webview_commands.clear();
         let panel = self.shared.workspace.session.take();
-        self.shared.workspace = rsxp_ui::Workspace::new();
+        self.shared.workspace = fanplay_ui::Workspace::new();
         self.shared.workspace.session = panel;
         self.frame = Bitmap::new(640, 480).expect("640×480 bitmap allocation");
         self.logical_size = (640, 480);
@@ -1024,21 +1024,21 @@ impl DesktopApp {
             .filter(|_| cartridge.is_none())
             .and_then(|path| std::fs::canonicalize(path).ok());
         if let Some(root) = &root {
-            if let Err(error) = rsxp::runtime_patch::load_user_patches(root) {
+            if let Err(error) = fanplay_rgss::runtime_patch::load_user_patches(root) {
                 eprintln!("Could not load runtime patches: {error}");
             }
         }
-        if let Ok(patches) = std::env::var("RSXP_PATCH") {
-            rsxp::runtime_patch::enable_from(&patches);
+        if let Ok(patches) = std::env::var("FANPLAY_PATCH") {
+            fanplay_rgss::runtime_patch::enable_from(&patches);
         }
         for patch in &self.active_settings.patches {
-            rsxp::runtime_patch::set_enabled(patch, true);
+            fanplay_rgss::runtime_patch::set_enabled(patch, true);
         }
         for (patch, value) in &self.active_settings.patch_values {
-            rsxp::runtime_patch::set_value(patch, *value);
+            fanplay_rgss::runtime_patch::set_value(patch, *value);
         }
         self.shared.workspace.backend =
-            Box::new(rsxp_ui::workspace_services::LocalServices::new(root.clone()));
+            Box::new(fanplay_ui::workspace_services::LocalServices::new(root.clone()));
         let jit = self.shared.workspace.session.as_ref().unwrap().ruby_jit;
         // Cartridge cores currently produce CPU bitmaps. Keep those frames on
         // the shared eframe texture path instead of starting an unused RGSS
@@ -1072,10 +1072,10 @@ impl DesktopApp {
                         .unwrap_or_else(|| "Cartridge game".into());
                     panel.title = title.clone();
                     panel.source = rom.to_string_lossy().into_owned();
-                    panel.save_directory = rsxp_frontend::ContentId::of_file(rom)
+                    panel.save_directory = fanplay_frontend::ContentId::of_file(rom)
                         .ok()
                         .map(|id| {
-                            rsxp_provision::root(Some(rom))
+                            fanplay_provision::root(Some(rom))
                                 .join("saves")
                                 .join(
                                     rom.extension()
@@ -1113,10 +1113,10 @@ impl DesktopApp {
         self.input.begin_frame();
         let shift = ctx.input(|input| input.modifiers.shift);
         if self.session.is_some() && shift && !self.shift_forwarded {
-            self.input.key_down(rsxp_ui::controls::keyboard_binding(225));
+            self.input.key_down(fanplay_ui::controls::keyboard_binding(225));
             self.shift_forwarded = true;
         } else if (!shift || self.session.is_none()) && self.shift_forwarded {
-            self.input.key_up(rsxp_ui::controls::keyboard_binding(225));
+            self.input.key_up(fanplay_ui::controls::keyboard_binding(225));
             self.shift_forwarded = false;
         }
         if ctx.egui_wants_keyboard_input() {
@@ -1134,11 +1134,11 @@ impl DesktopApp {
                     ..
                 } => {
                     if let Some(code) = egui_scancode(physical_key.unwrap_or(key))
-                        .map(rsxp_ui::controls::keyboard_binding)
+                        .map(fanplay_ui::controls::keyboard_binding)
                     {
                         if pressed {
                             if code == 68 {
-                                rsxp::runtime_settings::toggle_fast_forward();
+                                fanplay_rgss::runtime_settings::toggle_fast_forward();
                             }
                             self.input.key_down(code);
                         } else {
@@ -1257,7 +1257,7 @@ impl DesktopApp {
                 });
                 continue;
             };
-            match rsxp::api_bridge::send_from_ui(operation, args) {
+            match fanplay_rgss::api_bridge::send_from_ui(operation, args) {
                 Ok(bridge_id) => {
                     self.extension_bridge
                         .insert(bridge_id, (request.id, request.generation));
@@ -1274,7 +1274,7 @@ impl DesktopApp {
 
         let pending: Vec<_> = self.extension_bridge.keys().copied().collect();
         for bridge_id in pending {
-            let Some(reply) = rsxp::api_bridge::take_ui_response(bridge_id) else {
+            let Some(reply) = fanplay_rgss::api_bridge::take_ui_response(bridge_id) else {
                 continue;
             };
             let (extension_id, generation) = self.extension_bridge.remove(&bridge_id).unwrap();
@@ -1342,14 +1342,14 @@ impl DesktopApp {
                     }
                     if method.eq_ignore_ascii_case("GET") && target == "/v1/extensions/routes" {
                         if let Some((_, _, view)) = &self.plugin_webview {
-                            let body = rsxp::api_bridge::extension_routes_json();
+                            let body = fanplay_rgss::api_bridge::extension_routes_json();
                             let _ = view.respond(id, 200, &body);
                         }
                         continue;
                     }
-                    match rsxp::api_bridge::route_http(&method.to_ascii_uppercase(), &target)
+                    match fanplay_rgss::api_bridge::route_http(&method.to_ascii_uppercase(), &target)
                         .and_then(|(operation, args)| {
-                            rsxp::api_bridge::send_from_ui(&operation, args)
+                            fanplay_rgss::api_bridge::send_from_ui(&operation, args)
                                 .map_err(|error| (500, error))
                         }) {
                         Ok(bridge_id) => {
@@ -1386,7 +1386,7 @@ impl DesktopApp {
         }
         let bridge_ids: Vec<_> = self.plugin_webview_api_bridge.keys().copied().collect();
         for bridge_id in bridge_ids {
-            let Some(reply) = rsxp::api_bridge::take_ui_response(bridge_id) else {
+            let Some(reply) = fanplay_rgss::api_bridge::take_ui_response(bridge_id) else {
                 continue;
             };
             let Some(request_id) = self.plugin_webview_api_bridge.remove(&bridge_id) else {
@@ -1449,10 +1449,10 @@ impl DesktopApp {
         self.fps = state.fps;
         self.frames = state.frames;
         if state.rate > 0 {
-            rsxp::runtime_settings::set_current_rate(state.rate);
+            fanplay_rgss::runtime_settings::set_current_rate(state.rate);
         }
         let old_api = state.control["api"].as_str().unwrap_or("").to_owned();
-        let api = String::from_utf8_lossy(&rsxp::api_bridge::poll()).into_owned();
+        let api = String::from_utf8_lossy(&fanplay_rgss::api_bridge::poll()).into_owned();
         let mut downs = state.control["downs"]
             .as_array()
             .cloned()
@@ -1526,9 +1526,9 @@ impl DesktopApp {
         state.control = json!({"paused":paused,"performance":self.shared.workspace.performance_visible(),
             "downs":downs,"ups":ups,"keys":(-8..640).filter(|key| ![58,59,60,61,67,68].contains(key) && self.input.pressed(*key)).collect::<Vec<_>>(),
             "x":mouse.x as i32,"y":mouse.y as i32,"inside":self.input.mouse_inside,
-            "scroll":self.input.scroll_v,"text":std::mem::take(&mut self.input.text),"fast":rsxp::runtime_settings::fast_forward(),
-            "rate":rsxp::runtime_settings::rate_override(),"api":old_api+api.as_str(),
-            "patches":rsxp::runtime_patch::patches().iter().map(|patch|json!([patch.id,rsxp::runtime_patch::is_enabled(&patch.id),rsxp::runtime_patch::value(&patch.id)])).collect::<Vec<_>>()});
+            "scroll":self.input.scroll_v,"text":std::mem::take(&mut self.input.text),"fast":fanplay_rgss::runtime_settings::fast_forward(),
+            "rate":fanplay_rgss::runtime_settings::rate_override(),"api":old_api+api.as_str(),
+            "patches":fanplay_rgss::runtime_patch::patches().iter().map(|patch|json!([patch.id,fanplay_rgss::runtime_patch::is_enabled(&patch.id),fanplay_rgss::runtime_patch::value(&patch.id)])).collect::<Vec<_>>()});
         if let Some(error) = state.error.take() {
             self.shared.workspace.session.as_mut().unwrap().error = Some(error);
         }
@@ -1556,7 +1556,7 @@ impl DesktopApp {
                 panel.error = (!status.success())
                     .then(|| format!("Game exited: {status}. See Runtime output below."));
                 self.session.take();
-                rsxp::api_bridge::end_session();
+                fanplay_rgss::api_bridge::end_session();
                 self.shared.reset_plugins();
                 self.extension_bridge.clear();
                 self.plugin_webview = None;
@@ -1572,7 +1572,7 @@ impl eframe::App for DesktopApp {
         if self.gpu_callback.is_none() {
             if let Some(state) = frame.wgpu_render_state() {
                 let render_state = state.clone();
-                match rsxp::gpu::GpuRenderer::new_with_device(
+                match fanplay_rgss::gpu::GpuRenderer::new_with_device(
                     640,
                     480,
                     render_state.instance.clone(),
@@ -1624,7 +1624,7 @@ impl eframe::App for DesktopApp {
             }
             return;
         }
-        let info = rsxp_ui::WorkspaceInfo {
+        let info = fanplay_ui::WorkspaceInfo {
             core_id: self.session.as_ref().map_or("rgss", |session| session.core_id),
             logical_size: self.logical_size,
             fps: self.fps,
@@ -1729,7 +1729,7 @@ impl eframe::App for DesktopApp {
         if actions.stop {
             self.stop_session();
         }
-        if actions.restart || rsxp::runtime_settings::reset_requested() {
+        if actions.restart || fanplay_rgss::runtime_settings::reset_requested() {
             self.launch = Some(self.last_args.clone());
         }
         let create_backup = actions.create_backup || output_create_backup;
@@ -1762,15 +1762,15 @@ impl eframe::App for DesktopApp {
                     self.shared.workspace.session.as_mut().unwrap().busy = true;
                     std::thread::spawn(move || {
                         let result = if restore_latest {
-                            rsxp_provision::backup::list(&root, &key).and_then(|backups| {
+                            fanplay_provision::backup::list(&root, &key).and_then(|backups| {
                                 let latest = backups
                                     .first()
                                     .ok_or_else(|| std::io::Error::other("no backups exist"))?;
-                                rsxp_provision::backup::restore(&root, &key, &latest.name, &save)
+                                fanplay_provision::backup::restore(&root, &key, &latest.name, &save)
                                     .map(|info| format!("Restored backup {}", info.name))
                             })
                         } else {
-                            rsxp_provision::backup::create(&root, &key, &save, None)
+                            fanplay_provision::backup::create(&root, &key, &save, None)
                                 .map(|info| format!("Backup {} created", info.name))
                         };
                         let _ = sender.send(result.map_err(|error| error.to_string()));
@@ -1806,21 +1806,21 @@ impl eframe::App for DesktopApp {
                 }
             } else {
                 let path = PathBuf::from(&source);
-                let game = rsxp_provision::folders::game_directory(&path);
+                let game = fanplay_provision::folders::game_directory(&path);
                 let save = save_location(&self.root, &source).map(|(_, save)| save);
                 if output_open_game {
-                    let _ = rsxp_provision::folders::open(&game);
+                    let _ = fanplay_provision::folders::open(&game);
                 }
                 if output_open_save {
                     if let Some(save) = save {
-                        let _ = rsxp_provision::folders::ensure(&save);
-                        let _ = rsxp_provision::folders::open(&save);
+                        let _ = fanplay_provision::folders::ensure(&save);
+                        let _ = fanplay_provision::folders::open(&save);
                     }
                 }
                 if output_open_patches {
-                    let patches = rsxp_provision::folders::patches_directory(&game);
-                    let _ = rsxp_provision::folders::ensure(&patches);
-                    let _ = rsxp_provision::folders::open(&patches);
+                    let patches = fanplay_provision::folders::patches_directory(&game);
+                    let _ = fanplay_provision::folders::ensure(&patches);
+                    let _ = fanplay_provision::folders::open(&patches);
                 }
             }
         }
@@ -1850,7 +1850,7 @@ fn save_location(root: &std::path::Path, source: &str) -> Option<(String, PathBu
         return None;
     }
     let path = PathBuf::from(source);
-    let (key, _) = rsxp_provision::settings::key_for_path(&path);
+    let (key, _) = fanplay_provision::settings::key_for_path(&path);
     let cartridge = path
         .extension()
         .and_then(|extension| extension.to_str())
@@ -1858,7 +1858,7 @@ fn save_location(root: &std::path::Path, source: &str) -> Option<(String, PathBu
             extension.eq_ignore_ascii_case("gba") || extension.eq_ignore_ascii_case("nds")
         });
     let save = if cartridge {
-        let id = rsxp_frontend::ContentId::of_file(&path).ok()?;
+        let id = fanplay_frontend::ContentId::of_file(&path).ok()?;
         root.join("saves")
             .join(
                 path.extension()
@@ -1868,7 +1868,7 @@ fn save_location(root: &std::path::Path, source: &str) -> Option<(String, PathBu
             )
             .join(id.hex())
     } else {
-        rsxp_provision::folders::save_directory(root, &rsxp_provision::folders::title(&path))
+        fanplay_provision::folders::save_directory(root, &fanplay_provision::folders::title(&path))
     };
     Some((key, save))
 }
@@ -1901,7 +1901,7 @@ fn legacy_plugin_call(request: &OperationRequest) -> Option<(&str, Vec<String>)>
         );
         return Some((
             "ruby_inject",
-            vec![patch_name, rsxp::api_bridge::hex_encode(source)],
+            vec![patch_name, fanplay_rgss::api_bridge::hex_encode(source)],
         ));
     }
     if request.operation.ends_with(".__ruby.unload") {

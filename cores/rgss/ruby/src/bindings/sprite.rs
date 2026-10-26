@@ -2,7 +2,7 @@
 //! Typed desktop sprite synchronization. Ruby getters remain authoritative,
 //! including overrides; only conversion and snapshot submission move to Rust.
 //!
-//! `__rsxp_sprite_sync` (installed unless `RSXP_SPRITE_SYNC=ruby`) receives the
+//! `__fanplay_sprite_sync` (installed unless `FANPLAY_SPRITE_SYNC=ruby`) receives the
 //! 39-element snapshot built by `rgss.rb`/`retained.rb` and converts it into an
 //! engine `SpriteState`. It resolves the bitmap/viewport/pattern engine ids via
 //! their `__id`, derives the clip `Rect` from the viewport's `rect` (or the full
@@ -18,7 +18,7 @@ use magnus::{
     function, prelude::*, value::LazyId, Error, ExceptionClass, RArray, RString, Ruby, TryConvert,
     Value,
 };
-use rsxp::{
+use fanplay_rgss::{
     engine::{self, SpriteState},
     graphics::{Color, Rect, Tone},
 };
@@ -241,8 +241,8 @@ fn sync(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
     }
 }
 pub(super) fn bind(ruby: &Ruby) -> Result<(), Error> {
-    if std::env::var("RSXP_SPRITE_SYNC").as_deref() != Ok("ruby") {
-        ruby.define_global_function("__rsxp_sprite_sync", function!(sync, -1))?;
+    if std::env::var("FANPLAY_SPRITE_SYNC").as_deref() != Ok("ruby") {
+        ruby.define_global_function("__fanplay_sprite_sync", function!(sync, -1))?;
     }
     Ok(())
 }

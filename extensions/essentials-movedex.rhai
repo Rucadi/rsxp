@@ -1,11 +1,11 @@
-// rsxp:id = essentials-movedex
-// rsxp:name = Essentials Movedex
-// rsxp:version = 0.1.0
-// rsxp:capabilities = ruby.inject,ruby.unload,ui.webview,pokemon_essentials.read,pokemon_essentials.write
-// rsxp:operation = pokemon_essentials_movedex
-// rsxp:operation-capabilities = pokemon_essentials_movedex pokemon_essentials.read
-// rsxp:route = GET /v1/pokemon-essentials/movedex pokemon_essentials_movedex refresh
-// rsxp:panel = movedex,Essentials Movedex
+// fanplay:id = essentials-movedex
+// fanplay:name = Essentials Movedex
+// fanplay:version = 0.1.0
+// fanplay:capabilities = ruby.inject,ruby.unload,ui.webview,pokemon_essentials.read,pokemon_essentials.write
+// fanplay:operation = pokemon_essentials_movedex
+// fanplay:operation-capabilities = pokemon_essentials_movedex pokemon_essentials.read
+// fanplay:route = GET /v1/pokemon-essentials/movedex pokemon_essentials_movedex refresh
+// fanplay:panel = movedex,Essentials Movedex
 
 // The host only supplies a webview and a generic game-thread bridge. Move
 // catalog shape, filtering, presentation, and the Ruby adapter live here.
@@ -15,7 +15,7 @@ fn movedex_html() {
 
 fn on_activate() {
     let ruby = text_block("ruby");
-    let apply = "{ apply: proc { " + ruby + "; RSXP::MovedexPlugin.install }, revert: proc { RSXP::MovedexPlugin.uninstall if defined?(RSXP::MovedexPlugin) } }";
+    let apply = "{ apply: proc { " + ruby + "; FANPLAY::MovedexPlugin.install }, revert: proc { FANPLAY::MovedexPlugin.uninstall if defined?(FANPLAY::MovedexPlugin) } }";
     let pending = ruby_inject("essentials-movedex", apply);
     state_set("pending", pending);
     if pending < 0 {
@@ -57,7 +57,7 @@ fn on_shutdown() {
     }
 }
 
-/* rsxp:text html-begin
+/* fanplay:text html-begin
 <!doctype html>
 <html lang="en">
 <head>
@@ -209,19 +209,19 @@ fn on_shutdown() {
   </script>
 </body>
 </html>
-rsxp:text html-end */
+fanplay:text html-end */
 
-/* rsxp:text ruby-begin
+/* fanplay:text ruby-begin
 # Move data is installed by this plugin instead of being compiled into the
 # Rust host. The shared Essentials adapter still provides safe reflective
 # helpers and legacy-game decoding, but this module owns the catalog builder.
-module RSXP
+module FANPLAY
   module MovedexPlugin
     def self.install
-      @api = RSXP::GameAPI
+      @api = FANPLAY::GameAPI
       @original = @api.method(:pokemon_essentials_movedex) if @api.respond_to?(:pokemon_essentials_movedex)
       @api.define_singleton_method(:pokemon_essentials_movedex) do |refresh = false|
-        RSXP::MovedexPlugin.pokemon_essentials_movedex(refresh)
+        FANPLAY::MovedexPlugin.pokemon_essentials_movedex(refresh)
       end
     end
 
@@ -282,4 +282,4 @@ module RSXP
     end
   end
 end
-rsxp:text ruby-end */
+fanplay:text ruby-end */

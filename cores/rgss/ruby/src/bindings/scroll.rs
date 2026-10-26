@@ -2,16 +2,16 @@
 //! One native call for tile scrolling: keep Ruby-visible coordinates in sync,
 //! update retained geometry directly, and avoid full property snapshots.
 //!
-//! Two global functions are installed. `__rsxp_scroll_tiles(tiles, ox, oy,
+//! Two global functions are installed. `__fanplay_scroll_tiles(tiles, ox, oy,
 //! width, height, source_height, move_xy, move_z, bridge, enabled)` walks a
 //! 3-level `tiles[i][j][k]` pool; it preflights that every sprite is retained
-//! (`@__rsxp_retained`) and, when `move_z`, has an integer `@priority`. Tiles not
-//! marked `@__rsxp_map_covered` are skipped. For each covered tile it detaches
+//! (`@__fanplay_retained`) and, when `move_z`, has an integer `@priority`. Tiles not
+//! marked `@__fanplay_map_covered` are skipped. For each covered tile it detaches
 //! the sprite from its world group, computes screen `x = i*width - ox`,
 //! `y = j*height - oy` and the RGSS priority `z` (reflection `-100`, bridge or
 //! zero priority `0`, else `(j + priority + 1) * source_height + 1`), writes the
 //! `@x`/`@y`/`@z` ivars, and submits a `SpriteMotion` through a single runtime
-//! borrow. `__rsxp_scroll_rgss_tiles(tiles, dx, dy)` is the RGSS1 variant whose
+//! borrow. `__fanplay_scroll_rgss_tiles(tiles, dx, dy)` is the RGSS1 variant whose
 //! priority `z` also includes the pixel camera `y`, subtracting `dx`/`dy` with
 //! saturation.
 //!
@@ -26,7 +26,7 @@ use magnus::{
     value::{Fixnum, LazyId},
     Error, RArray, RObject, Ruby, TryConvert, Value,
 };
-use rsxp::engine::{self, SpriteMotion};
+use fanplay_rgss::engine::{self, SpriteMotion};
 
 macro_rules! get {
     ($object:expr,$name:literal,$ty:ty) => {{
@@ -87,7 +87,7 @@ fn scroll(ruby: &Ruby, args: &[Value]) -> Result<bool, Error> {
             let stack: RArray = column.entry(j as isize)?;
             for k in 0..stack.len() {
                 let tile: RObject = stack.entry(k as isize)?;
-                if !get!(tile, "@__rsxp_retained", Value).to_bool() {
+                if !get!(tile, "@__fanplay_retained", Value).to_bool() {
                     return Ok(false);
                 }
                 if move_z && Fixnum::from_value(get!(tile, "@priority", Value)).is_none() {
@@ -115,7 +115,7 @@ fn scroll(ruby: &Ruby, args: &[Value]) -> Result<bool, Error> {
             };
             for k in 0..stack.len() {
                 let tile: RObject = stack.entry(k as isize)?;
-                if !get!(tile, "@__rsxp_map_covered", Value).to_bool() {
+                if !get!(tile, "@__fanplay_map_covered", Value).to_bool() {
                     continue;
                 }
                 super::world::detach(tile, true)?;
@@ -168,7 +168,7 @@ fn scroll_rgss(tiles: RArray, dx: i64, dy: i64) -> Result<bool, Error> {
     let mut indices = Vec::with_capacity(tiles.len());
     for index in 0..tiles.len() {
         let tile: RObject = tiles.entry(index as isize)?;
-        if !get!(tile, "@__rsxp_retained", Value).to_bool() || tile.is_frozen() {
+        if !get!(tile, "@__fanplay_retained", Value).to_bool() || tile.is_frozen() {
             return Ok(false);
         }
         if !get!(tile, "@visible", Value).to_bool() {
@@ -186,7 +186,7 @@ fn scroll_rgss(tiles: RArray, dx: i64, dy: i64) -> Result<bool, Error> {
         };
         let x = x.to_i64().saturating_sub(dx);
         let y = y.to_i64().saturating_sub(dy);
-        let z = if get!(tile, "@__rsxp_rgss_priority", Value).to_bool() {
+        let z = if get!(tile, "@__fanplay_rgss_priority", Value).to_bool() {
             z.to_i64().saturating_sub(dy)
         } else {
             z.to_i64()
@@ -213,7 +213,7 @@ fn scroll_rgss(tiles: RArray, dx: i64, dy: i64) -> Result<bool, Error> {
     Ok(true)
 }
 pub(super) fn bind(ruby: &Ruby) -> Result<(), Error> {
-    ruby.define_global_function("__rsxp_scroll_rgss_tiles", function!(scroll_rgss, 3))?;
-    ruby.define_global_function("__rsxp_scroll_tiles", function!(scroll, -1))?;
+    ruby.define_global_function("__fanplay_scroll_rgss_tiles", function!(scroll_rgss, 3))?;
+    ruby.define_global_function("__fanplay_scroll_tiles", function!(scroll, -1))?;
     Ok(())
 }

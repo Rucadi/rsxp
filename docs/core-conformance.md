@@ -7,8 +7,8 @@ measured performance that has not been recorded.
 
 ```sh
 cargo test -p fanplay-core -p fanplay-frontend
-cargo test -p fanplay-core-gba
-cargo test -p fanplay-cores --no-default-features --features gba
+cargo test -p fanplay-core-gbc -p fanplay-core-gba
+cargo test -p fanplay-cores --no-default-features --features gbc,gba
 ```
 
 The core/frontend suite covers routing, command request ids and payload bounds,
@@ -24,8 +24,8 @@ transactional restore check with its candidate-machine path.
 ## Feature matrix
 
 ```sh
-# Core/GBA only (no MRI or RGSS)
-cargo check -p fanplay-desktop --no-default-features --features gba
+# Core cartridges only (no MRI or RGSS)
+cargo check -p fanplay-desktop --no-default-features --features gbc,gba
 
 # DS feature (unstable Dust dependencies)
 RUSTC_BOOTSTRAP=1 cargo test -p fanplay-core-nds
@@ -34,10 +34,10 @@ RUSTC_BOOTSTRAP=1 cargo test -p fanplay-core-nds
 cargo test -p fanplay-desktop --bin fanplay
 ```
 
-The desktop `gba` feature has no dependency edge to `fanplay-rgss`. Verify it:
+The desktop cartridge features have no dependency edge to `fanplay-rgss`. Verify it:
 
 ```sh
-cargo tree -p fanplay-desktop --no-default-features --features gba -e normal \
+cargo tree -p fanplay-desktop --no-default-features --features gbc,gba -e normal \
   | grep -E 'fanplay-rgss|fanplay-rgss-ruby|magnus' && exit 1 || true
 ```
 

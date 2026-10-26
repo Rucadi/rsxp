@@ -49,20 +49,20 @@ test('ZIP import intent opens the host picker used by the shared library', () =>
   assert.deepEqual(picks, ['zip']);
 });
 
-test('GBA/DS ROM intent opens the ROM picker and launches a cartridge session', async () => {
+test('cartridge ROM intent opens the ROM picker and launches a cartridge session', async () => {
   let started;
   const { launcher, picks, updates } = harness({ launch: async game => { started = game; } });
   launcher.action({ browse_game_file: true });
   assert.deepEqual(picks, ['rom']);
   const bytes = Uint8Array.from([0, 1, 2, 3]);
   await launcher.rom({
-    name: 'Pokemon.gba',
+    name: 'Pokemon.gbc',
     size: bytes.length,
     async arrayBuffer() { return bytes.buffer; },
   });
   assert.equal(updates.at(-1).title, 'Pokemon');
   await launcher.action({ open: 'Pokemon' });
-  assert.equal(started.game.rom.name, 'Pokemon.gba');
+  assert.equal(started.game.rom.name, 'Pokemon.gbc');
   assert.deepEqual(await started.game.readRom(), bytes);
 });
 

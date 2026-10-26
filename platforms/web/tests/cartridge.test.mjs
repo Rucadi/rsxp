@@ -38,6 +38,18 @@ function ndsRom() {
   return rom;
 }
 
+// A minimal DMG/CGB cartridge with an infinite loop at the post-boot entry
+// point. The core selects the hardware mode from header byte 0x143.
+function gameBoyRom(cgb) {
+  const rom = new Uint8Array(0x8000);
+  rom.set([0xC3, 0x00, 0x01], 0x100);
+  rom.set([0x46, 0x41, 0x4E, 0x50, 0x4C, 0x41, 0x59], 0x134);
+  rom[0x143] = cgb ? 0x80 : 0x00;
+  rom[0x147] = 0x00;
+  rom[0x149] = 0x00;
+  return rom;
+}
+
 test('cartridge loader accepts GBA and advances frames through input', () => {
   assert.equal(wasm.web_core_init('fixture.gba', gbaRom()), 'gba');
   for (let frame = 0; frame < 3; frame += 1) assert.doesNotThrow(() => wasm.web_core_step());
@@ -60,6 +72,15 @@ test('cartridge loader accepts NDS and presents both screens', () => {
   wasm.web_core_stop();
 });
 
+test('cartridge loader accepts both Game Boy and Game Boy Color ROMs', () => {
+  for (const [extension, cgb] of [['gb', false], ['gbc', true]]) {
+    assert.equal(wasm.web_core_init(`fixture.${extension}`, gameBoyRom(cgb)), 'gbc');
+    assert.doesNotThrow(() => wasm.web_core_step());
+    assert.deepEqual(Array.from(wasm.web_core_size()), [160, 144]);
+    wasm.web_core_stop();
+  }
+});
+
 test('unsupported or empty cartridge files fail with a useful message', () => {
-  assert.throws(() => wasm.web_core_init('fixture.zip', new Uint8Array([1, 2, 3])), /\.gba|\.nds|Unsupported/);
+  assert.throws(() => wasm.web_core_init('fixture.zip', new Uint8Array([1, 2, 3])), /\.gb|\.gba|\.nds|Unsupported/);
 });

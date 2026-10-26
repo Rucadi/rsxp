@@ -311,7 +311,9 @@ impl GameLocation {
             .extension()
             .and_then(|extension| extension.to_str())
             .is_some_and(|extension| {
-                extension.eq_ignore_ascii_case("gba") || extension.eq_ignore_ascii_case("nds")
+                ["gb", "gbc", "gba", "nds"]
+                    .iter()
+                    .any(|wanted| extension.eq_ignore_ascii_case(wanted))
             });
         let game_directory = provision::folders::game_directory(&path);
         let title = provision::folders::title(&path);
@@ -656,8 +658,9 @@ impl DesktopControl {
                     .extension()
                     .and_then(|extension| extension.to_str())
                     .is_some_and(|extension| {
-                        extension.eq_ignore_ascii_case("gba")
-                            || extension.eq_ignore_ascii_case("nds")
+                        ["gb", "gbc", "gba", "nds"]
+                            .iter()
+                            .any(|wanted| extension.eq_ignore_ascii_case(wanted))
                     })
                 {
                     path_buf
@@ -672,6 +675,10 @@ impl DesktopControl {
                     .is_some_and(|e| e.eq_ignore_ascii_case("gba"))
                 {
                     "gba"
+                } else if path_buf.extension().is_some_and(|e| {
+                    e.eq_ignore_ascii_case("gb") || e.eq_ignore_ascii_case("gbc")
+                }) {
+                    "gbc"
                 } else if path_buf
                     .extension()
                     .is_some_and(|e| e.eq_ignore_ascii_case("nds"))
@@ -707,6 +714,7 @@ impl DesktopControl {
             for game in &repository.games {
                 let game_platform = match game.platform {
                     provision::Platform::RpgMaker => "rpg-maker",
+                    provision::Platform::Gbc => "gbc",
                     provision::Platform::Gba => "gba",
                     provision::Platform::Nds => "nds",
                 };

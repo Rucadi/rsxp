@@ -1,5 +1,5 @@
 {
-  description = "Fanplay fangame player for RPG Maker, GBA and Nintendo DS";
+  description = "Fanplay fangame player for RPG Maker, Game Boy, GBA and Nintendo DS";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   inputs.nix-appimage.url = "github:ralismark/nix-appimage";

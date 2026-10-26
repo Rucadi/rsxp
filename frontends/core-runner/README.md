@@ -12,7 +12,7 @@ cargo run -p fanplay-core-runner -- --content game.gba --frames 120 --output fra
 Features select which cores are linked:
 
 ```sh
-# default: GBA and DS
+# default: GB/GBC, GBA and DS
 cargo run -p fanplay-core-runner -- --content game.gba --frames 60
 
 # include the RGSS adapter (requires MRI)
@@ -35,7 +35,8 @@ graphical application evolves.
 
 ## Nintendo DS (Dust)
 
-The default `nds` feature adds the [Dust](https://github.com/kelpsyberry/dust)
+The default `gbc` feature adds the portable Rust Game Boy / Game Boy Color core
+from [`mvdnes/rboy`](https://github.com/mvdnes/rboy). The default `nds` feature adds the [Dust](https://github.com/kelpsyberry/dust)
 core, `.nds` content routing, stacked screens, touch input, stereo audio,
 cartridge saves and save states. Dust requires unstable Rust features. Disable default features and enable
 only `gba` to omit Dust from a GBA-only runner.

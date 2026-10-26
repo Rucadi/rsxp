@@ -1,10 +1,11 @@
 # Emulator cores
 
 Emulation stays here. Fanplay interface/GUI/connectivity integration belongs in
-`crates/fanplay-gba` and `crates/fanplay-nds`, separately from the emulator backends.
+the frontend crates, separately from the emulator backends.
 
 | Directory | Package / role |
 | --- | --- |
+| `gbc/core` | `fanplay-core-gbc`: adapter for the portable `mvdnes/rboy` Rust core |
 | `gba/core` | `fanplay-core-gba`: RustBoyAdvance-NG adapter, BIOS assets and tests |
 | `nds/core` | `fanplay-core-nds`: Dust adapter and game database |
 | `nds/vendor` | Local compatibility/rendering patches for Dust dependencies |
@@ -13,9 +14,9 @@ Emulation stays here. Fanplay interface/GUI/connectivity integration belongs in
 
 All adapters implement the contract in
 [`fanplay-core`](../crates/fanplay-core/src/lib.rs). The build-time registry is
-[`fanplay-cores`](../crates/fanplay-cores/src/lib.rs). Defaults include GBA and
-DS; RGSS is opt-in in the generic registry/runner and enabled by the default
-desktop features. There is no implemented GB/GBC core.
+[`fanplay-cores`](../crates/fanplay-cores/src/lib.rs). Defaults include GB/GBC,
+GBA and DS; RGSS is opt-in in the generic registry/runner and enabled by the
+default desktop features.
 
 For a new core, provide content detection, metadata, a core factory, platform
 services integration, bounded frame/audio output and deterministic tests.

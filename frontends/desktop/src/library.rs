@@ -34,14 +34,16 @@ pub fn discover(path: &str) -> Result<GameSource, String> {
         path.pop();
     } else if path.is_file() {
         if path.extension().is_some_and(|extension| {
-            extension.eq_ignore_ascii_case("gba") || extension.eq_ignore_ascii_case("nds")
+            ["gb", "gbc", "gba", "nds"]
+                .iter()
+                .any(|wanted| extension.eq_ignore_ascii_case(wanted))
         }) {
             return Ok(GameSource::Cartridge(path));
         }
-        return Err("Choose a game directory, Game.ini, or a .gba/.nds ROM".into());
+        return Err("Choose a game directory, Game.ini, or a .gb/.gbc/.gba/.nds ROM".into());
     }
     if !path.is_dir() {
-        return Err("Choose a game directory, Game.ini, or a .gba/.nds ROM".into());
+        return Err("Choose a game directory, Game.ini, or a .gb/.gbc/.gba/.nds ROM".into());
     }
     if [
         "Game.ini",
@@ -64,13 +66,15 @@ pub fn discover(path: &str) -> Result<GameSource, String> {
         .filter(|entry| {
             entry.is_file()
                 && entry.extension().is_some_and(|extension| {
-                    extension.eq_ignore_ascii_case("gba") || extension.eq_ignore_ascii_case("nds")
+                    ["gb", "gbc", "gba", "nds"]
+                        .iter()
+                        .any(|wanted| extension.eq_ignore_ascii_case(wanted))
                 })
         })
         .collect();
     match roms.as_slice() {
         [rom] => Ok(GameSource::Cartridge(rom.clone())),
-        [] => Err("No RPG Maker game or .gba/.nds ROM found in that directory.".into()),
+        [] => Err("No RPG Maker game or .gb/.gbc/.gba/.nds ROM found in that directory.".into()),
         _ => Err("That folder contains multiple cartridge ROMs; choose one file instead.".into()),
     }
 }

@@ -12,7 +12,7 @@ The generic-core path is `cores/rgss/core/{lib,game,host}.rs`. Both prepare the
 game and archives before running Ruby. Keep these routes consistent when
 changing Game.ini/script selection. `--script` runs an explicit file;
 `--game` accepts a game directory or Game.ini, and the dispatcher also routes
-GBA/DS files to cartridge cores. The run parser requires one content source.
+cartridge files to cartridge cores. The run parser requires one content source.
 
 The Ruby shim, compatibility helpers and RPG data definitions are assembled
 from `crates/fanplay-rgss/src/ruby/`. The native bindings live under

@@ -75,7 +75,7 @@ on(canvas, 'drop', event => {
   event.preventDefault();
   if (event.dataTransfer.files.length !== 1) return;
   const file = event.dataTransfer.files[0];
-  if (/\.(gba|nds)$/i.test(file.name)) launcher.rom(file);
+  if (/\.(gb|gbc|gba|nds)$/i.test(file.name)) launcher.rom(file);
   else launcher.zip(file);
 });
 function paint() {

@@ -843,7 +843,7 @@ fn launcher_endpoints() -> Vec<Endpoint> {
             Scope::Launcher,
         )
         .mutates()
-        .parameter(Parameter::body("path", ParameterType::String, true, "Game directory, Game.ini, or .gba/.nds file"))
+        .parameter(Parameter::body("path", ParameterType::String, true, "Game directory, Game.ini, or .gb/.gbc/.gba/.nds file"))
         .parameter(Parameter::body("launch", ParameterType::Boolean, false, "Launch immediately after adding")),
         Endpoint::new(
             "launcher.launch",

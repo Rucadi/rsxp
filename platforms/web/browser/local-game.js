@@ -4,17 +4,17 @@
 
 /** True for single-file cartridge content the shared core registry accepts. */
 export function isRom(name = '') {
-  return /\.(gba|nds)$/i.test(name);
+  return /\.(gb|gbc|gba|nds)$/i.test(name);
 }
 
 /**
- * Wraps a selected GBA/DS ROM in the same interface the RGSS library uses.
+ * Wraps a selected cartridge ROM in the same interface the RGSS library uses.
  * `rom` tells `app.js` to start a cartridge core instead of ruby.wasm.
  */
 export function createRomGame(file, { playerName = 'player.html' } = {}) {
-  if (!file?.name || !isRom(file.name)) throw new Error('Choose a .gba or .nds ROM file.');
+  if (!file?.name || !isRom(file.name)) throw new Error('Choose a .gb, .gbc, .gba or .nds ROM file.');
   const name = file.name;
-  const title = name.replace(/\.(gba|nds)$/i, '') || 'Cartridge game';
+  const title = name.replace(/\.(gb|gbc|gba|nds)$/i, '') || 'Cartridge game';
   return {
     folder: title,
     title,

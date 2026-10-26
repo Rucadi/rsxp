@@ -147,7 +147,7 @@ impl Launcher {
         let mut launch = None;
         keyboard_navigation(ui.ctx(), &mut self.page);
 
-        // Drops are launch shortcuts: a folder, Game.ini, or a GBA/NDS ROM.
+        // Drops are launch shortcuts: a folder, Game.ini, or a cartridge ROM.
         if let Some(path) = ui.ctx().input(|input| {
             input
                 .raw
@@ -157,7 +157,7 @@ impl Launcher {
         }) {
             let supported = path.is_dir()
                 || path.extension().is_some_and(|extension| {
-                    ["gba", "nds", "ini"]
+                    ["gb", "gbc", "gba", "nds", "ini"]
                         .iter()
                         .any(|wanted| extension.to_string_lossy().eq_ignore_ascii_case(wanted))
                 });
@@ -313,7 +313,7 @@ impl Launcher {
                 });
             ui.add_space(10.0);
             ui.label(
-                egui::RichText::new("RPG MAKER · GBA · NDS")
+                egui::RichText::new("RPG MAKER · GB / GBC · GBA · NDS")
                     .font(theme::mono_font(9.0))
                     .color(theme::TEXT_FAINT),
             );
@@ -353,8 +353,9 @@ impl Launcher {
                             .hint_text("Search games…")
                             .desired_width((ui.available_width() * 0.28).clamp(150.0, 260.0)),
                     );
-                    for platform in ["All platforms", "RPG Maker", "GBA", "NDS"] {
+                    for platform in ["All platforms", "RPG Maker", "GB / GBC", "GBA", "NDS"] {
                         let tone = match platform {
+                            "GB / GBC" => Tone::Warning,
                             "GBA" => Tone::Cyan,
                             "NDS" => Tone::Pink,
                             "RPG Maker" => Tone::Lime,
@@ -368,7 +369,7 @@ impl Launcher {
                     if theme::button_sized(ui, "+ Game file", ButtonKind::Primary, ButtonSize::Sm)
                         .clicked()
                         && let Some(path) = rfd::FileDialog::new()
-                            .add_filter("Games", &["ini", "gba", "nds"])
+                            .add_filter("Games", &["ini", "gb", "gbc", "gba", "nds"])
                             .pick_file()
                     {
                         *launch = Some(path);
@@ -399,6 +400,7 @@ impl Launcher {
             for (gi, game) in repo.games.iter().enumerate() {
                 let platform = match game.platform {
                     provision::Platform::RpgMaker => "RPG Maker",
+                    provision::Platform::Gbc => "GB / GBC",
                     provision::Platform::Gba => "GBA",
                     provision::Platform::Nds => "NDS",
                 };
@@ -432,6 +434,7 @@ impl Launcher {
                 .to_ascii_lowercase()
                 .as_str()
             {
+                "gb" | "gbc" => "GB / GBC",
                 "gba" => "GBA",
                 "nds" => "NDS",
                 _ => "RPG Maker",
@@ -526,6 +529,7 @@ impl Launcher {
                             .as_ref()
                             .and_then(|art| self.cover_texture(ui.ctx(), &prefs_root, art));
                         let (tone, accent) = match platform.as_str() {
+                            "GB / GBC" => (Tone::Warning, theme::WARNING),
                             "GBA" => (Tone::Cyan, theme::CYAN),
                             "NDS" => (Tone::Pink, theme::PINK),
                             _ => (Tone::Lime, theme::LIME),
@@ -1053,7 +1057,7 @@ impl Launcher {
             if theme::button_sized(ui, "Import base ROM…", ButtonKind::Primary, ButtonSize::Md)
                 .clicked()
                 && let Some(path) = rfd::FileDialog::new()
-                    .add_filter("Base ROM", &["gba", "nds"])
+                    .add_filter("Base ROM", &["gb", "gbc", "gba", "nds"])
                     .pick_file()
             {
                 let root = self.root.clone();

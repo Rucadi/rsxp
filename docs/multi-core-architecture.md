@@ -2,8 +2,9 @@
 
 The source of the contract is [`fanplay-core`](../crates/fanplay-core/src/lib.rs).
 The implementation is statically linked: `fanplay-cores::catalog()` registers
-cores selected by Cargo features. It enables GBA and DS by default; RGSS is
-optional. Core IDs remain `gba`, `nds`, and `rgss` across the project rename.
+cores selected by Cargo features. It enables GB/GBC, GBA and DS by default;
+RGSS is optional. Core IDs remain `gbc`, `gba`, `nds`, and `rgss` across the
+project rename.
 
 ## Boundary
 
@@ -34,14 +35,13 @@ respect its process-level ownership requirements.
 
 | Core | Source | Backend / behavior |
 | --- | --- | --- |
+| GB / GBC | `cores/gbc/core` | `mvdnes/rboy`; 160×144 DMG/CGB output, stereo PCM, MBC saves and state support |
 | GBA | `cores/gba/core` | RustBoyAdvance-NG; 240×160 output, embedded BIOS replacement, stereo PCM, battery/state support |
 | DS | `cores/nds/core` | Dust; stacked 256×384 output, touch on lower screen, software rendering by default, optional native wgpu |
 | RGSS | `cores/rgss/core` | `fanplay-rgss` plus MRI bindings; generic adapter in addition to the desktop's direct RGSS runtime |
 
-There is no GB/GBC core in this checkout. Future systems need a real adapter,
-registration, host support and conformance tests before being documented as
-supported. UI integration goes into `crates/fanplay-<system>` without moving
-emulator code out of `cores/<system>`.
+UI integration goes into `crates/fanplay-<system>` without moving emulator code
+out of `cores/<system>`.
 
 ## Saves and identity
 
@@ -54,7 +54,7 @@ own data-directory policy and accepts `--save-dir`.
 
 `fanplay-core/src/state.rs` wraps backend state with a version, core ID, state
 revision, content hash and integrity check. Corrupt or incompatible envelopes
-are rejected before restore. GBA and DS tests exercise deterministic replay
+are rejected before restore. Cartridge tests exercise deterministic replay
 and rejection behavior. These states are backend-version-specific, not an
 interchange format with upstream emulator applications.
 

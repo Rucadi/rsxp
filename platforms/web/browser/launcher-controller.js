@@ -85,7 +85,7 @@ export function createLauncher({ bundle, supplied, document, location, fetch, up
     },
     rom(file) {
       if (!file) return;
-      if (!isRom(file.name)) { report('Choose a .gba or .nds ROM file.'); return; }
+      if (!isRom(file.name)) { report('Choose a .gb, .gbc, .gba or .nds ROM file.'); return; }
       return prepare(async () => {
         const game = createRomGame(file, {
           playerName: decodeURIComponent(location.pathname.split('/').pop() || 'player.html'),

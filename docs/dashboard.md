@@ -14,7 +14,7 @@ workspace and library/session widgets live in `crates/fanplay-ui/src/ui`.
 The native and browser hosts share widgets but expose different import and
 filesystem capabilities; they are not identical applications.
 
-The library can launch RPG Maker folders/Game.ini and GBA/DS ROMs. Provisioned
+The library can launch RPG Maker folders/Game.ini and GB/GBC, GBA or DS ROMs. Provisioned
 catalog entries can be installed after download/hash validation. Selection is
 not a compatibility certification. See [repositories and storage](software-provision.md).
 

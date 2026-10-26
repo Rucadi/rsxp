@@ -37,7 +37,9 @@ FANPLAY/
   repositories/sources.json         # legacy source list, migrated once
   repositories/cache/<catalog>.json
   games/<repository-id>/<game-id>/
-  roms/<sha256>.gba                 # or .nds
+  roms/<sha256>.gb                  # or .gbc/.gba/.nds
+  saves/gbc/<content-id>/save/
+  saves/gbc/<content-id>/states/
   saves/gba/<content-id>/save/
   saves/gba/<content-id>/states/
   saves/nds/<content-id>/save/
@@ -70,11 +72,11 @@ Each game has:
 
 - `id`: unique inside the repository, ASCII letters, digits, `_` or `-`.
 - `title`, `version`, optional `description`.
-- `platform`: `rpg-maker`, `gba`, or `nds`.
+- `platform`: `rpg-maker`, `gbc`, `gba`, or `nds`.
 - `download`: `url`, `sha256` (64 hexadecimal characters), and `format` (`rom`,
   `zip`, or `ips`). URLs may be HTTPS, or relative to the catalog. Local catalogs
   may also reference absolute local paths. Remote catalogs cannot read local files.
-- `entrypoint`: safe relative path to the `.gba`, `.nds`, or `Game.ini` file.
+- `entrypoint`: safe relative path to the `.gb`, `.gbc`, `.gba`, `.nds`, or `Game.ini` file.
   RPG Maker requires ZIP packaging; cartridge games support raw ROMs or ZIPs.
 - For IPS: `base` with descriptive `title` and exact `sha256`, plus mandatory
   `output_sha256` for the resulting cartridge ROM. IPS is only for GBA/NDS.

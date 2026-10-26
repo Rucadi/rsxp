@@ -55,7 +55,7 @@ pub struct SessionCapabilities {
     pub ruby_jit: bool,
     pub zip_import: bool,
     pub torrent_import: bool,
-    /// A host-provided single-file picker for GBA/DS ROMs.
+    /// A host-provided single-file picker for cartridge ROMs.
     pub rom_import: bool,
 }
 impl SessionCapabilities {
@@ -215,7 +215,7 @@ impl SessionPanel {
                     ui.vertical(|ui| {
                         ui.label(theme::display("Game library", 24.0));
                         ui.label(
-                            egui::RichText::new("RPG Maker · GBA · NDS · One neon home")
+                            egui::RichText::new("RPG Maker · GB / GBC · GBA · NDS · One neon home")
                                 .font(theme::mono_font(11.0))
                                 .color(theme::TEXT_MUTED),
                         );

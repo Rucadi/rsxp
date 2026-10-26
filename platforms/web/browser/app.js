@@ -303,7 +303,7 @@ let engineReady = false;
 let gameStarted = false;
 // True once the WebGPU + egui workspace is active.
 let gpuMode = false;
-// GBA/DS sessions route keyboard, mouse and gamepad input to the shared core
+// Cartridge sessions route keyboard, mouse and gamepad input to the shared core
 // control plane instead of the RGSS runtime.
 let cartridgeMode = false;
 

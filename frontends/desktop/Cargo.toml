@@ -12,6 +12,7 @@ fanplay-control = { path = "../../crates/fanplay-control" }
 serde = { version = "1", features = ["derive"] }
 fanplay-core-nds = { path = "../../cores/nds/core", optional = true }
 fanplay-core-gba = { path = "../../cores/gba/core", optional = true }
+fanplay-core-gbc = { path = "../../cores/gbc/core", optional = true }
 fanplay-rgss = { path = "../../crates/fanplay-rgss", features = ["gpu", "game-api", "portable-media"], optional = true }
 fanplay-core = { path = "../../crates/fanplay-core" }
 fanplay-extension-api = { path = "../../crates/fanplay-extension-api" }
@@ -50,7 +51,8 @@ gtk = "0.18"
 gif = "0.14"
 
 [features]
-default = ["gpu", "gba", "nds", "rgss"]
+default = ["gpu", "gbc", "gba", "nds", "rgss"]
+gbc = ["dep:fanplay-core-gbc", "fanplay-cores/gbc"]
 gba = ["dep:fanplay-core-gba", "fanplay-cores/gba"]
 nds = ["dep:fanplay-core-nds", "fanplay-cores/nds"]
 rgss = ["dep:fanplay-rgss", "dep:fanplay-ui", "dep:ruby_rgss_core", "fanplay-cores/rgss"]

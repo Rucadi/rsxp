@@ -1,7 +1,7 @@
 # Fanplay
 
 Fanplay is an experimental player and game library for fangames. It runs RPG
-Maker RGSS games and Game Boy Advance / Nintendo DS cartridges through a
+Maker RGSS games and Game Boy / Game Boy Color / Game Boy Advance / Nintendo DS cartridges through a
 shared desktop workspace, with a separate browser frontend. Games and
 commercial ROMs are not included. Compatibility varies by game.
 
@@ -10,6 +10,7 @@ commercial ROMs are not included. Compatibility varies by game.
 | Area | Current implementation |
 | --- | --- |
 | RPG Maker | Rust RGSS runtime, Ruby compatibility scripts, and native MRI bindings for RGSS 1–3; incomplete compatibility |
+| GB / GBC | `mvdnes/rboy` Rust core, DMG/CGB mode detection, input, audio, cartridge saves and save states |
 | GBA | RustBoyAdvance-NG adapter, embedded open-source BIOS, input, audio, battery saves and save states |
 | DS | Dust adapter, dual screens, touch, audio, cartridge saves and save states; software renderer by default |
 | Desktop | Game library, repositories, isolated game processes, shared egui workspace, settings, backups and local control API |
@@ -29,11 +30,13 @@ nix develop path:.
 cargo build --release -p fanplay-desktop
 cargo run --release -p fanplay-desktop --bin fanplay
 cargo run --release -p fanplay-desktop -- run --game /path/to/game/Game.ini
+cargo run --release -p fanplay-desktop -- run --game /path/to/game.gb
+cargo run --release -p fanplay-desktop -- run --game /path/to/game.gbc
 cargo run --release -p fanplay-desktop -- run --game /path/to/game.gba
 cargo run --release -p fanplay-desktop -- run --game /path/to/game.nds
 ```
 
-The desktop defaults are `gpu`, `gba`, `nds`, and `rgss`. Rust packages declare
+The desktop defaults are `gpu`, `gbc`, `gba`, `nds`, and `rgss`. Rust packages declare
 1.95 or newer where specified, but Dust also uses unstable APIs: use the
 project's Nix toolchain or a compatible nightly. Native desktop builds need
 MRI Ruby, libclang, audio/window libraries and, on Linux, GTK/WebKit for plugin
@@ -51,7 +54,7 @@ cargo run -p fanplay-core-runner -- --content /path/to/game.gba \
   --frames 120 --output /tmp/gba.ppm
 ```
 
-The headless core runner enables GBA and DS by default; RGSS is opt-in and needs
+The headless core runner enables GB/GBC, GBA and DS by default; RGSS is opt-in and needs
 MRI. Desktop `--renderer auto|wgpu|software` selects RGSS composition, not the
 DS renderer. `FANPLAY_NDS_RENDERER=wgpu` opts into native DS GPU rendering with a
 software fallback. See [development and validation](docs/development.md).
@@ -72,13 +75,14 @@ flowchart TD
     UI --> RGSS[fanplay-rgss: RPG Maker runtime services]
     Desktop --> Registry[fanplay-cores: static registry]
     Browser --> Registry
+    Registry --> GBC[cores/gbc: emulator adapter]
     Registry --> GBA[cores/gba: emulator]
     Registry --> NDS[cores/nds: emulator and vendor patches]
     Registry -. RGSS feature .-> RGSSCore[cores/rgss/core: adapter]
     RGSSCore --> RGSS
 ```
 
-**Emulators stay in `cores/gba` and `cores/nds`.** `fanplay-gba` and `fanplay-nds`
+**Emulators stay in `cores/gbc`, `cores/gba` and `cores/nds`.** `fanplay-gba` and `fanplay-nds`
 own only Fanplay interface, GUI and connectivity integration. They do not
 link the emulator backends. The shared UI still depends on RGSS services;
 it is not yet a completely engine-independent application shell.

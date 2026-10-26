@@ -1,7 +1,7 @@
 # Core boundaries and remaining work
 
 The implemented core contract, static registry, native worker, save envelopes,
-and GBA/DS adapters are documented in [multi-core architecture](multi-core-architecture.md).
+and cartridge adapters are documented in [multi-core architecture](multi-core-architecture.md).
 This file is a future-work list, not another competing architecture guide.
 
 - Make the shared graphical shell less dependent on RGSS services.

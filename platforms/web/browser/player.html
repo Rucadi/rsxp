@@ -20,7 +20,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);c
 <p id="launch-status" role="status" aria-live="polite">Starting workspace…</p>
 <input id="game-folder" type="file" webkitdirectory multiple hidden>
 <input id="game-zip" type="file" accept=".zip,application/zip" hidden>
-<input id="game-rom" type="file" accept=".gba,.nds,application/octet-stream" hidden>
+<input id="game-rom" type="file" accept=".gb,.gbc,.gba,.nds,application/octet-stream" hidden>
 <script id="fanplay-payload" type="application/json">__FANPLAY_PAYLOAD__</script>
 <script type="module">
 const payload = JSON.parse(document.getElementById('fanplay-payload').textContent);

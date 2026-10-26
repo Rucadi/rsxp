@@ -26,7 +26,7 @@ Sources:
 - `platforms/web/engine/src/lib.rs`: WASM exports and shared UI integration.
 
 The shared application still depends on `fanplay-rgss` for bitmap, controls and
-runtime-service integration. It is not a fully generic shell. The GBA/DS UI
+runtime-service integration. It is not a fully generic shell. The cartridge UI
 crates have no emulator dependency; core execution stays under `cores/`.
 
 There are Android-specific eframe/winit dependencies and package metadata in

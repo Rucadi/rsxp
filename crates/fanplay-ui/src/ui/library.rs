@@ -19,6 +19,7 @@ fn title(path: &str) -> &str {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Platform {
     RpgMaker,
+    Gbc,
     Gba,
     Nds,
 }
@@ -29,6 +30,7 @@ impl Platform {
             .rsplit_once('.')
             .map(|(_, extension)| extension.to_ascii_lowercase());
         match extension.as_deref() {
+            Some("gb" | "gbc") => Self::Gbc,
             Some("gba") => Self::Gba,
             Some("nds") => Self::Nds,
             _ => Self::RpgMaker,
@@ -38,6 +40,7 @@ impl Platform {
     fn label(self) -> &'static str {
         match self {
             Self::RpgMaker => "RPG Maker",
+            Self::Gbc => "GB / GBC",
             Self::Gba => fanplay_gba::ui::LABEL,
             Self::Nds => fanplay_nds::ui::LABEL,
         }
@@ -46,6 +49,7 @@ impl Platform {
     fn tone(self) -> Tone {
         match self {
             Self::RpgMaker => Tone::Lime,
+            Self::Gbc => Tone::Warning,
             Self::Gba => Tone::Cyan,
             Self::Nds => Tone::Pink,
         }
@@ -60,6 +64,10 @@ impl Platform {
             Self::RpgMaker => (
                 egui::Color32::from_rgb(12, 40, 30),
                 egui::Color32::from_rgb(32, 92, 66),
+            ),
+            Self::Gbc => (
+                egui::Color32::from_rgb(56, 42, 22),
+                egui::Color32::from_rgb(126, 91, 39),
             ),
             Self::Gba => fanplay_gba::ui::cover_colors(),
             Self::Nds => fanplay_nds::ui::cover_colors(),
@@ -153,7 +161,7 @@ impl SessionPanel {
                     ui,
                     "✦",
                     "Your next adventure starts here",
-                    "Add a game folder, ZIP, GBA, or NDS ROM below. Your library stays on this device.",
+                    "Add a game folder, ZIP, GB/GBC, GBA, or NDS ROM below. Your library stays on this device.",
                 );
             } else {
                 theme::empty_state(
@@ -281,8 +289,9 @@ impl SessionPanel {
                         self.library_query.clear();
                     }
                     ui.separator();
-                    for platform in ["All", "RPG Maker", "GBA", "NDS"] {
+                    for platform in ["All", "RPG Maker", "GB / GBC", "GBA", "NDS"] {
                         let tone = match platform {
+                            "GB / GBC" => Tone::Warning,
                             "GBA" => Tone::Cyan,
                             "NDS" => Tone::Pink,
                             "RPG Maker" => Tone::Lime,
@@ -402,7 +411,7 @@ impl SessionPanel {
                         actions.import_zip = true;
                     }
                     if self.capabilities.rom_import
-                        && theme::button(ui, "Open GBA / NDS ROM", ButtonKind::Ghost).clicked()
+                        && theme::button(ui, "Open GB / GBC / GBA / NDS ROM", ButtonKind::Ghost).clicked()
                     {
                         actions.browse_game_file = true;
                     }
@@ -424,7 +433,7 @@ impl SessionPanel {
                 }
                 if self.capabilities.rom_import {
                     ui.label(
-                        egui::RichText::new("GBA and NDS ROMs are read locally on this device.")
+                        egui::RichText::new("GB/GBC, GBA and NDS ROMs are read locally on this device.")
                             .font(theme::body_font(11.0))
                             .color(theme::TEXT_FAINT),
                     );
@@ -469,7 +478,7 @@ impl SessionPanel {
                                 ui.add(
                                     egui::TextEdit::singleline(&mut self.source)
                                         .desired_width((ui.available_width() - 170.0).max(140.0))
-                                        .hint_text("Paste a game folder, Game.ini, or .gba/.nds path…"),
+                                        .hint_text("Paste a game folder, Game.ini, or .gb/.gbc/.gba/.nds path…"),
                                 );
                                 if theme::button_sized(
                                     ui,

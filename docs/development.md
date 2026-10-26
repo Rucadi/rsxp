@@ -15,7 +15,7 @@ mobile workspace in this checkout.
 ## Commands
 
 ```sh
-# Default desktop: GPU + RGSS + GBA + DS
+# Default desktop: GPU + RGSS + GB/GBC + GBA + DS
 cargo build --release -p fanplay-desktop
 cargo run -p fanplay-desktop --bin fanplay -- --help
 
@@ -26,7 +26,7 @@ cargo run -p fanplay-core-runner --no-default-features --features gba -- \
 
 # Contract, emulators and shared interface
 cargo test -p fanplay-core -p fanplay-frontend -p fanplay-cores
-cargo test -p fanplay-core-gba -p fanplay-core-nds
+cargo test -p fanplay-core-gbc -p fanplay-core-gba -p fanplay-core-nds
 cargo test -p fanplay-gba -p fanplay-nds -p fanplay-ui
 
 # RGSS engine without native MRI; native adapter needs the development shell

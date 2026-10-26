@@ -1,6 +1,6 @@
 # Remaining architecture work
 
-This is a backlog, not a description of unimplemented cores. GBA and DS are
+This is a backlog, not a description of unimplemented cores. Cartridge cores are
 implemented. Shared workspace source now lives in `fanplay-ui`; interface code
 lives in `fanplay-gba` and `fanplay-nds`; emulator code remains under `cores/`.
 See [architecture](architecture.md) for the current graph.
@@ -15,6 +15,6 @@ Remaining boundaries visible in the implementation:
 
 Changes should preserve existing behavior and use the checks in
 [development](development.md). Keep emulator tests separate from UI tests;
-do not move GBA/DS emulation into interface crates to resolve dependency work.
+do not move cartridge emulation into interface crates to resolve dependency work.
 Prior benchmark records are historical evidence, not acceptance measurements
 for an untested implementation.

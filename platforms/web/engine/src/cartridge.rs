@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! GBA and DS cartridge sessions for the browser.
+//! Game Boy, GBA and DS cartridge sessions for the browser.
 //!
 //! The RGSS path in `app.js` runs Ruby in a Fiber and calls the engine per
 //! frame. Cartridge cores own a native `Core::run` loop instead, so the page
@@ -251,7 +251,7 @@ thread_local! {
     static SESSION: RefCell<Option<CartridgeSession>> = const { RefCell::new(None) };
 }
 
-/// Loads a GBA or DS ROM. Returns the core id (`gba`/`nds`).
+/// Loads a Game Boy, GBA or DS ROM. Returns the selected core id.
 #[wasm_bindgen]
 pub fn web_core_init(name: &str, bytes: &[u8]) -> Result<String, JsValue> {
     console_error_panic_hook::set_once();
@@ -259,10 +259,10 @@ pub fn web_core_init(name: &str, bytes: &[u8]) -> Result<String, JsValue> {
         .extension()
         .and_then(|extension| extension.to_str())
         .map(str::to_ascii_lowercase)
-        .ok_or_else(|| JsValue::from_str("The ROM must be a .gba or .nds file"))?;
-    if !matches!(extension.as_str(), "gba" | "nds") {
+        .ok_or_else(|| JsValue::from_str("The ROM must be a .gb, .gbc, .gba or .nds file"))?;
+    if !matches!(extension.as_str(), "gb" | "gbc" | "gba" | "nds") {
         return Err(JsValue::from_str(&format!(
-            "Unsupported cartridge file '{name}'; expected a .gba or .nds ROM"
+            "Unsupported cartridge file '{name}'; expected a .gb, .gbc, .gba or .nds ROM"
         )));
     }
     let path = Path::new(name);

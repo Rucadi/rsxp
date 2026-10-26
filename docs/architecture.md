@@ -9,7 +9,8 @@ and shared services. This is the implemented layout, not a target architecture.
 | --- | --- |
 | `crates/fanplay-core` | Core trait, content, input, audio/video contracts, commands, events and state envelopes |
 | `crates/fanplay-frontend` | Content routing, native core workers, pixel conversion, content identity and save storage |
-| `crates/fanplay-cores` | Compile-time core registry; default features `gba` and `nds`, optional `rgss` |
+| `crates/fanplay-cores` | Compile-time core registry; default features `gbc`, `gba` and `nds`, optional `rgss` |
+| `cores/gbc/core` / `fanplay-core-gbc` | `mvdnes/rboy` Rust DMG/CGB adapter |
 | `cores/gba/core` / `fanplay-core-gba` | RustBoyAdvance-NG adapter and BIOS assets |
 | `cores/nds/core` / `fanplay-core-nds` | Dust adapter; local dependency patches remain in `cores/nds/vendor` |
 | `cores/rgss/core` / `fanplay-core-rgss` | Generic-core adapter for the RGSS runtime |
@@ -38,7 +39,7 @@ flowchart TD
     Dispatch -->|interactive run| Dashboard
     Dispatch -->|headless run| Runner[Runtime dispatcher]
     Dashboard -->|spawn child + session transport| Runner
-    Runner -->|GBA or DS content| Cartridge[cartridge.rs]
+    Runner -->|cartridge content| Cartridge[cartridge.rs]
     Cartridge --> Catalog[fanplay-cores registry]
     Catalog --> Worker[fanplay-frontend core worker]
     Worker --> Core[GBA / DS core]

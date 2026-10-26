@@ -2,7 +2,7 @@
 //! Desktop host for cartridge cores.
 //!
 //! Content is routed by [`fanplay_frontend::CoreCatalog`], so this module has no
-//! knowledge of GBA or DS. It supplies the generic media bridge:
+//! knowledge of a particular console. It supplies the generic media bridge:
 //!
 //! - a reusable ARGB frame buffer converted once per frame and sent to the
 //!   dashboard transport (or retained for a headless PPM capture),

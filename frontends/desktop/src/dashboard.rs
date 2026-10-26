@@ -448,6 +448,13 @@ impl Session {
                     .extension()
                     .is_some_and(|extension| extension.eq_ignore_ascii_case("nds"))
         });
+        let is_gbc = args.windows(2).any(|pair| {
+            pair[0] == "--game"
+                && PathBuf::from(&pair[1]).extension().is_some_and(|extension| {
+                    extension.eq_ignore_ascii_case("gb")
+                        || extension.eq_ignore_ascii_case("gbc")
+                })
+        });
         command
             .arg("run")
             .args(args)
@@ -599,7 +606,7 @@ impl Session {
             }
         });
         Ok(Self {
-            core_id: if is_nds { "nds" } else { "rgss" },
+            core_id: if is_nds { "nds" } else if is_gbc { "gbc" } else { "rgss" },
             child,
             exchange,
             stopping,
@@ -1016,7 +1023,9 @@ impl DesktopApp {
             .map(|a| PathBuf::from(&a[1]));
         let cartridge = game_path.as_ref().filter(|path| {
             path.extension().is_some_and(|extension| {
-                extension.eq_ignore_ascii_case("gba") || extension.eq_ignore_ascii_case("nds")
+                ["gb", "gbc", "gba", "nds"]
+                    .iter()
+                    .any(|wanted| extension.eq_ignore_ascii_case(wanted))
             })
         });
         let root = game_path
@@ -1684,7 +1693,7 @@ impl eframe::App for DesktopApp {
         }
         if actions.browse {
             if let Some(path) = rfd::FileDialog::new()
-                .set_title("Choose an RPG Maker game folder or GBA/DS ROM")
+                .set_title("Choose an RPG Maker game folder or cartridge ROM")
                 .pick_folder()
             {
                 let panel = self.shared.workspace.session.as_mut().unwrap();
@@ -1700,8 +1709,8 @@ impl eframe::App for DesktopApp {
         }
         if actions.browse_game_file {
             if let Some(path) = rfd::FileDialog::new()
-                .set_title("Choose Game.ini or a GBA/DS ROM")
-                .add_filter("Games", &["ini", "gba", "nds"])
+                .set_title("Choose Game.ini or a cartridge ROM")
+                .add_filter("Games", &["ini", "gb", "gbc", "gba", "nds"])
                 .pick_file()
             {
                 let panel = self.shared.workspace.session.as_mut().unwrap();
@@ -1855,7 +1864,9 @@ fn save_location(root: &std::path::Path, source: &str) -> Option<(String, PathBu
         .extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| {
-            extension.eq_ignore_ascii_case("gba") || extension.eq_ignore_ascii_case("nds")
+            ["gb", "gbc", "gba", "nds"]
+                .iter()
+                .any(|wanted| extension.eq_ignore_ascii_case(wanted))
         });
     let save = if cartridge {
         let id = fanplay_frontend::ContentId::of_file(&path).ok()?;

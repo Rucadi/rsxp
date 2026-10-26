@@ -207,6 +207,7 @@ pub fn import_artwork(root: &Path, file: &Path) -> Result<String> {
 #[serde(rename_all = "kebab-case")]
 pub enum Platform {
     RpgMaker,
+    Gbc,
     Gba,
     Nds,
 }
@@ -254,12 +255,15 @@ impl Repository {
                 .extension()
                 .and_then(|s| s.to_str())
                 .unwrap_or("");
-            let expected = match g.platform {
-                Platform::RpgMaker => "ini",
-                Platform::Gba => "gba",
-                Platform::Nds => "nds",
+            let valid_extension = match g.platform {
+                Platform::RpgMaker => ext.eq_ignore_ascii_case("ini"),
+                Platform::Gbc => {
+                    ext.eq_ignore_ascii_case("gb") || ext.eq_ignore_ascii_case("gbc")
+                }
+                Platform::Gba => ext.eq_ignore_ascii_case("gba"),
+                Platform::Nds => ext.eq_ignore_ascii_case("nds"),
             };
-            if !ext.eq_ignore_ascii_case(expected) {
+            if !valid_extension {
                 return Err("Entrypoint does not match platform".into());
             }
             if g.platform == Platform::RpgMaker
@@ -381,8 +385,8 @@ pub fn import_base(root: &Path, path: &Path) -> Result<String> {
         .and_then(|s| s.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    if !["gba", "nds"].contains(&ext.as_str()) {
-        return Err("Choose a GBA or NDS ROM".into());
+    if !["gb", "gbc", "gba", "nds"].contains(&ext.as_str()) {
+        return Err("Choose a GB, GBC, GBA or NDS ROM".into());
     }
     let bytes = fetch(&path.to_string_lossy(), MAX_DOWNLOAD)?;
     let digest = hash(&bytes);
@@ -406,7 +410,9 @@ pub fn install(root: &Path, repo: &Repository, game: &Game) -> Result<PathBuf> {
                 let path = entry?.path();
                 if path.is_file()
                     && path.extension().is_some_and(|e| {
-                        e.eq_ignore_ascii_case("gba") || e.eq_ignore_ascii_case("nds")
+                        ["gb", "gbc", "gba", "nds"]
+                            .iter()
+                            .any(|wanted| e.eq_ignore_ascii_case(wanted))
                     })
                 {
                     let bytes = fetch(&path.to_string_lossy(), MAX_DOWNLOAD)?;

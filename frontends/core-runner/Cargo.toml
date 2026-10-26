@@ -8,7 +8,8 @@ description = "Headless runner for any FANPLAY core"
 publish = false
 
 [features]
-default = ["gba", "nds"]
+default = ["gbc", "gba", "nds"]
+gbc = ["fanplay-cores/gbc"]
 gba = ["fanplay-cores/gba"]
 nds = ["fanplay-cores/nds"]
 rgss = ["fanplay-cores/rgss"]

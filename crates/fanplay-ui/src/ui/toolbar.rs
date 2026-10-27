@@ -103,50 +103,52 @@ impl Workspace {
                     {
                         self.controller_settings_open = true;
                     }
-                    ui.menu_button("Speed", |ui| {
-                        ui.label(theme::eyebrow("Game speed"));
-                        let mut fast_forward = self.backend.fast_forward();
-                        if ui.checkbox(&mut fast_forward, "Uncapped (F11)").changed() {
-                            self.backend.set_fast_forward(fast_forward);
-                        }
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label("Target");
-                            for (label, multiplier) in [
-                                ("1×", 1u32),
-                                ("2×", 2),
-                                ("3×", 3),
-                                ("4×", 4),
-                                ("5×", 5),
-                                ("8×", 8),
-                            ] {
-                                if ui.button(label).clicked() {
-                                    self.backend.set_fast_forward(false);
-                                    self.backend.set_rate_override(
-                                        info.base_fps.saturating_mul(multiplier).max(1),
-                                    );
+                    if self.backend.supports_speed_control() {
+                        ui.menu_button("Speed", |ui| {
+                            ui.label(theme::eyebrow("Game speed"));
+                            let mut fast_forward = self.backend.fast_forward();
+                            if ui.checkbox(&mut fast_forward, "Uncapped (F11)").changed() {
+                                self.backend.set_fast_forward(fast_forward);
+                            }
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label("Target");
+                                for (label, multiplier) in [
+                                    ("1×", 1u32),
+                                    ("2×", 2),
+                                    ("3×", 3),
+                                    ("4×", 4),
+                                    ("5×", 5),
+                                    ("8×", 8),
+                                ] {
+                                    if ui.button(label).clicked() {
+                                        self.backend.set_fast_forward(false);
+                                        self.backend.set_rate_override(
+                                            info.base_fps.saturating_mul(multiplier).max(1),
+                                        );
+                                    }
                                 }
+                                if ui.button("Game rate").clicked() {
+                                    self.backend.set_fast_forward(false);
+                                    self.backend.set_rate_override(0);
+                                }
+                            });
+                            let current_rate = self.backend.current_rate();
+                            let mut fps = if current_rate == 0 { 60 } else { current_rate };
+                            if ui
+                                .add_enabled(
+                                    current_rate > 0,
+                                    egui::DragValue::new(&mut fps)
+                                        .range(1..=1000)
+                                        .speed(1.0)
+                                        .prefix("FPS "),
+                                )
+                                .changed()
+                            {
+                                self.backend.set_rate_override(fps);
                             }
-                            if ui.button("Game rate").clicked() {
-                                self.backend.set_fast_forward(false);
-                                self.backend.set_rate_override(0);
-                            }
+                            ui.weak("Changing the frame rate may change gameplay speed.");
                         });
-                        let current_rate = self.backend.current_rate();
-                        let mut fps = if current_rate == 0 { 60 } else { current_rate };
-                        if ui
-                            .add_enabled(
-                                current_rate > 0,
-                                egui::DragValue::new(&mut fps)
-                                    .range(1..=1000)
-                                    .speed(1.0)
-                                    .prefix("FPS "),
-                            )
-                            .changed()
-                        {
-                            self.backend.set_rate_override(fps);
-                        }
-                        ui.weak("Changing the frame rate may change gameplay speed.");
-                    });
+                    }
                     if info.supports_save_states {
                         ui.menu_button("States", |ui| {
                             ui.label(theme::eyebrow("Game snapshots"));

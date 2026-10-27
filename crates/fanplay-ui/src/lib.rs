@@ -2,6 +2,7 @@
 //! Shared eframe application, egui workspace, themes, and input controls for
 //! native and mobile runners. Frontends should use this crate as the
 //! public UI boundary; RGSS remains an implementation dependency underneath.
+#[cfg(feature = "game-api")]
 use base64::Engine as _;
 use fanplay_rgss::graphics::Bitmap;
 
@@ -12,6 +13,7 @@ pub mod ui;
 pub mod workspace_services;
 use fanplay_extension_api::{OperationRequest, OperationResponse, UiDescription};
 use fanplay_extensions::{ExtensionError, ExtensionHost, ExtensionPackage};
+#[cfg(feature = "game-api")]
 use std::{env, fs, path::PathBuf};
 pub use ui::session;
 pub use ui::theme;
@@ -39,6 +41,7 @@ pub struct SharedApp {
 }
 
 impl Default for SharedApp {
+    #[cfg(feature = "game-api")]
     fn default() -> Self {
         let mut plugins = ExtensionHost::new();
         let package = ExtensionPackage::from_rhai(
@@ -151,6 +154,25 @@ impl Default for SharedApp {
         )
         .with_plugins(plugins)
     }
+
+    #[cfg(not(feature = "game-api"))]
+    fn default() -> Self {
+        Self::new(
+            Workspace::new(),
+            WorkspaceInfo {
+                core_id: "gbc",
+                logical_size: (160, 144),
+                fps: 0.0,
+                base_fps: 60,
+                frames: 0,
+                supports_save_states: true,
+                state_slots: Vec::new(),
+                global_fullscreen: false,
+                show_fullscreen: true,
+                show_save_buttons: false,
+            },
+        )
+    }
 }
 
 /// Loads native Rhai plugins from `FANPLAY_EXTENSIONS_DIR`. The variable
@@ -158,6 +180,7 @@ impl Default for SharedApp {
 /// package subdirectories. Embedded bundles win when an external package uses
 /// the same ID; unrelated packages are loaded through the same manifest,
 /// capability, Rhai and Ruby-source paths as bundled plugins.
+#[cfg(feature = "game-api")]
 fn load_external_plugins(plugins: &mut ExtensionHost) {
     let Some(root) = env::var_os("FANPLAY_EXTENSIONS_DIR").map(PathBuf::from) else {
         return;
@@ -220,6 +243,7 @@ impl SharedApp {
         }
     }
 
+    #[cfg(feature = "game-api")]
     fn with_plugins(mut self, plugins: ExtensionHost) -> Self {
         self.extensions = plugins;
         self
@@ -232,6 +256,7 @@ impl SharedApp {
         self.extensions
             .load_rhai(id, source)
             .map_err(|error| self.record_extension_error(error))?;
+        #[cfg(feature = "game-api")]
         fanplay_rgss::api_bridge::register_extension_routes(self.extensions.route_aliases());
         Ok(())
     }
@@ -245,12 +270,27 @@ impl SharedApp {
         self.extensions
             .load(package)
             .map_err(|error| self.record_extension_error(error))?;
+        #[cfg(feature = "game-api")]
         fanplay_rgss::api_bridge::register_extension_routes(self.extensions.route_aliases());
         Ok(())
     }
 
     pub fn set_info(&mut self, info: WorkspaceInfo) {
         self.info = info;
+    }
+
+    /// Replaces the host services used by the shared workspace panels.
+    ///
+    /// Native runners keep the default local services; browser and other
+    /// sandboxed hosts inject their own adapter without duplicating the UI.
+    pub fn set_backend(&mut self, backend: Box<dyn ui::backend::Backend>) {
+        self.workspace.backend = backend;
+    }
+
+    /// Refreshes the frontend-owned save-state metadata without replacing the
+    /// rest of the current workspace information.
+    pub fn set_state_slots(&mut self, slots: Vec<StateSlot>) {
+        self.info.state_slots = slots;
     }
 
     /// Enables the toolbar's save export/import and snapshot actions for hosts
@@ -475,6 +515,7 @@ impl SharedApp {
     /// for Pokémon artwork; tilesets and autotiles retain their full bitmap
     /// because map plugins need the complete sheet. The response is not
     /// retained by the plugin host.
+    #[cfg(feature = "game-api")]
     pub fn plugin_asset_data_url(&self, category: &str, name: &str) -> Option<String> {
         let image = self.workspace.backend.asset_image(category, name)?;
         let bytes = if matches!(category, "Tilesets" | "Autotiles") {
@@ -573,6 +614,10 @@ impl SharedApp {
         self.output.game_rect
     }
 
+    pub fn touch_rect(&self) -> egui::Rect {
+        self.output.touch_rect
+    }
+
     pub fn request_repaint(&self) {
         if let Some(context) = &self.context {
             context.request_repaint();
@@ -622,7 +667,6 @@ impl eframe::App for SharedApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.draw(ui);
     }
-
 }
 
 #[cfg(target_os = "android")]

@@ -30,6 +30,13 @@ pub struct ContentId {
 }
 
 impl ContentId {
+    /// Hashes already-loaded content without performing filesystem I/O.
+    pub fn of_bytes(bytes: &[u8]) -> Self {
+        Self {
+            hash: content_hash(bytes),
+        }
+    }
+
     pub fn of(content: &Content) -> io::Result<Self> {
         match content.kind {
             ContentKind::File => {

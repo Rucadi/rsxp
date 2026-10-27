@@ -33,6 +33,10 @@ pub trait Backend {
     fn fast_forward(&self) -> bool;
     /// Enables or disables uncapped frame pacing.
     fn set_fast_forward(&self, enabled: bool);
+    /// Whether this host/core combination exposes speed controls.
+    fn supports_speed_control(&self) -> bool {
+        true
+    }
     /// Current target frame rate, or `0` when no override is in effect.
     fn current_rate(&self) -> u32;
     /// Sets a target frame rate; `0` restores the game's own pacing.

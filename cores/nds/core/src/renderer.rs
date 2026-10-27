@@ -14,17 +14,29 @@ pub struct Renderers {
     pub gpu_output: Option<GpuOutput>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub struct GpuOutput {
     channels: dust_wgpu_2d::FrontendChannels,
     _three_d_channels: dust_wgpu_3d::threaded::FrontendChannels,
     last_frame: Option<u64>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl GpuOutput {
     pub fn next_rgba(&mut self) -> Option<Vec<u8>> {
         let (index, frame) = self.channels.wait_newer_frame(self.last_frame);
         self.last_frame = Some(index);
         Some(frame)
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub struct GpuOutput;
+
+#[cfg(target_arch = "wasm32")]
+impl GpuOutput {
+    pub fn next_rgba(&mut self) -> Option<Vec<u8>> {
+        None
     }
 }
 struct Shared {
@@ -61,6 +73,7 @@ pub fn new() -> Renderers {
     // serialize emulation on `device.poll(Wait)` and then upload the same
     // pixels to the dashboard GPU. Keep the software path as the default
     // until the frontend can consume a GPU texture directly.
+    #[cfg(not(target_arch = "wasm32"))]
     if std::env::var("FANPLAY_NDS_RENDERER").as_deref() == Ok("wgpu") {
         match new_wgpu() {
             Ok(renderers) => {
@@ -78,6 +91,7 @@ pub fn new() -> Renderers {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn new_wgpu() -> Result<Renderers, String> {
     use dust_wgpu_2d::Renderer3dRx;
     use std::sync::Arc;

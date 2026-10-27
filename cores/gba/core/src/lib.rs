@@ -20,9 +20,9 @@ mod cheats;
 use fanplay_core::{
     content_hash, AudioInfo, Button, CommandOutcome, CommandRequest, Content, ContentKind,
     ContentProbe, Core, CoreCapabilities, CoreCommand, CoreContext, CoreError, CoreEvent, CoreInfo,
-    CoreLoadInfo, CoreRegistration, CoreRegistry, CoreResult, ExitStatus, InputInfo, PcmBuffer,
-    PixelFormat, PlatformError, PresentationSupport, ScreenInfo, ScreenRotation, StateEnvelope,
-    VideoFrame,
+    CoreLoadInfo, CoreRegistration, CoreRegistry, CoreResult, ExitStatus, InputInfo, LogLevel,
+    PcmBuffer, PixelFormat, PlatformError, PresentationSupport, ScreenInfo, ScreenRotation,
+    StateEnvelope, VideoFrame,
 };
 use rustboyadvance_core::keypad::KEYINPUT_ALL_RELEASED;
 use rustboyadvance_core::prelude::{
@@ -40,6 +40,10 @@ const DEFAULT_SAMPLE_RATE: u32 = 48_000;
 const BIOS_BYTES: usize = 0x4000;
 /// Open-source GBA BIOS replacement (Normmatt/VBA-M, GPL-2.0-or-later).
 const EMBEDDED_BIOS: &[u8; BIOS_BYTES] = include_bytes!("../assets/gba_bios.bin");
+const OFFICIAL_BIOS_SHA256: [u8; 32] = [
+    0xfd, 0x25, 0x47, 0x72, 0x4b, 0x50, 0x5f, 0x48, 0x7e, 0x6d, 0xcb, 0x29, 0xec, 0x2e, 0xcf, 0xf3,
+    0xaf, 0x35, 0xa8, 0x41, 0xa7, 0x7a, 0xb2, 0xe8, 0x5f, 0xd8, 0x73, 0x50, 0xab, 0xd3, 0x65, 0x70,
+];
 const FRAME_RATE: f64 = 59.7275;
 const AUDIO_SCRATCH: usize = 16_384;
 const STATE_REVISION: u32 = 1;
@@ -125,6 +129,7 @@ struct GbaAdapter {
     sample_rate: u32,
     cheats: cheats::GbaCheats,
     frames: u64,
+    commands: Vec<CommandRequest>,
     /// Used only when the host is big-endian; the common path is zero-copy.
     #[cfg(target_endian = "big")]
     video: Vec<u8>,
@@ -193,6 +198,10 @@ impl GbaAdapter {
                 }
             }
         }
+        context.platform.log(
+            LogLevel::Warn,
+            "GBA: using the embedded open-source BIOS replacement; a real 16 KiB gba_bios.bin may be required for some games",
+        );
         Ok(EMBEDDED_BIOS.to_vec())
     }
 
@@ -244,12 +253,25 @@ impl GbaAdapter {
             Some(16_384),
         );
         let mut core = GameBoyAdvance::new(self.bios.clone().into_boxed_slice(), cartridge, audio);
-        // Start directly in the cartridge with the backend's post-BIOS state.
-        // Keep the BIOS mapped for SWI services, but do not execute its boot
-        // sequence or run game frames before the host starts the core.
-        core.skip_bios();
-        // skip_bios changes PC/registers but does not refill the CPU pipeline.
-        core.cpu.reload_pipeline32();
+        if is_official_bios(&self.bios) {
+            // A real BIOS performs hardware initialization that some retail
+            // games depend on. Start from the reset vector instead of
+            // bypassing that sequence.
+            core.cpu.reset();
+            if let Some(context) = self.context.as_ref() {
+                context.platform.log(
+                    fanplay_core::LogLevel::Info,
+                    "GBA: running the official BIOS reset sequence",
+                );
+            }
+        } else {
+            // The embedded replacement is used without its boot logo. Keep
+            // the BIOS mapped for SWI services and start at the cartridge
+            // using the backend's post-BIOS register setup.
+            core.skip_bios();
+            // skip_bios changes PC/registers but does not refill the CPU pipeline.
+            core.cpu.reload_pipeline32();
+        }
         self.core = Some(core);
         self.audio_consumer = Some(consumer);
         self.frames = 0;
@@ -705,45 +727,51 @@ impl GbaAdapter {
         };
         self.cheats.apply(core);
         core.frame();
-        let pixels = core.get_frame_buffer();
-        debug_assert_eq!(pixels.len(), DISPLAY_WIDTH * DISPLAY_HEIGHT);
-        #[cfg(target_endian = "little")]
-        {
-            // RustBoyAdvance writes 0x00RRGGBB. In little-endian memory that is
-            // B, G, R, X; submit it zero-copy and let the frontend treat X as
-            // opaque.
-            let bytes: &[u8] = bytemuck::cast_slice(pixels);
-            if let Some(context) = self.context.as_mut() {
-                context.video.present(VideoFrame::bgrx8(
-                    DISPLAY_WIDTH as u32,
-                    DISPLAY_HEIGHT as u32,
-                    DISPLAY_WIDTH * 4,
-                    bytes,
-                ));
+        let context = &mut self.context;
+        // The current RustBoyAdvance API exposes a scoped framebuffer borrow.
+        // Keep the existing zero-copy little-endian presentation path without
+        // cloning the framebuffer once per frame.
+        core.with_frame_buffer(|pixels| {
+            debug_assert_eq!(pixels.len(), DISPLAY_WIDTH * DISPLAY_HEIGHT);
+            #[cfg(target_endian = "little")]
+            {
+                // RustBoyAdvance writes 0x00RRGGBB. In little-endian memory
+                // that is B, G, R, X; submit it zero-copy and let the frontend
+                // treat X as opaque.
+                let bytes: &[u8] = bytemuck::cast_slice(pixels);
+                if let Some(context) = context.as_mut() {
+                    context.video.present(VideoFrame::bgrx8(
+                        DISPLAY_WIDTH as u32,
+                        DISPLAY_HEIGHT as u32,
+                        DISPLAY_WIDTH * 4,
+                        bytes,
+                    ));
+                }
             }
-        }
-        #[cfg(target_endian = "big")]
-        {
-            if self.video.len() != pixels.len() * 4 {
-                self.video.resize(pixels.len() * 4, 0);
+            #[cfg(target_endian = "big")]
+            {
+                let video = &mut self.video;
+                if video.len() != pixels.len() * 4 {
+                    video.resize(pixels.len() * 4, 0);
+                }
+                for (pixel, out) in pixels.iter().zip(video.chunks_exact_mut(4)) {
+                    out.copy_from_slice(&[
+                        ((pixel >> 19) & 0xff) as u8,
+                        ((pixel >> 11) & 0xff) as u8,
+                        ((pixel >> 3) & 0xff) as u8,
+                        255,
+                    ]);
+                }
+                if let Some(context) = context.as_mut() {
+                    context.video.present(VideoFrame::rgba8(
+                        DISPLAY_WIDTH as u32,
+                        DISPLAY_HEIGHT as u32,
+                        DISPLAY_WIDTH * 4,
+                        video,
+                    ));
+                }
             }
-            for (pixel, out) in pixels.iter().zip(self.video.chunks_exact_mut(4)) {
-                out.copy_from_slice(&[
-                    ((pixel >> 19) & 0xff) as u8,
-                    ((pixel >> 11) & 0xff) as u8,
-                    ((pixel >> 3) & 0xff) as u8,
-                    255,
-                ]);
-            }
-            if let Some(context) = self.context.as_mut() {
-                context.video.present(VideoFrame::rgba8(
-                    DISPLAY_WIDTH as u32,
-                    DISPLAY_HEIGHT as u32,
-                    DISPLAY_WIDTH * 4,
-                    &self.video,
-                ));
-            }
-        }
+        });
         self.frames += 1;
     }
 
@@ -878,11 +906,59 @@ impl Core for GbaAdapter {
         self.emit_save_ram();
         Ok(ExitStatus::success())
     }
+
+    fn run_slice(&mut self) -> CoreResult<fanplay_core::RunSliceStatus> {
+        let control = self
+            .control
+            .clone()
+            .ok_or_else(|| CoreError::runtime("GBA core was not loaded"))?;
+        if self.core.is_none() {
+            return Err(CoreError::runtime("GBA core was not initialized"));
+        }
+        if control.should_stop() {
+            self.emit_save_ram();
+            return Ok(fanplay_core::RunSliceStatus::Exited(ExitStatus::success()));
+        }
+
+        let mut commands = std::mem::take(&mut self.commands);
+        self.apply_commands(&mut commands);
+        self.commands = commands;
+        if control.should_stop() {
+            self.emit_save_ram();
+            return Ok(fanplay_core::RunSliceStatus::Exited(ExitStatus::success()));
+        }
+        if control.paused() {
+            if let Some(context) = self.context.as_mut() {
+                context.audio.pause(true);
+            }
+            return Ok(fanplay_core::RunSliceStatus::Continue);
+        }
+        if let Some(context) = self.context.as_mut() {
+            context.audio.pause(false);
+        }
+
+        self.present_frame();
+        self.drain_audio();
+        if control
+            .frame_limit()
+            .is_some_and(|limit| self.frames >= limit)
+        {
+            self.emit_save_ram();
+            return Ok(fanplay_core::RunSliceStatus::Exited(ExitStatus::success()));
+        }
+        Ok(fanplay_core::RunSliceStatus::Continue)
+    }
 }
 
 fn read_bios_file(path: &Path) -> Option<Vec<u8>> {
     let bytes = std::fs::read(path).ok()?;
     (bytes.len() >= BIOS_BYTES).then(|| bytes[..BIOS_BYTES].to_vec())
+}
+
+fn is_official_bios(bytes: &[u8]) -> bool {
+    use sha2::{Digest, Sha256};
+
+    Sha256::digest(bytes).as_slice() == OFFICIAL_BIOS_SHA256
 }
 
 fn memory_arguments(arguments: &Value) -> Result<(&str, u32, u32), String> {
@@ -1060,10 +1136,10 @@ mod tests {
                 };
                 adapter.new_backend().unwrap();
                 let core = adapter.core.as_ref().unwrap();
-                assert!(core.cpu.bus.cartridge.get_gpio().is_some());
+                assert!(core.cpu.bus.borrow().cartridge.get_gpio().is_some());
                 adapter.reset().unwrap();
                 let core = adapter.core.as_ref().unwrap();
-                assert!(core.cpu.bus.cartridge.get_gpio().is_some());
+                assert!(core.cpu.bus.borrow().cartridge.get_gpio().is_some());
             }
         }
     }
@@ -1107,6 +1183,35 @@ mod tests {
                 0
             );
         }
+    }
+
+    #[test]
+    fn embedded_bios_swi_returns_to_cartridge_code() {
+        let mut rom = vec![0; 0x200];
+        let program = [
+            0xE3A0_000Au32, // MOV r0, #10
+            0xE3A0_1003,    // MOV r1, #3
+            0xEF06_0000,    // SWI 0x06 (Div)
+            0xEAFF_FFFE,    // loop after the BIOS returns
+        ];
+        for (index, instruction) in program.iter().enumerate() {
+            rom[index * 4..index * 4 + 4].copy_from_slice(&instruction.to_le_bytes());
+        }
+        let mut adapter = GbaAdapter {
+            bios: EMBEDDED_BIOS.to_vec(),
+            rom,
+            sample_rate: DEFAULT_SAMPLE_RATE,
+            ..Default::default()
+        };
+        adapter.new_backend().unwrap();
+        for _ in 0..4 {
+            adapter.core.as_mut().unwrap().frame();
+        }
+
+        let core = adapter.core.as_ref().unwrap();
+        assert_eq!(core.cpu.gpr[0], 3);
+        assert_eq!(core.cpu.gpr[1], 1);
+        assert_eq!(core.cpu.pc & !3, 0x0800_0014);
     }
 
     #[test]

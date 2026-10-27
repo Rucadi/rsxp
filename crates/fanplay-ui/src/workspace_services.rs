@@ -10,11 +10,13 @@
 //! rejects any category or name that is not a single normal path component
 //! (blocking `..` traversal) and uses the bounded background decoder in the
 //! private `assets` submodule.
+#[cfg(feature = "game-api")]
 mod assets;
 
 #[derive(Default)]
 pub struct LocalServices {
     pub game_root: Option<std::path::PathBuf>,
+    #[cfg(feature = "game-api")]
     assets: std::sync::OnceLock<assets::Assets>,
 }
 impl LocalServices {
@@ -81,6 +83,7 @@ impl crate::ui::backend::Backend for LocalServices {
             .get_or_init(|| assets::Assets::new(self.game_root.clone()))
             .image(category, name)
     }
+    #[cfg(feature = "game-api")]
     fn handle_plugin_operation(
         &self,
         operation: &str,

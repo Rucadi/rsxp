@@ -336,7 +336,7 @@ impl Workspace {
                 self.controls_visible = false;
             }
         }
-        if key_pressed(egui::Key::F11) {
+        if self.backend.supports_speed_control() && key_pressed(egui::Key::F11) {
             let fast_forward = self.backend.fast_forward();
             self.backend.set_fast_forward(!fast_forward);
         }

@@ -1,0 +1,52 @@
+[package]
+name = "fanplay-web"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "GPL-2.0-or-later"
+description = "Rust/WASM eframe frontend for FANPLAY"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+eframe = { version = "0.37.0", default-features = false, features = ["glow", "default_fonts"] }
+egui = { version = "0.37.0", features = ["default_fonts"] }
+fanplay-core = { path = "../../crates/fanplay-core" }
+fanplay-extension-api = { path = "../../crates/fanplay-extension-api" }
+fanplay-cores = { path = "../../crates/fanplay-cores", default-features = false, features = ["gbc", "gba", "nds"] }
+fanplay-frontend = { path = "../../crates/fanplay-frontend" }
+fanplay-rgss = { path = "../../crates/fanplay-rgss", default-features = false, features = ["portable-media"] }
+fanplay-ui = { path = "../../crates/fanplay-ui", features = ["game-api"] }
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp"] }
+serde_json = "1"
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+    "AudioBuffer",
+    "AudioContext",
+  "AudioDestinationNode",
+    "BaseAudioContext",
+    "AudioNode",
+    "AudioProcessingEvent",
+    "Blob",
+    "console",
+    "Document",
+    "Event",
+    "File",
+    "FileList",
+    "HtmlAnchorElement",
+    "HtmlCanvasElement",
+    "HtmlElement",
+    "HtmlInputElement",
+    "KeyboardEvent",
+    "Performance",
+    "ScriptProcessorNode",
+    "Storage",
+    "Url",
+    "Window",
+] }
+

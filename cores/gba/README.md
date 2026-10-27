@@ -18,8 +18,9 @@ Third-party license text: [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 The open-source Normmatt/VBA-M BIOS replacement is embedded in the core binary
 (16 KiB, from [ReGBA](https://github.com/Nebuleon/ReGBA/blob/master/bios/gba_bios.bin)).
-No external BIOS is required. A user-provided BIOS can still override it in this
-order:
+This is not Nintendo's official BIOS dump. No external BIOS is required for
+basic operation, but a user-provided dump can override it for games that depend
+on BIOS behavior not covered by the replacement. The override order is:
 
 1. `FANPLAY_GBA_BIOS` environment variable;
 2. `gba_bios.bin` or `bios.bin` beside the ROM;
@@ -29,7 +30,9 @@ order:
 The embedded BIOS is GPL-2.0-or-later and is compatible with FANPLAY's license;
 see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md). The adapter starts directly
 at the cartridge using the backend's post-BIOS register setup, skipping the boot
-logo for all ROMs. The BIOS remains mapped for SWI services during gameplay.
+logo when the replacement BIOS is active. An official BIOS dump runs its normal
+reset sequence. In both cases the BIOS remains mapped for SWI services during
+gameplay.
 
 ## Saves
 

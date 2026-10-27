@@ -859,7 +859,7 @@ fn remove_sequence(source: &[Op], sequence: &[Op]) -> Vec<Op> {
 
 #[inline]
 pub(crate) fn read_memory(core: &mut GameBoyAdvance, address: u32, width: u32) -> u32 {
-    let bus = &mut *core.cpu.bus;
+    let mut bus = core.cpu.bus.borrow_mut();
     match width {
         1 => bus.read_8(address) as u32,
         2 => bus.read_16(address) as u32,
@@ -869,7 +869,7 @@ pub(crate) fn read_memory(core: &mut GameBoyAdvance, address: u32, width: u32) -
 
 #[inline]
 pub(crate) fn write_memory(core: &mut GameBoyAdvance, address: u32, width: u32, value: u32) {
-    let bus = &mut *core.cpu.bus;
+    let mut bus = core.cpu.bus.borrow_mut();
     match width {
         1 => bus.write_8(address, value as u8),
         2 => bus.write_16(address, value as u16),

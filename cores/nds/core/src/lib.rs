@@ -16,10 +16,10 @@ use dust_core::{
     Model, SaveContents,
 };
 use fanplay_core::{
-    AudioInfo, Button, CommandOutcome, Content, ContentKind, ContentProbe, Core, CoreCapabilities,
-    CoreCommand, CoreContext, CoreError, CoreEvent, CoreInfo, CoreLoadInfo, CoreRegistration,
-    CoreResult, ExitStatus, InputInfo, PcmBuffer, PixelFormat, PlatformError, PresentationSupport,
-    ScreenInfo, ScreenRotation, VideoFrame,
+    AudioInfo, Button, CommandOutcome, CommandRequest, Content, ContentKind, ContentProbe, Core,
+    CoreCapabilities, CoreCommand, CoreContext, CoreError, CoreEvent, CoreInfo, CoreLoadInfo,
+    CoreRegistration, CoreResult, ExitStatus, InputInfo, PcmBuffer, PixelFormat, PlatformError,
+    PresentationSupport, ScreenInfo, ScreenRotation, VideoFrame,
 };
 use serde_json::{json, Value};
 use std::{cell::RefCell, num::NonZeroU32, path::Path, rc::Rc, time::Duration};
@@ -128,6 +128,8 @@ struct NdsAdapter {
     save_name: String,
     sample_rate: u32,
     cheats: cheats::ActionReplay,
+    frames: u64,
+    commands: Vec<CommandRequest>,
 }
 fn read(content: &Content, context: &CoreContext) -> CoreResult<Vec<u8>> {
     if content.kind == ContentKind::Directory {
@@ -306,6 +308,7 @@ impl NdsAdapter {
                 let (emu, gpu_output) = self.build(Some(saved))?;
                 self.emu = Some(emu);
                 self.gpu_output = gpu_output;
+                self.frames = 0;
                 self.flush_audio();
                 (CommandOutcome::Succeeded, None)
             }
@@ -580,6 +583,141 @@ fn write_blob(bytes: &mut [u8], address: u32, width: u32, value: u32) -> Result<
     Ok(())
 }
 
+impl NdsAdapter {
+    fn apply_commands(&mut self, commands: &mut Vec<CommandRequest>) {
+        let Some(control) = self.context.as_ref().map(|context| context.control.clone()) else {
+            return;
+        };
+        control.take_requests(commands);
+        for request in commands.drain(..) {
+            let id = request.id;
+            let generation = request.generation;
+            let (outcome, response) = match self.command(request.command) {
+                Ok(result) => result,
+                Err(error) => {
+                    if let Some(context) = self.context.as_mut() {
+                        context.events.emit(CoreEvent::Error(error.to_string()));
+                    }
+                    (CommandOutcome::Failed(error.to_string()), None)
+                }
+            };
+            self.report(generation, id, outcome, response);
+        }
+    }
+
+    /// Advances the DS machine by one emulated frame and publishes its CPU
+    /// presentation. The caller owns pacing and pause/stop policy so native
+    /// loops and browser repaint loops can share the same frame path.
+    fn run_frame(&mut self) -> CoreResult<bool> {
+        let control = self
+            .context
+            .as_ref()
+            .ok_or_else(|| CoreError::runtime("DS core was not loaded"))?
+            .control
+            .clone();
+        let emu = self
+            .emu
+            .as_mut()
+            .ok_or_else(|| CoreError::runtime("DS emulator was not initialized"))?;
+        let input = control.input().snapshot();
+        let mut keys = Keys::empty();
+        for (button, key) in [
+            (Button::South, Keys::A),
+            (Button::East, Keys::B),
+            (Button::North, Keys::X),
+            (Button::West, Keys::Y),
+            (Button::Start, Keys::START),
+            (Button::Select, Keys::SELECT),
+            (Button::Up, Keys::UP),
+            (Button::Down, Keys::DOWN),
+            (Button::Left, Keys::LEFT),
+            (Button::Right, Keys::RIGHT),
+            (Button::LeftShoulder, Keys::L),
+            (Button::RightShoulder, Keys::R),
+        ] {
+            if input.buttons.contains(button) {
+                keys |= key;
+            }
+        }
+        emu.release_keys(Keys::all() & !keys);
+        emu.press_keys(keys);
+        if input.buttons.contains(Button::Extra0)
+            && input.pointer_inside
+            && (0..256).contains(&input.pointer_x)
+            && (192..384).contains(&input.pointer_y)
+        {
+            emu.set_touch_pos([
+                (input.pointer_x * 16) as u16,
+                ((input.pointer_y - 192) * 16) as u16,
+            ]);
+        } else {
+            emu.end_touch();
+        }
+        self.cheats.apply(emu);
+        if emu.run() == RunOutput::Shutdown {
+            return Ok(true);
+        }
+        if let Some(gpu_output) = &mut self.gpu_output {
+            let pixels = gpu_output
+                .next_rgba()
+                .ok_or_else(|| CoreError::runtime("Dust wgpu frame readback failed"))?;
+            if pixels.len() != self.video.len() {
+                return Err(CoreError::runtime(
+                    "Dust wgpu returned an invalid frame size",
+                ));
+            }
+            self.video = pixels;
+        } else {
+            let framebuffer = emu.gpu.renderer_2d().framebuffer();
+            #[cfg(target_endian = "little")]
+            {
+                let source = unsafe {
+                    std::slice::from_raw_parts(framebuffer.as_ptr().cast::<u8>(), self.video.len())
+                };
+                self.video.copy_from_slice(source);
+            }
+            #[cfg(not(target_endian = "little"))]
+            {
+                for (pixel, out) in framebuffer
+                    .iter()
+                    .flatten()
+                    .zip(self.video.chunks_exact_mut(4))
+                {
+                    out.copy_from_slice(&pixel.to_le_bytes());
+                }
+            }
+        }
+        let context = self.context.as_mut().unwrap();
+        context
+            .video
+            .present(VideoFrame::rgba8(256, 384, 1024, &self.video));
+        {
+            let mut samples = self.samples.borrow_mut();
+            if !samples.is_empty() {
+                context.audio.queue_pcm(PcmBuffer {
+                    sample_rate: self.sample_rate,
+                    channels: 2,
+                    samples: &samples,
+                });
+                samples.clear();
+            }
+        }
+        self.frames += 1;
+        if std::env::var_os("FANPLAY_NDS_TRACE").is_some() && self.frames % 60 == 0 {
+            eprintln!(
+                "frame {}: arm9={:?} arm7={:?}",
+                self.frames,
+                self.emu.as_ref().unwrap().arm9.regs(),
+                self.emu.as_ref().unwrap().arm7.regs()
+            );
+        }
+        if self.frames % 300 == 0 {
+            self.flush_save(false)?;
+        }
+        Ok(false)
+    }
+}
+
 impl Core for NdsAdapter {
     fn info(&self) -> &CoreInfo {
         &INFO
@@ -668,6 +806,7 @@ impl Core for NdsAdapter {
         let (emu, gpu_output) = self.build(saved)?;
         self.emu = Some(emu);
         self.gpu_output = gpu_output;
+        self.frames = 0;
         self.context = Some(context);
         self.context
             .as_mut()
@@ -688,29 +827,13 @@ impl Core for NdsAdapter {
             .ok_or_else(|| CoreError::runtime("DS core was not loaded"))?
             .control
             .clone();
-        let mut commands = Vec::with_capacity(16);
         let mut frames = 0u64;
         let mut pacer = pacing::FramePacer::default();
-        let trace = std::env::var_os("FANPLAY_NDS_TRACE").is_some();
         let mut audio_paused = false;
         while !control.should_stop() && control.frame_limit().is_none_or(|limit| frames < limit) {
-            control.take_requests(&mut commands);
-            for request in commands.drain(..) {
-                let id = request.id;
-                let generation = request.generation;
-                let (outcome, response) = match self.command(request.command) {
-                    Ok(result) => result,
-                    Err(error) => {
-                        self.context
-                            .as_mut()
-                            .unwrap()
-                            .events
-                            .emit(CoreEvent::Error(error.to_string()));
-                        (CommandOutcome::Failed(error.to_string()), None)
-                    }
-                };
-                self.report(generation, id, outcome, response);
-            }
+            let mut commands = std::mem::take(&mut self.commands);
+            self.apply_commands(&mut commands);
+            self.commands = commands;
             if control.paused() {
                 if !audio_paused {
                     if let Some(context) = self.context.as_mut() {
@@ -733,106 +856,12 @@ impl Core for NdsAdapter {
                 audio_paused = false;
             }
             pacer.begin_frame(self.context.as_ref().unwrap().platform.now());
-            let emu = self.emu.as_mut().unwrap();
-            let input = control.input().snapshot();
-            let mut keys = Keys::empty();
-            for (button, key) in [
-                (Button::South, Keys::A),
-                (Button::East, Keys::B),
-                (Button::North, Keys::X),
-                (Button::West, Keys::Y),
-                (Button::Start, Keys::START),
-                (Button::Select, Keys::SELECT),
-                (Button::Up, Keys::UP),
-                (Button::Down, Keys::DOWN),
-                (Button::Left, Keys::LEFT),
-                (Button::Right, Keys::RIGHT),
-                (Button::LeftShoulder, Keys::L),
-                (Button::RightShoulder, Keys::R),
-            ] {
-                if input.buttons.contains(button) {
-                    keys |= key;
-                }
-            }
-            emu.release_keys(Keys::all() & !keys);
-            emu.press_keys(keys);
-            if input.buttons.contains(Button::Extra0)
-                && input.pointer_inside
-                && (0..256).contains(&input.pointer_x)
-                && (192..384).contains(&input.pointer_y)
-            {
-                emu.set_touch_pos([
-                    (input.pointer_x * 16) as u16,
-                    ((input.pointer_y - 192) * 16) as u16,
-                ]);
-            } else {
-                emu.end_touch();
-            }
-            self.cheats.apply(emu);
-            if emu.run() == RunOutput::Shutdown {
+            if self.run_frame()? {
                 break;
-            }
-            if let Some(gpu_output) = &mut self.gpu_output {
-                let pixels = gpu_output
-                    .next_rgba()
-                    .ok_or_else(|| CoreError::runtime("Dust wgpu frame readback failed"))?;
-                if pixels.len() != self.video.len() {
-                    return Err(CoreError::runtime(
-                        "Dust wgpu returned an invalid frame size",
-                    ));
-                }
-                self.video = pixels;
-            } else {
-                let framebuffer = emu.gpu.renderer_2d().framebuffer();
-                #[cfg(target_endian = "little")]
-                {
-                    let source = unsafe {
-                        std::slice::from_raw_parts(
-                            framebuffer.as_ptr().cast::<u8>(),
-                            self.video.len(),
-                        )
-                    };
-                    self.video.copy_from_slice(source);
-                }
-                #[cfg(not(target_endian = "little"))]
-                {
-                    for (pixel, out) in framebuffer
-                        .iter()
-                        .flatten()
-                        .zip(self.video.chunks_exact_mut(4))
-                    {
-                        out.copy_from_slice(&pixel.to_le_bytes());
-                    }
-                }
-            }
-            let context = self.context.as_mut().unwrap();
-            context
-                .video
-                .present(VideoFrame::rgba8(256, 384, 1024, &self.video));
-            {
-                let mut samples = self.samples.borrow_mut();
-                if !samples.is_empty() {
-                    context.audio.queue_pcm(PcmBuffer {
-                        sample_rate: self.sample_rate,
-                        channels: 2,
-                        samples: &samples,
-                    });
-                    samples.clear();
-                }
             }
             frames += 1;
-            if trace && frames % 60 == 0 {
-                eprintln!(
-                    "frame {frames}: arm9={:?} arm7={:?}",
-                    self.emu.as_ref().unwrap().arm9.regs(),
-                    self.emu.as_ref().unwrap().arm7.regs()
-                );
-            }
             if control.frame_limit().is_some_and(|limit| frames >= limit) {
                 break;
-            }
-            if frames % 300 == 0 {
-                self.flush_save(false)?;
             }
             if control.fast_forward() {
                 pacer.reset();
@@ -853,6 +882,47 @@ impl Core for NdsAdapter {
         }
         self.flush_save(true)?;
         Ok(ExitStatus::success())
+    }
+
+    fn run_slice(&mut self) -> CoreResult<fanplay_core::RunSliceStatus> {
+        let control = self
+            .context
+            .as_ref()
+            .ok_or_else(|| CoreError::runtime("DS core was not loaded"))?
+            .control
+            .clone();
+        if control.should_stop() {
+            self.flush_save(true)?;
+            return Ok(fanplay_core::RunSliceStatus::Exited(ExitStatus::success()));
+        }
+        let mut commands = std::mem::take(&mut self.commands);
+        self.apply_commands(&mut commands);
+        self.commands = commands;
+        if control.should_stop() {
+            self.flush_save(true)?;
+            return Ok(fanplay_core::RunSliceStatus::Exited(ExitStatus::success()));
+        }
+        if control.paused() {
+            if let Some(context) = self.context.as_mut() {
+                context.audio.pause(true);
+            }
+            return Ok(fanplay_core::RunSliceStatus::Continue);
+        }
+        if let Some(context) = self.context.as_mut() {
+            context.audio.pause(false);
+        }
+        if self.run_frame()? {
+            self.flush_save(true)?;
+            return Ok(fanplay_core::RunSliceStatus::Exited(ExitStatus::success()));
+        }
+        if control
+            .frame_limit()
+            .is_some_and(|limit| self.frames >= limit)
+        {
+            self.flush_save(true)?;
+            return Ok(fanplay_core::RunSliceStatus::Exited(ExitStatus::success()));
+        }
+        Ok(fanplay_core::RunSliceStatus::Continue)
     }
 }
 

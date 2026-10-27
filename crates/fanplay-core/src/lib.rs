@@ -123,6 +123,25 @@ pub trait Core: 'static {
     /// Returning `Ok` means a clean stop. Errors are reported to the user by
     /// the frontend; the core must not panic across this boundary.
     fn run(&mut self) -> CoreResult<ExitStatus>;
+
+    /// Advances a cooperative session without blocking the host event loop.
+    ///
+    /// Native frontends normally use [`Core::run`]. Browser and other
+    /// single-threaded hosts may call this method once per repaint. A core
+    /// that has not implemented a bounded execution path reports
+    /// [`CoreError::Unsupported`].
+    fn run_slice(&mut self) -> CoreResult<RunSliceStatus> {
+        Err(CoreError::unsupported("cooperative execution"))
+    }
+}
+
+/// Result of one bounded cooperative core invocation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RunSliceStatus {
+    /// The session remains runnable and should be called again later.
+    Continue,
+    /// The core reached a clean terminal state.
+    Exited(ExitStatus),
 }
 
 /// Per-session configuration negotiated before the core starts.

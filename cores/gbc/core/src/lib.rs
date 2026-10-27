@@ -141,6 +141,7 @@ struct GbcAdapter {
     save_name: String,
     buttons: ButtonSet,
     frames: u64,
+    commands: Vec<CommandRequest>,
 }
 
 impl GbcAdapter {
@@ -640,6 +641,53 @@ impl Core for GbcAdapter {
         }
         self.flush_save(true)?;
         Ok(ExitStatus::success())
+    }
+
+    fn run_slice(&mut self) -> CoreResult<fanplay_core::RunSliceStatus> {
+        let control = self
+            .control
+            .clone()
+            .ok_or_else(|| CoreError::runtime("Game Boy core was not loaded"))?;
+        if self.device.is_none() {
+            return Err(CoreError::runtime("Game Boy core was not initialized"));
+        }
+        if control.should_stop() {
+            self.flush_save(true)?;
+            return Ok(fanplay_core::RunSliceStatus::Exited(ExitStatus::success()));
+        }
+
+        // Move the reusable command buffer out briefly to avoid borrowing the
+        // adapter and one of its fields mutably at the same time.
+        let mut commands = std::mem::take(&mut self.commands);
+        self.apply_commands(&mut commands);
+        self.commands = commands;
+        if control.should_stop() {
+            self.flush_save(true)?;
+            return Ok(fanplay_core::RunSliceStatus::Exited(ExitStatus::success()));
+        }
+        if control.paused() {
+            if let Some(context) = self.context.as_mut() {
+                context.audio.pause(true);
+            }
+            return Ok(fanplay_core::RunSliceStatus::Continue);
+        }
+        if let Some(context) = self.context.as_mut() {
+            context.audio.pause(false);
+        }
+
+        self.present_frame();
+        self.drain_audio();
+        if self.frames.is_multiple_of(60) {
+            let _ = self.flush_save(false);
+        }
+        if control
+            .frame_limit()
+            .is_some_and(|limit| self.frames >= limit)
+        {
+            self.flush_save(true)?;
+            return Ok(fanplay_core::RunSliceStatus::Exited(ExitStatus::success()));
+        }
+        Ok(fanplay_core::RunSliceStatus::Continue)
     }
 }
 

@@ -7,3 +7,17 @@ api-openapi = "run --quiet -p fanplay-mcp -- --openapi"
 # libstdc++-6.dll next to fanplay.exe.
 [target.x86_64-pc-windows-gnu]
 rustflags = ["-C", "target-feature=+crt-static"]
+
+# getrandom 0.3 requires an explicit backend selection for the browser's
+# wasm32-unknown-unknown target. This is shared by the NDS dependency graph
+# and is harmless for crates that do not use getrandom.
+[target.wasm32-unknown-unknown]
+# Dust's DS software renderer uses `core::simd` heavily.  Enable the browser
+# SIMD instruction set so portable SIMD lowers to v128 operations instead of
+# the scalar fallback.  This is supported by current Chrome, Firefox, Safari,
+# and Edge releases and keeps the optimization entirely in the Rust/WASM
+# build; no JavaScript glue is required.
+rustflags = [
+  "--cfg", "getrandom_backend=\"wasm_js\"",
+  "-C", "target-feature=+simd128",
+]

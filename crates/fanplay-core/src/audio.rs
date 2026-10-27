@@ -181,6 +181,7 @@ impl PcmRing {
     }
 }
 
+#[derive(Clone)]
 pub struct PcmRingProducer(Arc<RingShared>);
 
 impl PcmRingProducer {

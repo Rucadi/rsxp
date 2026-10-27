@@ -67,6 +67,16 @@ impl SessionCapabilities {
         torrent_import: false,
         rom_import: false,
     };
+
+    pub const WEB: Self = Self {
+        paths: false,
+        directory_backups: false,
+        save_backups: true,
+        ruby_jit: false,
+        zip_import: false,
+        torrent_import: false,
+        rom_import: true,
+    };
 }
 impl Default for SessionCapabilities {
     fn default() -> Self {

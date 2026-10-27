@@ -13,6 +13,7 @@ work are described separately.
 | Toolchains and checks | [Development](development.md), [core conformance](core-conformance.md) |
 | Native workspace | [Dashboard](dashboard.md) |
 | Shared UI and host boundaries | [Shared frontend](shared-frontend.md) |
+| Browser/WASM frontend | [Web build plan](web-build-plan.md) |
 | RPG Maker compatibility | [Runtime](rust-port.md) |
 | GBA / DS behavior | [GBA](../cores/gba/README.md), [DS](../cores/nds/README.md) |
 | Library, storage and downloads | [Provisioning](software-provision.md) |

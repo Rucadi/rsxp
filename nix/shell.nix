@@ -25,7 +25,9 @@ pkgs.mkShell {
       rustc
       rustfmt
       clippy
+      lld
       nodejs
+      trunk
     ]
     ++ lib.optionals isLinux [ pkgs.mold ];
 

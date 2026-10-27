@@ -21,19 +21,22 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 web-time = "1.1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp"] }
-fanplay-rgss = { path = "../fanplay-rgss", default-features = false, features = ["game-api", "portable-media"] }
+fanplay-rgss = { path = "../fanplay-rgss", default-features = false, features = ["portable-media"] }
 fanplay-extension-api = { path = "../fanplay-extension-api" }
 fanplay-extensions = { path = "../fanplay-extensions" }
 fanplay-extension-ui = { path = "../fanplay-extension-ui" }
-eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "default_fonts"] }
+eframe = { version = "0.37.0", default-features = false, features = ["default_fonts"] }
 egui = { version = "0.37.0", features = ["default_fonts"] }
 base64 = "0.22"
 
-[target.'cfg(target_os = "android")'.dependencies]
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+eframe = { version = "0.37.0", default-features = false, features = ["glow", "default_fonts"] }
+
+[target.'cfg(all(not(target_arch = "wasm32"), target_os = "android"))'.dependencies]
 eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "default_fonts", "android-native-activity"] }
 winit = { version = "0.30.13", default-features = false, features = ["android-native-activity"] }
 
-[target.'cfg(not(target_os = "android"))'.dependencies]
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))'.dependencies]
 eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "default_fonts", "x11", "wayland", "clipboard", "system_fonts"] }
 
 [package.metadata.android]

@@ -14,9 +14,10 @@ path = "src/lib.rs"
 [dependencies]
 fanplay-core = { path = "../../../crates/fanplay-core" }
 # RustBoyAdvance-NG is MIT licensed and exposes its emulator as a library
-# (rustboyadvance-core). Pin the revision so builds are reproducible; the
-# workspace's Cargo.lock also records it.
-rustboyadvance-core = { git = "https://github.com/michelhe/rustboyadvance-ng", rev = "1d7ff23a6adb42d803ebd393c3d27d94e4fea15e", default-features = false }
-rustboyadvance-utils = { git = "https://github.com/michelhe/rustboyadvance-ng", rev = "1d7ff23a6adb42d803ebd393c3d27d94e4fea15e", default-features = false }
+# (rustboyadvance-core). Track the maintained master branch, which contains
+# the safe interpreter implementation used by the web build.
+rustboyadvance-core = { git = "https://github.com/Rucadi/rustboyadvance-ng", branch = "master", default-features = false }
+rustboyadvance-utils = { git = "https://github.com/Rucadi/rustboyadvance-ng", branch = "master", default-features = false }
 bytemuck = "1"
 serde_json = "1"
+sha2 = "0.10"

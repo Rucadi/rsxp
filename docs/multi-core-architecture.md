@@ -27,7 +27,7 @@ flowchart LR
 ```
 
 `fanplay-frontend::spawn_core` supplies a native worker and completion handling.
-RGSS embeds MRI and changes the working directory, so hosts must respect its
+RGSS embeds SabiRuby and changes the working directory, so hosts must respect its
 process-level ownership requirements.
 
 ## Implementations
@@ -37,7 +37,7 @@ process-level ownership requirements.
 | GB / GBC | `cores/gbc/core` | `mvdnes/rboy`; 160×144 DMG/CGB output, stereo PCM, MBC saves and state support |
 | GBA | `cores/gba/core` | RustBoyAdvance-NG; 240×160 output, embedded BIOS replacement, stereo PCM, battery/state support |
 | DS | `cores/nds/core` | Dust; stacked 256×384 output, touch on lower screen, software rendering by default, optional native wgpu |
-| RGSS | `cores/rgss/core` | `fanplay-rgss` plus MRI bindings; generic adapter in addition to the desktop's direct RGSS runtime |
+| RGSS | `cores/rgss/core` | `fanplay-rgss` plus SabiRuby bindings; generic adapter in addition to the desktop's direct RGSS runtime |
 
 UI integration goes into `crates/fanplay-<system>` without moving emulator code
 out of `cores/<system>`.

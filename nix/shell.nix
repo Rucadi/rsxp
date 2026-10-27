@@ -33,18 +33,16 @@ pkgs.mkShell {
 
   nativeBuildInputs = [
     pkgs.pkg-config
-    pkgs.ruby_4_0
     pkgs.rustPlatform.bindgenHook
   ];
 
   # Keep dynamically linked cargo binaries runnable outside the build phase.
   buildInputs = runtimeLibraries ++ [
-    pkgs.ruby_4_0
     pkgs.zlib
     pkgs.libffi
   ];
   LD_LIBRARY_PATH = lib.optionalString isLinux (
-    lib.makeLibraryPath (runtimeLibraries ++ [ pkgs.ruby_4_0 ])
+    lib.makeLibraryPath (runtimeLibraries)
   );
 
   # Dust uses nightly-only language features. Keep the Nix-provided latest

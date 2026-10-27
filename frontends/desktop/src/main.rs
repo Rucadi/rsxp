@@ -3,14 +3,14 @@
 //! the standalone demo scene.
 //!
 //! Submodules wire the frontend together: [`audio`] (Kira audio),
-//! [`ruby_core`] (the RGSS MRI VM and Magnus bindings),
-//! [`bundled_runtime`] (packaged-Ruby relocation), [`controller`] (gamepads),
+//! [`ruby_core`] (the RGSS SabiRuby VM and host services),
+//! [`controller`] (gamepads),
 //! [`dashboard`], [`gpu_present`], [`host`], [`library`], [`media`],
-//! [`runtime`] (the actual MRI runner), [`saves`], [`session`]
+//! [`runtime`] (the actual SabiRuby runner), [`saves`], [`session`]
 //! (dashboard↔runner transport), and [`window`]. Several are gated on the
 //! `gpu` feature.
 //!
-//! [`run`] is the dispatcher. It calls [`bundled_runtime::configure`] first,
+//! [`run`] is the dispatcher.
 //! before any thread exists, then branches on the first argument:
 //! - no arguments (with `gpu`) → [`dashboard::run`] opens the workspace;
 //! - `--help`/`-h` → [`HELP`]; `--version`/`-V` → the crate version;
@@ -31,7 +31,6 @@
 #[cfg(feature = "rgss")]
 mod audio;
 #[cfg(feature = "rgss")]
-mod bundled_runtime;
 mod cartridge;
 #[cfg(all(feature = "gpu", feature = "rgss"))]
 mod control;
@@ -116,7 +115,7 @@ applied live to the running game. Game-specific behavior is supplied by Rhai
 plugins, including the Essentials panoramic and Cable Club tools.
 FANPLAY_PATCH=ID[,ID...] pre-enables patches at startup.
 
-The run command embeds MRI Ruby through Magnus. Core RGSS graphics, input,
+The run command embeds SabiRuby. Core RGSS graphics, input,
 and Table bindings are available; full game compatibility is still in progress.
 See docs/rust-port.md for supported APIs and remaining limitations.";
 
@@ -300,7 +299,6 @@ fn demo(args: &[String]) -> Result<(), Box<dyn Error>> {
 
 fn run() -> Result<u8, Box<dyn Error>> {
     #[cfg(feature = "rgss")]
-    bundled_runtime::configure()?;
     let args: Vec<_> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("software-provision") => return provision_cli::run(&args[1..]),

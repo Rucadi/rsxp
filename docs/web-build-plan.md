@@ -83,13 +83,10 @@ written by an older build cannot silently replace the embedded GBA BIOS.
 
 ## RGSS boundary
 
-RGSS is not included in the WASM target yet. Its core adapter depends on
-`fanplay-rgss-ruby`, which embeds MRI Ruby through `magnus`; that is a native
-Ruby runtime and cannot be enabled for `wasm32-unknown-unknown` by changing
-eframe or Cargo feature flags. Supporting RGSS in the browser requires a
-browser-compatible Ruby runtime/binding layer or a deliberate Rust replacement
-for the embedded Ruby execution path. The web build keeps RGSS disabled rather
-than shipping a misleading runtime that cannot load games.
+Desktop RGSS embeds SabiRuby through `fanplay-rgss-ruby`. Browser RGSS uses
+the separate ruby.wasm bridge and cooperative scheduler. SabiRuby migration
+currently targets desktop; its C source compiler and filesystem host services
+are not enabled for `wasm32-unknown-unknown`.
 
 ## Verification
 

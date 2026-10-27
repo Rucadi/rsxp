@@ -27,10 +27,8 @@ default-members = ["frontends/desktop"]
 resolver = "3"
 
 [profile.release]
-# RustBoyAdvance-NG master forbids unsafe code in the ARM7TDMI/core crates, so
-# full cross-crate LTO is safe again and gives the emulator its best release
-# performance.
-lto = "fat"
+# Keep release builds easy to iterate on while profiling/debugging the VM.
+lto = false
 codegen-units = 1
 
 # Real-time video decoding and per-pixel conversion are too slow without
@@ -85,3 +83,18 @@ dust-soft-3d = { path = "cores/nds/vendor/dust-soft-3d" }
 # syntax, which modern rustc rejects in favor of `const impl Trait`.
 [patch.crates-io]
 proc-bitfield = { path = "cores/nds/vendor/proc-bitfield" }
+sabiruby = { path = "/home/rucadi/i/sabiruby" }
+sabiruby-compiler = { path = "/home/rucadi/i/sabiruby/compiler" }
+sabiruby-serde = { path = "/home/rucadi/i/sabiruby/serde" }
+fancy-regex = { path = "/home/rucadi/i/sabiruby/vendor/fancy-regex" }
+
+# TEMPORARY (local testing): sabiruby 0.8.0's const_class debug_assert fires
+# on valid module_function frames. Remove once upstream is fixed.
+[profile.dev.package.sabiruby]
+debug-assertions = false
+opt-level = 3
+
+# The VM and its compiler dominate RGSS startup; unoptimized dev builds make
+# large Marshal loads and plugin compilation several times slower.
+[profile.dev.package.sabiruby-compiler]
+opt-level = 3

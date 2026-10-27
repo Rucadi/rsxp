@@ -59,10 +59,9 @@ pkgs.rustPlatform.buildRustPackage {
   # Cargo emits release debuginfo for perf; preserve it during Nix fixup too.
   dontStrip = true;
 
-  buildInputs = runtimeLibraries ++ [ pkgs.ruby_4_0 ];
+  buildInputs = runtimeLibraries;
   nativeBuildInputs = [
     pkgs.pkg-config
-    pkgs.ruby_4_0
     pkgs.rustPlatform.bindgenHook
   ]
   ++ lib.optionals isLinux [ pkgs.makeWrapper ];

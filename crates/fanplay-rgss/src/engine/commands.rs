@@ -65,7 +65,20 @@ impl Runtime {
         let header =
             std::str::from_utf8(&request[..split]).map_err(|_| "invalid native command")?;
         let payload = request.get(split + 1..).unwrap_or_default();
-        let args: Vec<_> = header.split('\t').collect();
+        // Native calls are frame-hot, and almost all have only the operation
+        // name. Keep the small argument list on the stack instead of creating
+        // a heap Vec for every bridge crossing. Forty-eight slots cover the
+        // largest serialized snapshot plus its operation name.
+        let mut arg_storage = [""; 48];
+        let mut arg_count = 0;
+        for arg in header.split('\t') {
+            if arg_count == arg_storage.len() {
+                return Err("too many native arguments".into());
+            }
+            arg_storage[arg_count] = arg;
+            arg_count += 1;
+        }
+        let args = &arg_storage[..arg_count];
         match args[0] {
             "api_supported" => {
                 return Ok(text(if cfg!(feature = "game-api") { "1" } else { "0" }));

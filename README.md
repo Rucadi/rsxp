@@ -9,7 +9,7 @@ Compatibility varies by game.
 
 | Area | Current implementation |
 | --- | --- |
-| RPG Maker | Rust RGSS runtime, Ruby compatibility scripts, and native MRI bindings for RGSS 1–3; incomplete compatibility |
+| RPG Maker | Rust RGSS runtime, Ruby compatibility scripts, and SabiRuby execution for RGSS 1–3; incomplete compatibility |
 | GB / GBC | `mvdnes/rboy` Rust core, DMG/CGB mode detection, input, audio, cartridge saves and save states |
 | GBA | RustBoyAdvance-NG adapter, embedded open-source BIOS, input, audio, battery saves and save states |
 | DS | Dust adapter, dual screens, touch, audio, cartridge saves and save states; wgpu renderer by default with software fallback |
@@ -35,8 +35,10 @@ cargo run --release -p fanplay-desktop -- run --game /path/to/game.nds
 The desktop defaults are `gpu`, `gbc`, `gba`, `nds`, and `rgss`. Rust packages declare
 1.95 or newer where specified, but Dust also uses unstable APIs: use the
 project's Nix toolchain or a compatible nightly. Native desktop builds need
-MRI Ruby, libclang, audio/window libraries and, on Linux, GTK/WebKit for plugin
-webviews. The Nix shell uses Ruby 4.0; CI's direct Windows/macOS jobs use Ruby 3.4.
+a C compiler for SabiRuby's bundled source compiler, libclang, audio/window
+libraries and, on Linux, GTK/WebKit for plugin webviews. No system Ruby or
+Magnus is required. The desktop VM is SabiRuby 0.8.0 (mruby semantics); see
+[RGSS compatibility limits](docs/rust-port.md).
 A declared target is not a guarantee that every game works on that platform.
 
 With the default features, no arguments opens the library. Interactive `run`
@@ -50,8 +52,8 @@ cargo run -p fanplay-core-runner -- --content /path/to/game.gba \
   --frames 120 --output /tmp/gba.ppm
 ```
 
-The headless core runner enables GB/GBC, GBA and DS by default; RGSS is opt-in and needs
-MRI. Desktop `--renderer auto|wgpu|software` selects RGSS composition, not the
+The headless core runner enables GB/GBC, GBA and DS by default; RGSS is opt-in and embeds
+SabiRuby. Desktop `--renderer auto|wgpu|software` selects RGSS composition, not the
 DS renderer. Desktop NDS rendering uses the optimized software path by default;
 set `FANPLAY_NDS_RENDERER=wgpu` to opt into the experimental wgpu path. See
 [development and validation](docs/development.md).

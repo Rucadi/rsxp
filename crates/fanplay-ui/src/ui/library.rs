@@ -411,7 +411,7 @@ impl SessionPanel {
                         actions.import_zip = true;
                     }
                     if self.capabilities.rom_import
-                        && theme::button(ui, "Open GB / GBC / GBA / NDS ROM", ButtonKind::Ghost).clicked()
+                        && theme::button(ui, "Open ROM, RGSS, or ZIP", ButtonKind::Ghost).clicked()
                     {
                         actions.browse_game_file = true;
                     }

@@ -13,7 +13,7 @@ module Input
   # compatibility path; the legacy script maintains its own trigger/repeat state.
   def self.refresh_raw_key_states
     bytes=FANPLAY.call('input_poll')
-    @state=bytes.unpack('l<C'*(bytes.bytesize/5)).each_slice(2).to_h
+    @state=bytes.empty? ? {} : bytes.unpack('l<C'*(bytes.bytesize/5)).each_slice(2).to_h
     nil
   end
   def self.raw_keys(key)
@@ -48,7 +48,7 @@ module Input
     # module has been injected by the Rhai extension.
     FANPLAY::ExtensionBridge.poll
     bytes=FANPLAY.call('input_poll')
-    @state=bytes.unpack('l<C'*(bytes.bytesize/5)).each_slice(2).to_h
+    @state=bytes.empty? ? {} : bytes.unpack('l<C'*(bytes.bytesize/5)).each_slice(2).to_h
     FANPLAY::GameAPI.inject_input(@state) if defined?(FANPLAY::GameAPI)
     KEYS.each_key { |key| @held[key]=press?(key) ? @held[key]+1 : 0 }
     RuntimePatches.sync

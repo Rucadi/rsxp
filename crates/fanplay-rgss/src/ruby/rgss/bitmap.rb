@@ -46,7 +46,7 @@ class Bitmap
   end
   def initialize_copy(other)
     other.__check
-    ObjectSpace.undefine_finalizer(self)
+    defined?(__sabi_disown) ? __sabi_disown(self) : ObjectSpace.undefine_finalizer(self)
     __own(FANPLAY.call('bitmap_clone',other.__id),'bitmap_dispose')
   end
   def width

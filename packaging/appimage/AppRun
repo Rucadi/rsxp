@@ -1,9 +1,5 @@
 #!/bin/sh
-# AppImage entry point: expose the bundled libraries and Ruby, then run fanplay.
-#
-# The executable itself relocates Ruby through the ruby-runtime.json manifest
-# beside it (see frontends/desktop/src/bundled_runtime.rs); LD_LIBRARY_PATH covers the
-# native library closure staged in usr/lib.
+# AppImage entry point: expose the native library closure, then run fanplay.
 set -e
 
 here="$(dirname "$(readlink -f "$0")")"

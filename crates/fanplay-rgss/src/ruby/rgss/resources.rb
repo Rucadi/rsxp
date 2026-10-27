@@ -2,7 +2,11 @@ module NativeResource
   attr_reader :__id
   def __own(id,op)
     @__id, @__dispose_op, @__disposed = Integer(id),op,false
-    ObjectSpace.define_finalizer(self,FANPLAY.finalizer(op,@__id))
+    if defined?(__sabi_own)
+      __sabi_own(self,op,@__id)
+    else
+      ObjectSpace.define_finalizer(self,FANPLAY.finalizer(op,@__id))
+    end
   end
   def disposed? = @__disposed
   def __check
@@ -12,7 +16,11 @@ module NativeResource
     return if disposed?
     FANPLAY.call(@__dispose_op,@__id)
     @__disposed = true
-    ObjectSpace.undefine_finalizer(self)
+    if defined?(__sabi_disown)
+      __sabi_disown(self)
+    else
+      ObjectSpace.undefine_finalizer(self)
+    end
     nil
   end
 end

@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Stage a relocatable desktop, including Ruby and native dependency closure."""
+"""Stage a relocatable desktop, including its native dependency closure."""
 import argparse
-import json
 import os
 from pathlib import Path
 import plistlib
@@ -26,56 +25,7 @@ def copy(source, destination):
     destination.chmod(destination.stat().st_mode | 0o200)
 
 
-def relative(target, base):
-    """Path to target as seen from base, in a form Ruby and Mach-O both accept."""
-    return os.path.relpath(target, base).replace(os.sep, "/")
-
-
-def ruby_runtime(binaries, root, manifest_dir=None):
-    config = json.loads(output("ruby", "-rjson", "-rrbconfig", "-rrubygems", "-e", """
-      puts JSON.generate({lib: RbConfig::CONFIG.fetch('rubylibprefix'),
-        bin: RbConfig::CONFIG.fetch('bindir'), load: $LOAD_PATH,
-        gems: Gem.path, prefix: RbConfig::CONFIG.fetch('prefix')})
-    """))
-    source = Path(config["lib"])
-    library = root / "ruby/lib"
-    shutil.copytree(source, library, symlinks=False)
-    loads = []
-    for index, entry in enumerate(config["load"]):
-        path = Path(entry)
-        if not path.is_dir():
-            continue
-        if path.is_relative_to(source):
-            target = library / path.relative_to(source)
-        else:
-            target = root / f"ruby/extra/{index}"
-            shutil.copytree(path, target, symlinks=False)
-        loads.append(relative(target, binaries))
-    gems = []
-    for index, entry in enumerate(config["gems"]):
-        path = Path(entry)
-        if not path.is_dir():
-            continue
-        if path.is_relative_to(source):
-            target = library / path.relative_to(source)
-        else:
-            target = root / f"ruby/gems/{index}"
-            shutil.copytree(path, target, symlinks=False)
-        gems.append(relative(target, binaries))
-    if not gems:
-        gems = [relative(root / "ruby/gems", binaries)]
-    # Keep the manifest out of MacOS: codesign requires that code location to
-    # contain only signed Mach-O files. On Linux the manifest ships beside the
-    # executable (the loader looks for it there), so `manifest_dir` overrides
-    # the default location while the relative paths stay anchored on `binaries`.
-    manifest_dir = manifest_dir or root
-    (manifest_dir / "ruby-runtime.json").write_text(json.dumps({
-        "load_paths": loads, "gem_paths": gems, "gem_home": gems[0],
-    }, indent=2))
-    return config
-
-
-def mac_dependencies(executable, ruby, contents):
+def mac_dependencies(executable, contents):
     frameworks = contents / "Frameworks"
     frameworks.mkdir(parents=True, exist_ok=True)
     copied = {}
@@ -102,7 +52,6 @@ def mac_dependencies(executable, ruby, contents):
                             .replace("@executable_path", str(executable.parent)))
             if dependency.startswith("@rpath/"):
                 candidates = [expand(p) / dependency[7:] for p in rpaths]
-                candidates += [Path(ruby["prefix"]) / "lib" / Path(dependency).name]
             else:
                 candidates = [expand(dependency)]
             found = next((p.resolve() for p in candidates if p.is_file()), None)
@@ -147,7 +96,7 @@ MINGW_RUNTIME_DLLS = (
 )
 
 
-def windows_dependencies(executable, ruby):
+def windows_dependencies(executable):
     destination = executable.parent
     # Prefer the MinGW PE-aware objdump over whatever else is on PATH.
     objdump = shutil.which("x86_64-w64-mingw32-objdump") or shutil.which("objdump")
@@ -155,14 +104,13 @@ def windows_dependencies(executable, ruby):
         raise RuntimeError("objdump is required to bundle Windows DLLs")
     compiler = shutil.which("x86_64-w64-mingw32-gcc") or shutil.which("gcc")
     toolchain = Path(compiler).parent if compiler else None
-    search = [Path(ruby["bin"])]
+    search = []
     if toolchain is not None:
         search.append(toolchain)
     search += [Path(p) for p in os.environ["PATH"].split(os.pathsep)]
     system = Path(os.environ["SystemRoot"]).resolve()
-    # Ruby loads its own runtime DLLs dynamically; the GNU toolchain supplies
-    # the MinGW runtime. Copy both before scanning so their imports are covered.
-    bundled = list(Path(ruby["bin"]).glob("*.dll"))
+    # Copy the MinGW runtime before scanning its imports.
+    bundled = []
     if toolchain is not None:
         bundled += [toolchain / name for name in MINGW_RUNTIME_DLLS]
     for path in bundled:
@@ -284,9 +232,7 @@ def main():
         binaries = destination
         runtime = destination
     else:
-        # An AppDir for `appimagetool` (see tools/build-appimage.sh). Ruby's
-        # standard library lives under usr/lib/fanplay while the executable and its
-        # manifest sit in usr/bin, which is where the runtime looks for them.
+        # AppDir layout for appimagetool (see tools/build-appimage.sh).
         binaries = destination / "usr/bin"
         runtime = destination / "usr/lib/fanplay"
     binaries.mkdir(parents=True)
@@ -294,21 +240,17 @@ def main():
     copy(args.binary, executable)
     for name in ("COPYING", "README.md"):
         copy(root / name, runtime / name)
-    # macOS keeps the manifest in Resources (see `ruby_runtime`); every other
-    # layout reads it from beside the executable.
-    manifest_dir = binaries if not (sys.platform == "darwin" or sys.platform == "win32") else None
-    config = ruby_runtime(binaries, runtime, manifest_dir=manifest_dir)
     if sys.platform == "darwin":
         with (contents / "Info.plist").open("wb") as handle:
             plistlib.dump({"CFBundleExecutable": executable.name, "CFBundleName": "Fanplay",
                 "CFBundleIdentifier": "org.fanplay.engine", "CFBundlePackageType": "APPL",
                 "CFBundleShortVersionString": "0.1.0", "CFBundleVersion": "1",
                 "LSMinimumSystemVersion": "14.0", "NSHighResolutionCapable": True}, handle)
-        mac_dependencies(executable, config, contents)
+        mac_dependencies(executable, contents)
         run("codesign", "--force", "--sign", "-", str(app))
         run("codesign", "--verify", "--deep", "--strict", str(app))
     elif sys.platform == "win32":
-        windows_dependencies(executable, config)
+        windows_dependencies(executable)
     else:
         linux_dependencies(executable, destination / "usr/lib",
                            extra_libraries=sorted(runtime.rglob("*.so")))

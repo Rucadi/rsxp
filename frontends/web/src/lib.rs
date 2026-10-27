@@ -21,26 +21,172 @@ use fanplay_ui::{
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use wasm_bindgen::{closure::Closure, prelude::*, JsCast};
+use wasm_bindgen_futures::JsFuture;
+use zip::ZipArchive;
+
+fn normalize_browser_path(path: &str) -> String {
+    path.replace('\\', "/")
+        .split('/')
+        .filter(|part| !part.is_empty() && *part != ".")
+        .collect::<Vec<_>>()
+        .join("/")
+        .to_ascii_lowercase()
+}
+
+#[derive(Clone)]
+struct BrowserGame {
+    label: String,
+    entry: String,
+    files: BTreeMap<String, Vec<u8>>,
+}
+
+impl BrowserGame {
+    fn from_single(name: String, bytes: Vec<u8>) -> Result<Self, String> {
+        if name.to_ascii_lowercase().ends_with(".zip") {
+            return Self::from_zip(name, &bytes);
+        }
+        let entry = normalize_browser_path(&name);
+        if entry.is_empty() {
+            return Err("selected game file has no usable name".into());
+        }
+        let mut files = BTreeMap::new();
+        files.insert(entry.clone(), bytes);
+        let label = Path::new(&name)
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or(&name)
+            .to_owned();
+        if matches!(
+            Path::new(&entry).extension().and_then(|ext| ext.to_str()),
+            Some("rgssad" | "rgss2a" | "rgss3a" | "rxdata" | "rvdata" | "rvdata2")
+        ) {
+            Self::from_files(label, files)
+        } else {
+            Ok(Self {
+                label,
+                entry,
+                files,
+            })
+        }
+    }
+
+    fn from_zip(name: String, bytes: &[u8]) -> Result<Self, String> {
+        let mut archive = ZipArchive::new(Cursor::new(bytes))
+            .map_err(|error| format!("could not open {name} as ZIP: {error}"))?;
+        let mut files = BTreeMap::new();
+        for index in 0..archive.len() {
+            let mut file = archive
+                .by_index(index)
+                .map_err(|error| format!("could not read ZIP entry {index}: {error}"))?;
+            if file.is_dir() {
+                continue;
+            }
+            let path = normalize_browser_path(file.name());
+            if path.is_empty() || path.split('/').any(|part| part == "..") {
+                continue;
+            }
+            let mut data = Vec::new();
+            file.read_to_end(&mut data)
+                .map_err(|error| format!("could not extract ZIP entry {path}: {error}"))?;
+            files.insert(path, data);
+        }
+        Self::from_files(
+            Path::new(&name)
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("game")
+                .to_owned(),
+            files,
+        )
+    }
+
+    fn from_files(label: String, mut files: BTreeMap<String, Vec<u8>>) -> Result<Self, String> {
+        let root = files
+            .keys()
+            .next()
+            .and_then(|path| path.split('/').next())
+            .map(str::to_owned);
+        let strip_root = root.as_deref().is_some_and(|root| {
+            files.keys().all(|path| {
+                path.starts_with(root) && path.as_bytes().get(root.len()) == Some(&b'/')
+            })
+        });
+        if strip_root {
+            let root = root.unwrap_or_default();
+            files = files
+                .into_iter()
+                .filter_map(|(path, bytes)| {
+                    let path = path.strip_prefix(&root)?.strip_prefix('/')?;
+                    Some((path.to_owned(), bytes))
+                })
+                .collect();
+        }
+        let entry = ["game.rgss3a", "game.rgss2a", "game.rgssad"]
+            .iter()
+            .find_map(|candidate| files.keys().find(|path| path.ends_with(candidate)))
+            .or_else(|| {
+                files.keys().find(|path| {
+                    matches!(
+                        Path::new(path).extension().and_then(|ext| ext.to_str()),
+                        Some("rgssad" | "rgss2a" | "rgss3a")
+                    )
+                })
+            })
+            .or_else(|| {
+                [
+                    "data/scripts.rvdata2",
+                    "data/scripts.rvdata",
+                    "data/scripts.rxdata",
+                ]
+                .iter()
+                .find_map(|candidate| files.keys().find(|path| path == candidate))
+            })
+            .cloned()
+            .ok_or_else(|| {
+                "folder or ZIP does not contain a Game.rgss* archive or Data/Scripts.*".to_owned()
+            })?;
+        Ok(Self {
+            label,
+            entry,
+            files,
+        })
+    }
+
+    fn from_dropped_files(label: String, entries: Vec<(String, Vec<u8>)>) -> Result<Self, String> {
+        let files = entries
+            .into_iter()
+            .map(|(path, bytes)| (normalize_browser_path(&path), bytes))
+            .collect();
+        Self::from_files(label, files)
+    }
+}
 
 #[derive(Default)]
 struct BrowserPlatform {
-    content: Mutex<Vec<u8>>,
+    files: Mutex<BTreeMap<String, Vec<u8>>>,
     saves: Mutex<BTreeMap<String, Vec<u8>>>,
     content_id: String,
+    content_name: String,
 }
 
 impl BrowserPlatform {
     const SYSTEM_STORAGE_VERSION: &str = "v2";
 
-    fn with_content(content: Vec<u8>, content_id: String) -> Self {
+    fn with_files(
+        files: BTreeMap<String, Vec<u8>>,
+        content_id: String,
+        content_name: String,
+    ) -> Self {
         Self {
-            content: Mutex::new(content),
+            files: Mutex::new(files),
             saves: Mutex::new(BTreeMap::new()),
             content_id,
+            content_name,
         }
     }
 
@@ -109,16 +255,33 @@ impl BrowserPlatform {
 }
 
 impl Platform for BrowserPlatform {
-    fn read_content(&self, _path: &str) -> PlatformResult<Vec<u8>> {
-        let content = self
-            .content
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        if content.is_empty() {
-            Err(PlatformError::not_found("browser content"))
+    fn read_content(&self, path: &str) -> PlatformResult<Vec<u8>> {
+        let requested = normalize_browser_path(path);
+        let content_name = normalize_browser_path(&self.content_name);
+        let content_extension = Path::new(&content_name)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .unwrap_or_default();
+        let default_script = match content_extension {
+            "rxdata" => "data/scripts.rxdata",
+            "rvdata" => "data/scripts.rvdata",
+            "rvdata2" => "data/scripts.rvdata2",
+            _ => "",
+        };
+        let files = self.files.lock().unwrap_or_else(|error| error.into_inner());
+        let lookup = if requested.is_empty() {
+            Some(content_name.as_str())
+        } else if requested == content_name {
+            Some(content_name.as_str())
+        } else if !default_script.is_empty() && requested == default_script {
+            Some(content_name.as_str())
         } else {
-            Ok(content.clone())
-        }
+            Some(requested.as_str())
+        };
+        files
+            .get(lookup.unwrap_or_default())
+            .cloned()
+            .ok_or_else(|| PlatformError::not_found(path))
     }
 
     fn read_system_file(&self, path: &str) -> PlatformResult<Option<Vec<u8>>> {
@@ -527,8 +690,17 @@ struct WebSession {
 }
 
 impl WebSession {
-    fn load(name: String, bytes: Vec<u8>, audio: Box<dyn AudioSink>) -> Result<Self, String> {
-        let path = PathBuf::from(&name);
+    fn load(game: BrowserGame, audio: Box<dyn AudioSink>) -> Result<Self, String> {
+        let BrowserGame {
+            label: name,
+            entry,
+            files,
+        } = game;
+        let bytes = files
+            .get(&entry)
+            .cloned()
+            .ok_or_else(|| format!("selected RGSS entry {entry} is missing"))?;
+        let path = PathBuf::from(&entry);
         let header_len = bytes.len().min(64);
         let probe = ContentProbe::new(&path, false, &bytes[..header_len]);
         let catalog = fanplay_cores::catalog();
@@ -537,7 +709,11 @@ impl WebSession {
             .map_err(|error| error.to_string())?;
         let info = registration.info;
         let content_id = ContentId::of_bytes(&bytes).hex();
-        let platform = Arc::new(BrowserPlatform::with_content(bytes, content_id.clone()));
+        let platform = Arc::new(BrowserPlatform::with_files(
+            files,
+            content_id.clone(),
+            entry.clone(),
+        ));
         let state_slots = Self::load_state_slots(&content_id);
         let frame = Arc::new(Mutex::new(PresentedFrame::default()));
         let events = Arc::new(Mutex::new(Vec::new()));
@@ -715,7 +891,7 @@ impl WebSession {
 }
 
 enum PendingFile {
-    Game(String, Result<Vec<u8>, String>),
+    Game(Result<BrowserGame, String>),
     Save(String, Result<Vec<u8>, String>),
     Plugin(String, Result<Vec<u8>, String>),
     System(String, Result<Vec<u8>, String>),
@@ -730,6 +906,7 @@ enum FileKind {
 }
 
 type PendingFiles = Arc<Mutex<Vec<PendingFile>>>;
+type UploadStatus = Arc<Mutex<Option<String>>>;
 type FileChange = Closure<dyn FnMut(web_sys::Event)>;
 type KeyboardGuard = Closure<dyn FnMut(web_sys::KeyboardEvent)>;
 
@@ -738,8 +915,9 @@ struct WebApp {
     backend: BrowserBackend,
     session: Option<WebSession>,
     audio: BrowserAudio,
-    library: BTreeMap<String, Vec<u8>>,
+    library: BTreeMap<String, BrowserGame>,
     pending_files: PendingFiles,
+    upload_status: UploadStatus,
     file_input: Option<(web_sys::HtmlInputElement, FileChange)>,
     held_buttons: ButtonSet,
     _keyboard_guard: KeyboardGuard,
@@ -764,7 +942,7 @@ impl WebApp {
         });
         let mut session = SessionPanel::default();
         session.capabilities = SessionCapabilities::WEB;
-        session.status = "Drop a GB, GBC, GBA, or NDS ROM to begin".into();
+        session.status = "Drop a GB, GBC, GBA, NDS ROM, or RGSS archive to begin".into();
         shared.workspace.session = Some(session);
         Self {
             shared,
@@ -773,6 +951,7 @@ impl WebApp {
             audio: BrowserAudio::new(),
             library: BTreeMap::new(),
             pending_files: Arc::new(Mutex::new(Vec::new())),
+            upload_status: Arc::new(Mutex::new(None)),
             file_input: None,
             held_buttons: ButtonSet::empty(),
             _keyboard_guard: keyboard_guard,
@@ -827,6 +1006,7 @@ impl WebApp {
     }
 
     fn collect_dropped_files(&self, context: &Context) {
+        let upload_status = Arc::clone(&self.upload_status);
         let files = context.input(|input| input.raw.dropped_files.clone());
         for file in files {
             let name = file.path().to_string_lossy().into_owned();
@@ -836,11 +1016,23 @@ impl WebApp {
                 FileKind::Game
             };
             let pending = Arc::clone(&self.pending_files);
+            let upload_status = Arc::clone(&upload_status);
+            let repaint = context.clone();
             wasm_bindgen_futures::spawn_local(async move {
-                let result = file.bytes_async().await;
+                *upload_status
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner()) = Some(format!("Reading {name}…"));
+                repaint.request_repaint();
                 let pending_file = match kind {
-                    FileKind::Game => PendingFile::Game(name, result),
-                    FileKind::System => PendingFile::System(name, result),
+                    FileKind::Game => {
+                        let result = file
+                            .bytes_async()
+                            .await
+                            .and_then(|bytes| BrowserGame::from_single(name.clone(), bytes));
+                        repaint.request_repaint();
+                        PendingFile::Game(result)
+                    }
+                    FileKind::System => PendingFile::System(name, file.bytes_async().await),
                     FileKind::Save | FileKind::Plugin => unreachable!(),
                 };
                 pending
@@ -852,16 +1044,32 @@ impl WebApp {
     }
 
     fn start_pending_files(&mut self) {
+        if let Some(status) = self
+            .upload_status
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take()
+        {
+            if let Some(panel) = self.shared.workspace.session.as_mut() {
+                panel.status = status;
+                panel.busy = true;
+            }
+        }
         let files = std::mem::take(
             &mut *self
                 .pending_files
                 .lock()
                 .unwrap_or_else(|error| error.into_inner()),
         );
+        if !files.is_empty() {
+            if let Some(panel) = self.shared.workspace.session.as_mut() {
+                panel.busy = false;
+            }
+        }
         for file in files {
             match file {
-                PendingFile::Game(name, Ok(bytes)) => self.start_game(name, bytes),
-                PendingFile::Game(_, Err(error))
+                PendingFile::Game(Ok(game)) => self.start_game(game),
+                PendingFile::Game(Err(error))
                 | PendingFile::Save(_, Err(error))
                 | PendingFile::Plugin(_, Err(error))
                 | PendingFile::System(_, Err(error)) => self.report_error(error),
@@ -906,18 +1114,21 @@ impl WebApp {
         }
     }
 
-    fn start_game(&mut self, name: String, bytes: Vec<u8>) {
+    fn start_game(&mut self, game: BrowserGame) {
+        let name = game.label.clone();
         if let Some(session) = &self.session {
             session.stop();
         }
         self.audio.resume();
-        self.library.insert(name.clone(), bytes.clone());
-        match WebSession::load(name.clone(), bytes, Box::new(self.audio.sink())) {
+        self.library.insert(name.clone(), game.clone());
+        match WebSession::load(game, Box::new(self.audio.sink())) {
             Ok(session) => {
                 let info = session.info;
                 self.backend.attach(Arc::clone(&session.control), info.id);
                 let logical_size = if info.id == "nds" {
                     (256, 384)
+                } else if info.id == "rgss" {
+                    (544, 416)
                 } else {
                     info.screens
                         .first()
@@ -938,6 +1149,7 @@ impl WebApp {
                 });
                 if let Some(panel) = self.shared.workspace.session.as_mut() {
                     panel.active = true;
+                    panel.busy = false;
                     panel.error = None;
                     panel.title = name.clone();
                     panel.source = info.id.into();
@@ -959,24 +1171,40 @@ impl WebApp {
     fn report_error(&mut self, error: String) {
         if let Some(panel) = self.shared.workspace.session.as_mut() {
             panel.active = false;
+            panel.busy = false;
             panel.error = Some(error);
             panel.status = "Could not load game".into();
         }
     }
 
-    fn open_file_picker(&mut self) -> Result<(), String> {
-        self.open_picker(".gb,.gbc,.gba,.nds,.bin", FileKind::Game)
+    fn open_file_picker(&mut self, context: &Context) -> Result<(), String> {
+        self.open_picker(
+            ".gb,.gbc,.gba,.nds,.bin,.zip,.rgssad,.rgss2a,.rgss3a,.rxdata,.rvdata,.rvdata2",
+            FileKind::Game,
+            false,
+            context,
+        )
     }
 
-    fn open_save_picker(&mut self) -> Result<(), String> {
-        self.open_picker(".sav,.srm,.dat", FileKind::Save)
+    fn open_folder_picker(&mut self, context: &Context) -> Result<(), String> {
+        self.open_picker("", FileKind::Game, true, context)
     }
 
-    fn open_plugin_picker(&mut self) -> Result<(), String> {
-        self.open_picker(".rhai", FileKind::Plugin)
+    fn open_save_picker(&mut self, context: &Context) -> Result<(), String> {
+        self.open_picker(".sav,.srm,.dat", FileKind::Save, false, context)
     }
 
-    fn open_picker(&mut self, accept: &str, kind: FileKind) -> Result<(), String> {
+    fn open_plugin_picker(&mut self, context: &Context) -> Result<(), String> {
+        self.open_picker(".rhai", FileKind::Plugin, false, context)
+    }
+
+    fn open_picker(
+        &mut self,
+        accept: &str,
+        kind: FileKind,
+        directory: bool,
+        context: &Context,
+    ) -> Result<(), String> {
         let document = web_sys::window()
             .and_then(|window| window.document())
             .ok_or_else(|| "browser document is unavailable".to_owned())?;
@@ -986,35 +1214,123 @@ impl WebApp {
             .dyn_into::<web_sys::HtmlInputElement>()
             .map_err(|_| "created file input has the wrong type".to_owned())?;
         input.set_type("file");
-        input.set_accept(accept);
+        if !accept.is_empty() {
+            input.set_accept(accept);
+        }
+        if directory {
+            input.set_multiple(true);
+            input
+                .set_attribute("webkitdirectory", "")
+                .map_err(|error| format!("could not enable folder selection: {error:?}"))?;
+        }
         input
             .style()
             .set_property("display", "none")
             .map_err(|error| format!("could not hide file input: {error:?}"))?;
         let input_for_callback = input.clone();
         let pending = Arc::clone(&self.pending_files);
+        let upload_status = Arc::clone(&self.upload_status);
+        let repaint = context.clone();
+        *upload_status
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(if directory {
+            "Preparing folder upload…".to_owned()
+        } else {
+            "Preparing file upload…".to_owned()
+        });
+        context.request_repaint();
         let callback = Closure::wrap(Box::new(move |_event: web_sys::Event| {
-            let Some(file) = input_for_callback.files().and_then(|files| files.get(0)) else {
+            let Some(file_list) = input_for_callback.files() else {
                 return;
             };
-            let name = file.name();
             let pending = Arc::clone(&pending);
+            let upload_status = Arc::clone(&upload_status);
+            let repaint = repaint.clone();
+            let selected = (0..file_list.length())
+                .filter_map(|index| file_list.get(index))
+                .collect::<Vec<_>>();
             wasm_bindgen_futures::spawn_local(async move {
-                let result = file
-                    .array_buffer()
-                    .await
-                    .map(|buffer| js_sys::Uint8Array::new(&buffer).to_vec())
-                    .map_err(|error| format!("could not read {name}: {error:?}"));
-                let kind = if matches!(kind, FileKind::Game) && is_system_file_name(&name) {
-                    FileKind::System
+                let pending_file = if directory {
+                    let total = selected.len();
+                    let label = selected
+                        .first()
+                        .map(relative_browser_file_path)
+                        .and_then(|path| path.split('/').next().map(str::to_owned))
+                        .filter(|name| !name.is_empty())
+                        .unwrap_or_else(|| "game".to_owned())
+                        .to_owned();
+                    let mut entries = Vec::with_capacity(selected.len());
+                    let mut error = None;
+                    for (index, file) in selected.into_iter().enumerate() {
+                        let path = relative_browser_file_path(&file);
+                        match file.array_buffer().await {
+                            Ok(buffer) => {
+                                entries.push((path, js_sys::Uint8Array::new(&buffer).to_vec()));
+                                let percent = if total == 0 {
+                                    100
+                                } else {
+                                    ((index + 1) * 100) / total
+                                };
+                                *upload_status
+                                    .lock()
+                                    .unwrap_or_else(|error| error.into_inner()) = Some(format!(
+                                    "Reading RGSS folder: {}/{} files ({}%)",
+                                    index + 1,
+                                    total,
+                                    percent
+                                ));
+                                repaint.request_repaint();
+                            }
+                            Err(value) => {
+                                error = Some(format!("could not read folder entry: {value:?}"));
+                                break;
+                            }
+                        }
+                    }
+                    *upload_status
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner()) =
+                        Some("Indexing RGSS folder…".to_owned());
+                    repaint.request_repaint();
+                    PendingFile::Game(
+                        error.map_or_else(|| BrowserGame::from_dropped_files(label, entries), Err),
+                    )
                 } else {
-                    kind
-                };
-                let pending_file = match kind {
-                    FileKind::Game => PendingFile::Game(name, result),
-                    FileKind::Save => PendingFile::Save(name, result),
-                    FileKind::Plugin => PendingFile::Plugin(name, result),
-                    FileKind::System => PendingFile::System(name, result),
+                    let Some(file) = selected.into_iter().next() else {
+                        return;
+                    };
+                    let name = file.name();
+                    let size = file.size() as u64;
+                    *upload_status
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner()) =
+                        Some(format!("Reading {name} ({})…", format_bytes(size)));
+                    repaint.request_repaint();
+                    let result = file
+                        .array_buffer()
+                        .await
+                        .map(|buffer| js_sys::Uint8Array::new(&buffer).to_vec())
+                        .map_err(|error| format!("could not read {name}: {error:?}"));
+                    let kind = if matches!(kind, FileKind::Game) && is_system_file_name(&name) {
+                        FileKind::System
+                    } else {
+                        kind
+                    };
+                    match kind {
+                        FileKind::Game => PendingFile::Game(result.and_then(|bytes| {
+                            if name.to_ascii_lowercase().ends_with(".zip") {
+                                *upload_status
+                                    .lock()
+                                    .unwrap_or_else(|error| error.into_inner()) =
+                                    Some(format!("Extracting {name}…"));
+                                repaint.request_repaint();
+                            }
+                            BrowserGame::from_single(name, bytes)
+                        })),
+                        FileKind::Save => PendingFile::Save(name, result),
+                        FileKind::Plugin => PendingFile::Plugin(name, result),
+                        FileKind::System => PendingFile::System(name, result),
+                    }
                 };
                 pending
                     .lock()
@@ -1033,22 +1349,27 @@ impl WebApp {
         Ok(())
     }
 
-    fn handle_session_actions(&mut self) {
+    fn handle_session_actions(&mut self, context: &Context) {
         let actions = std::mem::take(&mut self.shared.workspace.session_actions);
         if self.shared.take_plugin_import_request() {
-            if let Err(error) = self.open_plugin_picker() {
+            if let Err(error) = self.open_plugin_picker(context) {
                 self.report_error(error);
             }
         }
         if let Some(name) = actions.open {
-            if let Some(bytes) = self.library.get(&name).cloned() {
-                self.start_game(name, bytes);
+            if let Some(game) = self.library.get(&name).cloned() {
+                self.start_game(game);
             } else {
                 self.report_error(format!("game {name:?} is no longer available in this tab"));
             }
         }
-        if actions.browse || actions.browse_game_file {
-            if let Err(error) = self.open_file_picker() {
+        if actions.browse {
+            if let Err(error) = self.open_folder_picker(context) {
+                self.report_error(error);
+            }
+        }
+        if actions.browse_game_file {
+            if let Err(error) = self.open_file_picker(context) {
                 self.report_error(error);
             }
         }
@@ -1084,7 +1405,7 @@ impl WebApp {
             }
         }
         if actions.import_saves || output_import {
-            if let Err(error) = self.open_save_picker() {
+            if let Err(error) = self.open_save_picker(context) {
                 self.report_error(error);
             }
         }
@@ -1238,7 +1559,7 @@ impl App for WebApp {
 
         self.poll_plugins();
         self.shared.draw(ui);
-        self.handle_session_actions();
+        self.handle_session_actions(&context);
         if self.session.as_ref().is_some_and(|session| session.running) {
             context.request_repaint();
         }
@@ -1274,6 +1595,28 @@ fn is_system_file_name(name: &str) -> bool {
                 "bios7.bin" | "bios9.bin" | "firmware.bin" | "gba_bios.bin" | "bios.bin"
             )
     )
+}
+
+fn relative_browser_file_path(file: &web_sys::File) -> String {
+    let path = js_sys::Reflect::get(file.as_ref(), &JsValue::from_str("webkitRelativePath"))
+        .ok()
+        .and_then(|value| value.as_string())
+        .unwrap_or_default();
+    if path.is_empty() {
+        file.name()
+    } else {
+        path
+    }
+}
+
+fn format_bytes(bytes: u64) -> String {
+    if bytes >= 1024 * 1024 {
+        format!("{:.1} MiB", bytes as f64 / (1024.0 * 1024.0))
+    } else if bytes >= 1024 {
+        format!("{:.1} KiB", bytes as f64 / 1024.0)
+    } else {
+        format!("{bytes} B")
+    }
 }
 
 fn install_browser_key_guard() -> Result<KeyboardGuard, JsValue> {
@@ -1389,6 +1732,21 @@ pub fn start() -> Result<(), JsValue> {
     let keyboard_guard = install_browser_key_guard()?;
     let runner = WebRunner::new();
     wasm_bindgen_futures::spawn_local(async move {
+        let ready =
+            js_sys::Reflect::get(&js_sys::global(), &JsValue::from_str("__fanplayRubyReady"));
+        match ready {
+            Ok(value) if value.is_instance_of::<js_sys::Promise>() => {
+                if let Err(error) = JsFuture::from(js_sys::Promise::from(value)).await {
+                    web_sys::console::error_1(&error);
+                    return;
+                }
+            }
+            Ok(_) => {}
+            Err(error) => {
+                web_sys::console::error_1(&error);
+                return;
+            }
+        }
         let options = WebOptions {
             max_fps: Some(60),
             ..Default::default()

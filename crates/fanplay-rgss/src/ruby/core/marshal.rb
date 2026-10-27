@@ -3,11 +3,9 @@
 class << Marshal
   alias __fanplay_load_alias load unless method_defined?(:__fanplay_load_alias)
   def load(port, proc = nil)
-    if proc
-      __fanplay_load_alias(port, ->(object) { proc.call(FANPLAY.force_utf8(object)) })
-    else
-      __fanplay_load_alias(port, FANPLAY.method(:force_utf8))
-    end
+    # The reader tags strings as UTF-8 as it creates them; wrapping every
+    # object in a Ruby callback made large RGSS data loads several times slower.
+    __fanplay_load_alias(port, proc)
   end
 end
 

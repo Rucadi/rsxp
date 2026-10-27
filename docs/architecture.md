@@ -14,7 +14,7 @@ and shared services. This is the implemented layout, not a target architecture.
 | `cores/gba/core` / `fanplay-core-gba` | RustBoyAdvance-NG adapter and BIOS assets |
 | `cores/nds/core` / `fanplay-core-nds` | Dust adapter; local dependency patches remain in `cores/nds/vendor` |
 | `cores/rgss/core` / `fanplay-core-rgss` | Generic-core adapter for the RGSS runtime |
-| `cores/rgss/ruby` / `fanplay-rgss-ruby` | MRI embedding and Magnus bindings; Rust library name `ruby_rgss_core` |
+| `cores/rgss/ruby` / `fanplay-rgss-ruby` | SabiRuby embedding and host services; Rust library name `ruby_rgss_core` |
 | `crates/fanplay-rgss` | RPG Maker runtime, resources, renderers, media, Ruby shim, patches and generic extension transport; package `fanplay-rgss`, import `fanplay_rgss` |
 | `crates/fanplay-mcp` | Standalone MCP adapter and generated OpenAPI snapshot; connects to a running frontend and owns no emulator or game API implementation |
 | `crates/fanplay-gba` | GBA library/interface presentation, no emulator dependency |
@@ -42,7 +42,7 @@ flowchart TD
     Cartridge --> Catalog[fanplay-cores registry]
     Catalog --> Worker[fanplay-frontend core worker]
     Worker --> Core[GBA / DS core]
-    Runner -->|RGSS| NativeRGSS[desktop runtime + MRI]
+    Runner -->|RGSS| NativeRGSS[desktop runtime + SabiRuby]
     NativeRGSS --> Engine[fanplay-rgss runtime]
     Core --> Media[video, audio, input and save contracts]
     Media --> Cartridge
@@ -59,7 +59,7 @@ consistent when startup behavior changes.
 
 The dashboard supervises one game session at a time. `session.rs` carries
 framed messages between dashboard and runner. A cartridge runner owns a generic
-core worker plus host-side frame/audio/save handling. RGSS owns MRI and the
+core worker plus host-side frame/audio/save handling. RGSS owns SabiRuby and the
 game working directory in its process. Exit/reset/close are host lifecycle
 operations, not evidence that Ruby can safely run concurrently in arbitrary
 in-process threads.
@@ -103,7 +103,7 @@ remote submissions. Composition and host presentation are separate choices.
   layout changes belong in `fanplay-nds`; emulation, BIOS and backend save
   behavior belong in `cores/nds`.
 - The native dashboard is gated on both `gpu` and `rgss`. A cartridge-only
-  desktop build can run headlessly without MRI; it is not a standalone generic
+  desktop build can run headlessly without SabiRuby; it is not a standalone generic
   graphical dashboard.
 - Android-specific eframe settings exist, but there is no complete mobile
   application or build tree in this checkout.

@@ -4,6 +4,9 @@ require 'zlib'
 require 'weakref'
 require 'fileutils'
 require 'json'
+# CRuby aliases `$:` to `$LOAD_PATH`; SabiRuby has no `$:` global. Point them
+# at the same array so plugins that push to `$:` affect require lookup.
+$: = $LOAD_PATH unless $:
 # Older Essentials bitmap caches call disposed? on cached WeakRef wrappers and
 # expect a dead reference to count as disposed. Ruby's Delegator raises instead
 # when forwarding to a collected object, so provide that RGSS-compatible query.
@@ -32,6 +35,39 @@ class Thread
       value
     end
   end
+  class Terminated < Exception; end
+  # SabiRuby has no scheduler. RGSS uses Thread mainly for background I/O;
+  # run the block synchronously and hand back a finished thread-like object.
+  class Synchronous
+    def initialize(value); @value=value; end
+    def value; @value; end
+    def join(*_args); self; end
+    def status; false; end
+    def alive?; false; end
+    def running?; false; end
+    def kill; self; end
+    def terminate; self; end
+    def wakeup; self; end
+    def run; self; end
+    def name; 'fanplay-sync'; end
+    def [](_key); nil; end
+    def []=(_key,value); value; end
+  end
+  class << self
+    def new(*args,&block)
+      value=nil
+      begin
+        value=block.call(*args) if block
+      rescue Terminated
+      end
+      Synchronous.new(value)
+    end
+    alias start new
+    alias fork new
+    def exit
+      raise Terminated
+    end
+  end
 end
 module HTTPLite
   # fanplay exposes HTTPLite::JSON with stringify/parse and ParserError.
@@ -53,6 +89,14 @@ class FANPLAYStop < Exception; end
 MKXPError = FANPLAYError unless defined?(MKXPError)
 MKXPStop = FANPLAYStop unless defined?(MKXPStop)
 
+# CRuby's immediate exit; plugin loaders use it to stop after a fatal error.
+module Kernel
+  def exit!(status=true)
+    exit(status.is_a?(Integer) ? status : (status ? 0 : 1))
+  end
+  module_function :exit!
+end
+
 # Ruby 3.2 removed File.exists?/Dir.exists?; older RGSS games (and their
 # preload.rb) still use them.
 class File
@@ -63,6 +107,132 @@ end
 class Dir
   class << self
     alias_method :exists?, :exist? unless method_defined?(:exists?)
+  end
+end
+
+# mkxp games configure process-wide encodings at startup. SabiRuby has no
+# transcoder configuration, so keep the assignments as plain accessors rather
+# than failing the whole script section.
+unless Encoding.respond_to?(:default_internal=)
+  class << Encoding
+    attr_accessor :default_internal, :default_external
+  end
+end
+
+# SabiRuby exposes only Zlib::Inflate/Zlib::Deflate; RGSS scripts and the
+# engine's load_data use CRuby's module-level shortcuts.
+module Zlib
+  Error=StandardError unless defined?(Error)
+  def self.inflate(data)
+    Inflate.inflate(data)
+  end
+  def self.deflate(data,level=DEFAULT_COMPRESSION)
+    Deflate.deflate(data,level)
+  end
+end
+
+# SabiRuby defines these only on Integer and Float, but RGSS utility plugins
+# alias/decorate them on Numeric itself.
+class Numeric
+  def round(digits=0); to_f.round(digits); end
+  def ceil(digits=0); to_f.ceil(digits); end
+  def floor(digits=0); to_f.floor(digits); end
+  def truncate(digits=0); to_f.truncate(digits); end
+end
+
+# SabiRuby ships Set, but not the Enumerable convenience or VERSION constant
+# that the bundled stdlib copy adds.
+class Set
+  VERSION='1.1.0' unless defined?(VERSION)
+end
+module Enumerable
+  def to_set(klass=Set,*args,&block)
+    klass.new(self,*args,&block)
+  end unless method_defined?(:to_set)
+end
+
+# SabiRuby has no Unicode normalization. RGSS scripts use NFD mainly to strip
+# accents for sorting, so map the common Latin letters to their ASCII bases.
+class String
+  FANPLAY_ACCENT_MAP={
+    'á'=>'a','à'=>'a','ä'=>'a','â'=>'a','ã'=>'a','å'=>'a','ā'=>'a','ă'=>'a','ą'=>'a',
+    'Á'=>'A','À'=>'A','Ä'=>'A','Â'=>'A','Ã'=>'A','Å'=>'A','Ā'=>'A','Ă'=>'A','Ą'=>'A',
+    'é'=>'e','è'=>'e','ë'=>'e','ê'=>'e','ē'=>'e','ė'=>'e','ę'=>'e',
+    'É'=>'E','È'=>'E','Ë'=>'E','Ê'=>'E','Ē'=>'E','Ė'=>'E','Ę'=>'E',
+    'í'=>'i','ì'=>'i','ï'=>'i','î'=>'i','ī'=>'i','į'=>'i',
+    'Í'=>'I','Ì'=>'I','Ï'=>'I','Î'=>'I','Ī'=>'I','Į'=>'I',
+    'ó'=>'o','ò'=>'o','ö'=>'o','ô'=>'o','õ'=>'o','ø'=>'o','ō'=>'o','ő'=>'o',
+    'Ó'=>'O','Ò'=>'O','Ö'=>'O','Ô'=>'O','Õ'=>'O','Ø'=>'O','Ō'=>'O','Ő'=>'O',
+    'ú'=>'u','ù'=>'u','ü'=>'u','û'=>'u','ū'=>'u','ű'=>'u',
+    'Ú'=>'U','Ù'=>'U','Ü'=>'U','Û'=>'U','Ū'=>'U','Ű'=>'U',
+    'ñ'=>'n','ń'=>'n','Ñ'=>'N','Ń'=>'N',
+    'ç'=>'c','ć'=>'c','č'=>'c','Ç'=>'C','Ć'=>'C','Č'=>'C',
+    'ý'=>'y','ÿ'=>'y','Ý'=>'Y','Ÿ'=>'Y',
+    'š'=>'s','ś'=>'s','Š'=>'S','Ś'=>'S',
+    'ž'=>'z','ź'=>'z','ż'=>'z','Ž'=>'Z','Ź'=>'Z','Ż'=>'Z',
+    'ł'=>'l','Ł'=>'L','đ'=>'d','Đ'=>'D','ß'=>'ss','æ'=>'ae','Æ'=>'AE','œ'=>'oe','Œ'=>'OE'
+  }
+  def unicode_normalize(form=:nfc)
+    return self if form==:nfc
+    out=''.dup
+    each_char { |char| out << (FANPLAY_ACCENT_MAP[char] || char) }
+    out
+  end
+  def unicode_normalized?(form=:nfc)
+    unicode_normalize(form)==self
+  end
+end
+
+# SabiRuby's File is not an IO subclass and it exposes no IO module, but RGSS
+# file wrappers reference `IO::SEEK_*` and call `IO.read`. Provide the small
+# surface the games and their plugins use.
+unless defined?(IO)
+  module IO
+    SEEK_SET=0
+    SEEK_CUR=1
+    SEEK_END=2
+    def self.read(path,length=nil,offset=0)
+      length ? File.read(path,length,offset) : File.read(path)
+    end
+    def self.binread(path,length=nil,offset=0)
+      length ? File.binread(path,length,offset) : File.binread(path)
+    end
+    def self.write(path,data,offset=nil)
+      offset ? File.write(path,data,offset) : File.write(path,data)
+    end
+    def self.binwrite(path,data,offset=nil)
+      offset ? File.binwrite(path,data,offset) : File.binwrite(path,data)
+    end
+    def self.copy_stream(source,destination,length=nil,offset=0)
+      data=source.respond_to?(:read) ? source.read(length) : File.binread(source.to_s)
+      if destination.respond_to?(:write)
+        destination.write(data)
+      else
+        File.binwrite(destination.to_s,data)
+      end
+      data.bytesize
+    end
+    def self.select(*_args)
+      raise NotImplementedError,'IO.select is not available'
+    end
+    def self.popen(*_args)
+      raise NotImplementedError,'IO.popen is not available'
+    end
+  end
+end
+
+# SabiRuby reports file/network failures as RuntimeError and defines no Errno
+# constants. Provide the ones RGSS scripts name so their rescue/case clauses
+# compile; the game's message-based formatter still handles the actual errors.
+unless defined?(Errno)
+  module Errno
+    EACCES=Class.new(SystemCallError)
+    ECONNABORTED=Class.new(SystemCallError)
+    ECONNREFUSED=Class.new(SystemCallError)
+    EINVAL=Class.new(SystemCallError)
+    EISDIR=Class.new(SystemCallError)
+    ENOENT=Class.new(SystemCallError)
+    ETIMEDOUT=Class.new(SystemCallError)
   end
 end
 
@@ -137,7 +307,7 @@ module FANPLAY
 
   # Some games reopen WeakRef with a Ruby 1.8 implementation. Keep the engine's
   # resource registry on the interpreter's GC-aware implementation.
-  ResourceRef = WeakRef.dup
+  ResourceRef = defined?(FanplayWeakRef) ? FanplayWeakRef : WeakRef.dup
   ERROR_OUTPUT = STDERR.method(:write)
   ERROR_FORMAT = Exception.instance_method(:full_message)
   SYNC_QUEUE = []
@@ -206,6 +376,11 @@ module FANPLAY
   # has not already provided one.
   def self.before_scripts; end unless singleton_class.method_defined?(:before_scripts)
   def self.prepare_script(source)
+    # SabiRuby already provides Set; the bundled CRuby stdlib copy uses
+    # syntax its compiler does not understand and would just replace it.
+    if defined?(Set) && source.include?('set.rb - defines the Set class')
+      return "# Set is provided by SabiRuby; bundled stdlib copy skipped.\n"
+    end
     # Pokemon Royal bundles two implementations of Make It Rain in one
     # section. The later standalone implementation replaces the earlier
     # StatDownMove implementation; reopening it would both reject the new
@@ -227,27 +402,63 @@ module FANPLAY
     # Route only those calls through the decoder; leave event/plugin evals on
     # Ruby's native Kernel.eval so their caller binding and self are preserved.
     if source.include?('load_scripts_from_folder')
-      source=source.gsub(/(?<![.\w:])eval(?=[ \t]*\()/,'FANPLAY.eval_game_script')
+      # This engine's pattern library has no lookbehind/lookahead. Match the
+      # character in front of `eval` and write it back, and repeat until no
+      # adjacent call is left unconverted.
+      loop do
+        fixed=source.gsub(/(\A|[^.\w:])eval([ \t]*\()/) { "#{$1}FANPLAY.eval_game_script#{$2}" }
+        break if fixed==source
+        source=fixed
+      end
+    end
+    # SabiRuby's File stands alone, so RGSS wrappers that reopen it as
+    # `class File < IO` would hit a superclass mismatch. Reopen File itself;
+    # its file methods are already on the class.
+    if source.include?('File < IO')
+      source=source.gsub(/^([ \t]*)class([ \t]+)File[ \t]*<[ \t]*IO[ \t]*\r?$/) { "#{$1}class#{$2}File" }
+    end
+    # SabiRuby's compiler rejects op-assignment on a scoped constant, which
+    # Essentials v21.1 Hotfixes uses to append its label to ERROR_TEXT.
+    if source.include?('Essentials::ERROR_TEXT +=')
+      source=source.gsub(/^([ \t]*)(Essentials::ERROR_TEXT)[ \t]*\+=[ \t]*(.+)$/) { "#{$1}#{$2} = #{$2} + (#{$3})" }
     end
     if RGSS_VERSION==1
       # Binary readers written for Ruby 1.8 expect String#[0] to return a byte.
-      source=source.gsub(/\.read\(1\)\[0\]/,'.read(1).getbyte(0)')
-      source=source.gsub(/\b([a-z_]\w*)\[([^\[\]\n]+)\](\s*(?:[!=]=\s*0x[\da-fA-F]+|>>\s*\d+))/,'FANPLAY.byte_index(\1,\2)\3')
-      # Old Essentials event handlers use return to leave just the callback.
-      # A modern non-lambda proc instead returns out of the script evaluation.
-      # Keep the legacy event convention and its permissive arity while giving
-      # zero/one/two-argument callbacks local returns, including inside loops.
-      source=source.gsub(/(\bEvents\.\w+[ \t]*\+=[ \t]*)proc([ \t]*(?:\{|do\b))[ \t]*\|[ \t]*([a-z_]\w*)[ \t]*,[ \t]*([a-z_]\w*)[ \t]*\|/) do
-        "#{$1}lambda#{$2}|#{$3}=nil,#{$4}=nil,*|"
+      if source.include?('.read(1)[0]')
+        source=source.gsub(/\.read\(1\)\[0\]/,'.read(1).getbyte(0)')
       end
-      source=source.gsub(/(\bEvents\.\w+[ \t]*\+=[ \t]*)proc([ \t]*(?:\{|do\b))[ \t]*\|[ \t]*([a-z_]\w*)[ \t]*\|/) do
-        "#{$1}lambda#{$2}|#{$3}=nil,*|"
+      if source.include?('0x') || source.include?('>>')
+        source=source.gsub(/\b([a-z_]\w*)\[([^\[\]\n]+)\](\s*(?:[!=]=\s*0x[\da-fA-F]+|>>\s*\d+))/,'FANPLAY.byte_index(\1,\2)\3')
       end
-      source=source.gsub(/(\bEvents\.\w+[ \t]*\+=[ \t]*)proc([ \t]*(?:\{|do\b))(?!\s*\|)/,'\1lambda\2|*|')
+      if source.include?('Events.')
+        # Old Essentials event handlers use return to leave just the callback.
+        # A modern non-lambda proc instead returns out of the script evaluation.
+        # Keep the legacy event convention and its permissive arity while giving
+        # zero/one/two-argument callbacks local returns, including inside loops.
+        source=source.gsub(/(\bEvents\.\w+[ \t]*\+=[ \t]*)proc([ \t]*(?:\{|do\b))[ \t]*\|[ \t]*([a-z_]\w*)[ \t]*,[ \t]*([a-z_]\w*)[ \t]*\|/) do
+          "#{$1}lambda#{$2}|#{$3}=nil,#{$4}=nil,*|"
+        end
+        source=source.gsub(/(\bEvents\.\w+[ \t]*\+=[ \t]*)proc([ \t]*(?:\{|do\b))[ \t]*\|[ \t]*([a-z_]\w*)[ \t]*\|/) do
+          "#{$1}lambda#{$2}|#{$3}=nil,*|"
+        end
+        # The engine has no lookahead, so consume the following whitespace and
+        # the next character instead of testing that it is not `|`; put them
+        # back unchanged. A `|` here means a parameter list this pass handles
+        # elsewhere (possibly split over several lines), so leave it alone.
+        source=source.gsub(/(\bEvents\.\w+[ \t]*\+=[ \t]*)proc([ \t]*(?:\{|do\b))(\s*)(\||[^|])/) do
+          if $4=='|'
+            "#{$1}proc#{$2}#{$3}#{$4}"
+          else
+            "#{$1}lambda#{$2}|*|#{$3}#{$4}"
+          end
+        end
+      end
     end
     # Ruby 1.8 byte-API polyfills must not replace Ruby's native byte methods
     # with modern character-indexing methods.
-    source=source.gsub(/^([ \t]*alias[ \t]+(getbyte|setbyte|bytesize)[ \t]+(?:\[\]=?|size))[ \t]*\r?$/,'\1 unless method_defined?(:\2)')
+    if source.include?('alias')
+      source=source.gsub(/^([ \t]*alias[ \t]+(getbyte|setbyte|bytesize)[ \t]+(?:\[\]=?|size))[ \t]*\r?$/,'\1 unless method_defined?(:\2)')
+    end
     # Older Essentials supplies a plain WeakRef class. Reopening stdlib's
     # Delegator subclass changes !ref for dead references, causing bitmap
     # caches to return dead wrappers instead of nil. Restore its plain base.
@@ -293,7 +504,9 @@ module FANPLAY
           # Ruby rejects it there; return preserves the intended method exit.
           fixed=line.sub(/\bnext\b/,'return')
         elsif message.include?("unexpected ':'")
-          fixed=line.sub(/\A([ \t]*when\s+-?\d+(?:\s*,\s*-?\d+)*)[ \t]*:(?!:)/,'\1 then')
+          # No lookahead: match the following character and put it back so a
+          # `::` constant separator is still left untouched.
+          fixed=line.sub(/\A([ \t]*when\s+-?\d+(?:\s*,\s*-?\d+)*)[ \t]*:([^:]|$)/,'\1 then\2')
         elsif message.include?('invalid multibyte escape')
           fixed=line.gsub('\x7f-\x9f','\u007f-\u009f')
         end
@@ -369,7 +582,7 @@ module FANPLAY
   def self.install_native_tilemap
     return if ENV['FANPLAY_NATIVE_TILEMAP']=='0'
     return unless defined?(TilemapRenderer) && TilemapRenderer.const_defined?(:TileSprite,false)
-    klass=TilemapRenderer.const_get(:TileSprite,false)
+    klass=TilemapRenderer.const_get(:TileSprite)
     return unless klass.is_a?(Class) && klass < Sprite
     klass.prepend(NativeTileSprite) unless klass.ancestors.include?(NativeTileSprite)
 

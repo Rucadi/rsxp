@@ -28,7 +28,15 @@ module Kernel
           rescue Zlib::Error
             next
           end
-          fixed=source.gsub(/^([ \t]*)class ([A-Z]\w*(?:::\w+)*) < \2[ \t]*\r?$/) { "#{$1}class #{$2}" }
+          # This engine's pattern library has no backreferences, so capture the
+          # superclass and compare it to the class name in the block.
+          fixed=source.gsub(/^([ \t]*)class ([A-Z]\w*(?:::\w+)*) < ([A-Z]\w*(?:::\w+)*)([ \t]*\r?)$/) do
+            if $2==$3
+              "#{$1}class #{$2}"
+            else
+              "#{$1}class #{$2} < #{$3}#{$4}"
+            end
+          end
           next if fixed==source
           script[1]=Zlib.deflate(fixed)
           FANPLAY::ERROR_OUTPUT.call("Repaired redundant class self-inheritance in #{script[0]}, in memory.\n")
@@ -49,7 +57,7 @@ module Kernel
     rescue Exception => error
       # Some Essentials forks raise their own Reset exception from title
       # screen styles instead of using the engine's RGSSReset class.
-      raise unless error.class.name == 'Reset'
+      raise error unless error.class.name == 'Reset'
       retry
     end
   end
@@ -58,5 +66,27 @@ module Kernel
   end
   def msgbox(*messages) = puts(*messages)
   def msgbox_p(*messages) = p(*messages)
+end
+
+# Essentials' plugin loader and event interpreter call Kernel#eval directly,
+# bypassing prepare_script. Apply the same compatibility rewrites there; the
+# native eval still receives the caller's binding and self.
+module Kernel
+  alias_method :__fanplay_native_eval, :eval unless method_defined?(:__fanplay_native_eval)
+  def eval(source,binding=nil,filename='(eval)',lineno=1)
+    source=FANPLAY.prepare_script(source) if source.is_a?(String)
+    __fanplay_native_eval(source,binding,filename,lineno)
+  end
+  module_function :eval
+
+  # Cable Club pulls in the CRuby socket extension, which does not exist here.
+  # It is optional online-play code; skip the native libraries so the plugin
+  # can load for offline play.
+  alias_method :__fanplay_native_require, :require unless method_defined?(:__fanplay_native_require)
+  def require(name)
+    return false if %w[socket socket.so io/wait io/wait.so].include?(name.to_s)
+    __fanplay_native_require(name)
+  end
+  module_function :require
 end
 

@@ -5,14 +5,14 @@
 # The AppImage has to run on as many distributions as possible, so it is linked
 # against an old, widely deployed glibc instead of Nix's bleeding-edge nixpkgs.
 # Debian 11 (bullseye) ships glibc 2.31, which covers Ubuntu 20.04+, Debian 11+
-# and every newer release, and its official Ruby image provides a matching
-# Ruby 3.4 with headers, so neither libc nor Ruby has to be built from source.
+# and every newer release. SabiRuby's source compiler is built with the C
+# toolchain below; no system Ruby installation is needed.
 #
 # This image only carries the toolchain. The actual build runs through
 # tools/build-appimage.sh with the repository bind-mounted at /src, which keeps
 # the Rust target directory cacheable between CI runs (see the workflow).
 
-FROM ruby:3.4-bullseye AS toolchain
+FROM debian:bullseye AS toolchain
 
 ARG RUST_VERSION=1.95.0
 ARG APPIMAGETOOL_URL=https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
@@ -25,7 +25,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Native dependencies mirror default.nix's runtimeLibraries (udev, ALSA, X11,
 # xkbcommon, Wayland, Vulkan) plus the pieces the build scripts need: libclang
-# for rb-sys' bindgen, and patchelf to make the staged libraries relocatable.
+# for native dependencies, and patchelf to make the staged libraries relocatable.
 #
 # Debian 11 is end-of-life, so its packages now live on archive.debian.org. An
 # EOL base is deliberate: the whole point is to link against an old glibc, and
@@ -78,6 +78,6 @@ RUN mkdir -p /opt/appimagetool \
 
 # Allow the build to run as an arbitrary uid (CI passes `--user`), while still
 # letting it write to the Rust, Ruby and gem installs and read appimagetool.
-RUN chmod -R a+rwX /usr/local/cargo /usr/local/rustup /usr/local/lib/ruby /opt/appimagetool
+RUN chmod -R a+rwX /usr/local/cargo /usr/local/rustup /opt/appimagetool
 
 WORKDIR /src

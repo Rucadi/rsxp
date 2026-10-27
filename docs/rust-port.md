@@ -1,7 +1,7 @@
 # RPG Maker runtime and compatibility
 
-`fanplay-rgss` is the Rust engine package. `cores/rgss/ruby` embeds native MRI
-and supplies Magnus bindings. RGSS 1, 2 and 3 are selectable, but
+`fanplay-rgss` is the Rust engine package. `cores/rgss/ruby` embeds SabiRuby 0.8.0
+and its source compiler. RGSS 1, 2 and 3 are selectable, but
 selection does not imply complete XP/VX/VX Ace or plugin compatibility.
 
 ## Startup
@@ -15,7 +15,7 @@ cartridge files to cartridge cores. The run parser requires one content source.
 
 The Ruby shim, compatibility helpers and RPG data definitions are assembled
 from `crates/fanplay-rgss/src/ruby/`. The native bindings live under
-`cores/rgss/ruby/src/bindings/`. The engine's command dispatcher is
+`cores/rgss/ruby/src/desktop/`. The engine's command dispatcher is
 `crates/fanplay-rgss/src/engine/commands.rs`; those files are the authoritative
 API surface, not a list copied from another RGSS implementation.
 
@@ -34,7 +34,19 @@ separate from generic RGSS compatibility. See [extensions](../extensions/README.
 
 ## Limits
 
-The native interpreter is modern MRI, not RPG Maker's original embedded Ruby.
+The desktop interpreter is [SabiRuby](https://github.com/sabiruby/sabiruby), with
+mruby 4.1 semantics. Its VM is Rust; compiling Ruby source uses its bundled C
+compiler. The serialized engine bridge uses the portable Ruby RGSS classes;
+the former Magnus retained-object accelerators are no longer used.
+
+The host supplies filesystem access, JSON, zlib, Marshal 4.8 game data, weak
+references and GC-driven resource disposal. This is not the full CRuby standard
+library: native gems, OpenSSL/socket/Fiddle, Ruby threads, arbitrary finalizer
+procs, streaming zlib and some Marshal extension records remain unsupported.
+Encoding conversion supports UTF-8, Windows-1252 and Latin-1; regexp lookaround
+and pattern backreferences are not supported by SabiRuby. Existing game/plugin
+scripts that require these facilities may fail. Browser builds retain ruby.wasm.
+
 Language differences, Windows APIs, arbitrary DLL extensions, RTP conventions
 and game/plugin assumptions can still prevent execution. Targeted compatibility
 helpers do not reproduce a complete Windows environment.

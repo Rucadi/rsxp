@@ -108,7 +108,7 @@ jobs:
         include:
           - os: windows-2022
             platform: windows-x86_64
-            # Match RubyInstaller's GNU ABI rather than the MSVC default.
+            # Use the MinGW toolchain for the native compiler.
             target: x86_64-pc-windows-gnu
             suffix: .exe
           - os: macos-14
@@ -122,9 +122,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
         with:
           targets: ${{ matrix.target }}
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '3.4'
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -138,7 +135,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> target
-          key: desktop-${{ matrix.target }}-ruby-3.4
+          key: desktop-${{ matrix.target }}-sabiruby-0.8
       - name: Build desktop
         env:
           BUILD_TARGET: ${{ matrix.target }}
@@ -151,7 +148,7 @@ jobs:
           binary="target/$BUILD_TARGET/release/fanplay$EXE_SUFFIX"
           "$binary" --version
           "$binary" run --script crates/fanplay-rgss/testdata/rgss_smoke.rb --headless
-      - name: Bundle Ruby and native dependencies
+      - name: Bundle native dependencies
         env:
           BUILD_TARGET: ${{ matrix.target }}
         run: |
@@ -173,7 +170,7 @@ jobs:
       - name: Build and test macOS disk image
         if: runner.os == 'macOS'
         run: |
-          # The app bundles its own Ruby and libraries, so it ships as a normal
+          # The app embeds SabiRuby and bundles native libraries, so it ships as a normal
           # drag-to-Applications disk image rather than a system installer.
           mkdir -p artifacts/dmg
           ditto artifacts/macos/FANPLAY.app artifacts/dmg/FANPLAY.app

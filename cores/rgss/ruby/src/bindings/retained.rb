@@ -23,6 +23,16 @@ module FANPLAY::Retained
     def invalidate!
       @reclassify = true
     end
+    # SabiRuby's UnboundMethod#bind_call re-resolves a native/attr method by
+    # name, which would call the wrapper that replaced it. Keep the original
+    # under an alias and call that; aliases also carry attr/native methods.
+    def original_alias(klass, name)
+      key="__fanplay_retained_#{name.to_s.gsub(/[^A-Za-z0-9_]/,'_')}".to_sym
+      unless klass.method_defined?(key) || klass.private_method_defined?(key)
+        klass.alias_method(key,name)
+      end
+      key
+    end
     def reclassification_pending? = @reclassify
     def kind(object)
       return Sprite if object.is_a?(Sprite)
@@ -170,24 +180,24 @@ if FANPLAY::Retained::ENABLED
     observer = klass
     ivars=fields.map { |field| "@#{field}".to_sym }.freeze
     fields.each do |field|
-      original=klass.instance_method("#{field}=")
+      original=FANPLAY::Retained.original_alias(klass,"#{field}=")
       ivar="@#{field}".to_sym
       observer.define_method("#{field}=") do |value|
         previous = instance_variable_get(ivar)
-        result = original.bind_call(self,value)
+        result = send(original,value)
         if @__fanplay_dependency_token && previous != instance_variable_get(ivar)
           __fanplay_touch(self)
         end
         result
       end
     end
-    original_set=klass.instance_method(:set)
+    original_set=FANPLAY::Retained.original_alias(klass,:set)
     observer.define_method(:set) do |*args|
       a=instance_variable_get(ivars[0])
       b=instance_variable_get(ivars[1])
       c=instance_variable_get(ivars[2])
       d=instance_variable_get(ivars[3])
-      result = original_set.bind_call(self,*args)
+      result = send(original_set,*args)
       if @__fanplay_dependency_token && (a != instance_variable_get(ivars[0]) ||
           b != instance_variable_get(ivars[1]) || c != instance_variable_get(ivars[2]) ||
           d != instance_variable_get(ivars[3]))
@@ -195,9 +205,9 @@ if FANPLAY::Retained::ENABLED
       end
       result
     end
-    original_copy=klass.instance_method(:initialize_copy)
+    original_copy=FANPLAY::Retained.original_alias(klass,:initialize_copy)
     observer.define_method(:initialize_copy) do |other|
-      result=original_copy.bind_call(self,other)
+      result=send(original_copy,other)
       remove_instance_variable(:@__fanplay_dependency_token) if instance_variable_defined?(:@__fanplay_dependency_token)
       result
     end
@@ -214,13 +224,13 @@ if FANPLAY::Retained::ENABLED
   FANPLAY::Retained::FIELDS.each do |klass,fields|
     observer = klass
     fields.each do |field|
-      original=klass.instance_method("#{field}=")
+      original=FANPLAY::Retained.original_alias(klass,"#{field}=")
       ivar="@#{field}".to_sym
       reference=%i[bitmap viewport pattern].include?(field)
       owned=%i[src_rect rect color tone].include?(field)
       observer.define_method("#{field}=") do |value|
         previous=instance_variable_get(ivar)
-        result=original.bind_call(self,value)
+        result=send(original,value)
         unless owned
           current=instance_variable_get(ivar)
           FANPLAY::Retained.rewire(self) if reference && !previous.equal?(current)
@@ -233,10 +243,10 @@ if FANPLAY::Retained::ENABLED
       end
     end
     watched_ivars=fields.map { |field| "@#{field}".to_sym }.freeze
-    original_ivar_set=klass.instance_method(:instance_variable_set)
+    original_ivar_set=FANPLAY::Retained.original_alias(klass,:instance_variable_set)
     observer.define_method(:instance_variable_set) do |name,value|
       __fanplay_world_metadata_changed(self) if [:@x,:@y,:@z].include?(name.to_sym)
-      result = original_ivar_set.bind_call(self,name,value)
+      result = send(original_ivar_set,name,value)
       if watched_ivars.include?(name.to_sym)
         FANPLAY::Retained.rewire(self)
         __fanplay_volatile(__id)
@@ -244,35 +254,35 @@ if FANPLAY::Retained::ENABLED
       end
       result
     end
-    original_dispose=klass.instance_method(:dispose)
+    original_dispose=FANPLAY::Retained.original_alias(klass,:dispose)
     observer.define_method(:dispose) do
       id = __id
       __fanplay_world_unbind(self) if instance_variable_defined?(:@__fanplay_world_group)
       __fanplay_touch(self)
-      result = original_dispose.bind_call(self)
+      result = send(original_dispose)
       FANPLAY::Retained.forget(id) if id
       result
     end
     if klass != Plane
-      original_flash=klass.instance_method(:flash)
+      original_flash=FANPLAY::Retained.original_alias(klass,:flash)
       observer.define_method(:flash) do |*args|
-        result = original_flash.bind_call(self,*args)
+        result = send(original_flash,*args)
         FANPLAY::Retained.rewire(self)
         __fanplay_touch(self)
         result
       end
-      original_update=klass.instance_method(:update)
+      original_update=FANPLAY::Retained.original_alias(klass,:update)
       observer.define_method(:update) do
         flashing = @__fanplay_flashing
-        result = original_update.bind_call(self)
+        result = send(original_update)
         __fanplay_touch(self) if flashing
         result
       end
     end
     __fanplay_install_scalar_setters(klass, klass==Sprite ? 0 : (klass==Viewport ? 1 : 2))
-    original_initialize=klass.instance_method(:initialize)
+    original_initialize=FANPLAY::Retained.original_alias(klass,:initialize)
     klass.define_method(:initialize) do |*args,**kwargs,&block|
-      result=original_initialize.bind_call(self,*args,**kwargs,&block)
+      result=send(original_initialize,*args,**kwargs,&block)
       FANPLAY::Retained.register(self)
       result
     end
@@ -325,10 +335,10 @@ if FANPLAY::Retained::ENABLED
       result
     end
   end
-  original_bitmap_dispose=Bitmap.instance_method(:dispose)
+  original_bitmap_dispose=FANPLAY::Retained.original_alias(Bitmap,:dispose)
   Bitmap.define_method(:dispose) do
     __fanplay_touch(self)
-    original_bitmap_dispose.bind_call(self)
+    send(original_bitmap_dispose)
   end
 end
 
@@ -499,10 +509,10 @@ module FANPLAY
       return unless %i[ZOOM_X ZOOM_Y DISPLAY_TILE_WIDTH DISPLAY_TILE_HEIGHT].all? { |name| klass.const_defined?(name) }
       unless klass.ancestors.include?(FANPLAY::RetainedMapAdapter)
         %i[priority bridge shows_reflection].each do |field|
-          original=klass::TileSprite.instance_method("#{field}=")
+          original=FANPLAY::Retained.original_alias(klass::TileSprite,"#{field}=")
           klass::TileSprite.define_method("#{field}=") do |value|
             __fanplay_world_metadata_changed(self)
-            original.bind_call(self,value)
+            send(original,value)
           end
         end
         @retained_map_original=klass.instance_method(:update)

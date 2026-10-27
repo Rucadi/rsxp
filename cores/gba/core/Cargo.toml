@@ -19,3 +19,4 @@ fanplay-core = { path = "../../../crates/fanplay-core" }
 rustboyadvance-core = { git = "https://github.com/michelhe/rustboyadvance-ng", rev = "1d7ff23a6adb42d803ebd393c3d27d94e4fea15e", default-features = false }
 rustboyadvance-utils = { git = "https://github.com/michelhe/rustboyadvance-ng", rev = "1d7ff23a6adb42d803ebd393c3d27d94e4fea15e", default-features = false }
 bytemuck = "1"
+serde_json = "1"

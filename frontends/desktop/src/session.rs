@@ -86,6 +86,7 @@ pub trait TransportInput {
         &mut self,
         _id: u64,
         _generation: u64,
+        _extension: &str,
         _operation: &str,
         _arguments: &Value,
     ) {
@@ -404,16 +405,23 @@ impl Runner {
         if let Some(api) = value["api"].as_str() {
             input.relay_api(api);
         }
-        if let Some(requests) = value["nds_requests"].as_array() {
+        if let Some(requests) = value["core_requests"].as_array() {
             for request in requests {
-                let (Some(id), Some(generation), Some(operation)) = (
+                let (Some(id), Some(generation), Some(extension), Some(operation)) = (
                     request["id"].as_u64(),
                     request["generation"].as_u64(),
+                    request["extension"].as_str(),
                     request["operation"].as_str(),
                 ) else {
                     continue;
                 };
-                input.extension_request(id, generation, operation, &request["arguments"]);
+                input.extension_request(
+                    id,
+                    generation,
+                    extension,
+                    operation,
+                    &request["arguments"],
+                );
             }
         }
         true

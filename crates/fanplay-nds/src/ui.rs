@@ -70,6 +70,14 @@ impl DsLayout {
         controls_visible: bool,
     ) -> (egui::Rect, egui::Rect) {
         let (top, touch) = self.rects(ui.max_rect(), controls_visible);
+        // Keep LCD edges on physical pixel boundaries. The framebuffer stays
+        // native-resolution and nearest-filtered; snapping only prevents
+        // fractional destination rectangles from making scaled pixels appear
+        // uneven on resized or high-DPI windows.
+        let pixels_per_point = ui.ctx().pixels_per_point().max(1.0);
+        let snap = |rect: Option<egui::Rect>| rect.map(|rect| snap_rect(rect, pixels_per_point));
+        let top = snap(top);
+        let touch = snap(touch);
         for (rect, min_y) in [(top, 0.0), (touch, 0.5)] {
             if let (Some(rect), Some(texture)) = (rect, texture) {
                 let uv =
@@ -85,6 +93,15 @@ impl DsLayout {
         (game, touch.unwrap_or(egui::Rect::ZERO))
     }
 }
+
+fn snap_rect(rect: egui::Rect, pixels_per_point: f32) -> egui::Rect {
+    let snap = |value: f32| (value * pixels_per_point).round() / pixels_per_point;
+    egui::Rect::from_min_max(
+        egui::pos2(snap(rect.min.x), snap(rect.min.y)),
+        egui::pos2(snap(rect.max.x), snap(rect.max.y)),
+    )
+}
+
 fn aspect_rect(available: egui::Rect, logical_size: (u32, u32)) -> egui::Rect {
     let (width, height) = logical_size;
     if width == 0 || height == 0 || available.width() <= 0.0 || available.height() <= 0.0 {

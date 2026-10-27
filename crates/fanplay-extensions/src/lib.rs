@@ -795,7 +795,8 @@ fn register_host_functions(
     ruby_source: Option<String>,
     text_sources: BTreeMap<String, String>,
 ) {
-    register_nds_host_functions(engine, state, extension_id);
+    register_core_host_functions(engine, state, extension_id, "nds", "nds", "__nds", "NDS");
+    register_core_host_functions(engine, state, extension_id, "gba", "gba", "__gba", "GBA");
 
     let state_for_request = Arc::clone(state);
     let extension_id_for_request = extension_id.to_owned();
@@ -1078,30 +1079,43 @@ fn register_host_functions(
     });
 }
 
-/// Host functions for NDS-focused Rhai packages. The calls are deliberately
-/// asynchronous: the script host lives on the UI thread while the emulator
-/// owns its memory on the cartridge thread.
-fn register_nds_host_functions(
+/// Host functions for cartridge-focused Rhai packages. The calls are
+/// deliberately asynchronous: the script host lives on the UI thread while the
+/// emulator owns its memory on the cartridge thread.
+///
+/// `function_prefix` is the Rhai prefix (`nds_`/`gba_`), `core_id` is matched
+/// against the active session, and `operation_prefix` becomes the operation
+/// suffix (`__nds`/`__gba`) used by the desktop transport.
+fn register_core_host_functions(
     engine: &mut Engine,
     state: &Arc<Mutex<ScriptState>>,
     extension_id: &str,
+    core_id: &'static str,
+    function_prefix: &'static str,
+    operation_prefix: &'static str,
+    label: &'static str,
 ) {
     let state_for_read = Arc::clone(state);
     let extension_for_read = extension_id.to_owned();
+    let read_name = format!("{function_prefix}_read");
     engine.register_fn(
-        "nds_read",
+        read_name,
         move |space: ImmutableString, address: i64, width: i64| -> i64 {
             let mut state = state_for_read
                 .lock()
                 .unwrap_or_else(|error| error.into_inner());
             if address < 0 || !matches!(width, 1 | 2 | 4) {
-                state.last_error =
-                    Some("nds_read expects a non-negative address and width 1, 2, or 4".into());
+                state.last_error = Some(format!(
+                    "{function_prefix}_read expects a non-negative address and width 1, 2, or 4"
+                ));
                 return -1;
             }
-            enqueue_nds_request(
+            enqueue_core_request(
                 &mut state,
                 &extension_for_read,
+                core_id,
+                operation_prefix,
+                label,
                 "read",
                 serde_json::json!({
                     "space": space.to_string(),
@@ -1114,20 +1128,25 @@ fn register_nds_host_functions(
 
     let state_for_bytes = Arc::clone(state);
     let extension_for_bytes = extension_id.to_owned();
+    let bytes_name = format!("{function_prefix}_read_bytes");
     engine.register_fn(
-        "nds_read_bytes",
+        bytes_name,
         move |space: ImmutableString, address: i64, length: i64| -> i64 {
             let mut state = state_for_bytes
                 .lock()
                 .unwrap_or_else(|error| error.into_inner());
             if address < 0 || !(0..=1_048_576).contains(&length) {
-                state.last_error =
-                    Some("nds_read_bytes expects a valid address and length up to 1 MiB".into());
+                state.last_error = Some(format!(
+                    "{function_prefix}_read_bytes expects a valid address and length up to 1 MiB"
+                ));
                 return -1;
             }
-            enqueue_nds_request(
+            enqueue_core_request(
                 &mut state,
                 &extension_for_bytes,
+                core_id,
+                operation_prefix,
+                label,
                 "read_bytes",
                 serde_json::json!({
                     "space": space.to_string(),
@@ -1140,21 +1159,25 @@ fn register_nds_host_functions(
 
     let state_for_write = Arc::clone(state);
     let extension_for_write = extension_id.to_owned();
+    let write_name = format!("{function_prefix}_write");
     engine.register_fn(
-        "nds_write",
+        write_name,
         move |space: ImmutableString, address: i64, width: i64, value: i64| -> i64 {
             let mut state = state_for_write
                 .lock()
                 .unwrap_or_else(|error| error.into_inner());
             if address < 0 || !matches!(width, 1 | 2 | 4) || value < 0 {
-                state.last_error = Some(
-                    "nds_write expects a non-negative address/value and width 1, 2, or 4".into(),
-                );
+                state.last_error = Some(format!(
+                    "{function_prefix}_write expects a non-negative address/value and width 1, 2, or 4"
+                ));
                 return -1;
             }
-            enqueue_nds_request(
+            enqueue_core_request(
                 &mut state,
                 &extension_for_write,
+                core_id,
+                operation_prefix,
+                label,
                 "write",
                 serde_json::json!({
                     "space": space.to_string(),
@@ -1168,13 +1191,17 @@ fn register_nds_host_functions(
 
     let state_for_add_cheat = Arc::clone(state);
     let extension_for_add_cheat = extension_id.to_owned();
-    engine.register_fn("nds_add_cheat", move |code: ImmutableString| -> i64 {
+    let add_cheat_name = format!("{function_prefix}_add_cheat");
+    engine.register_fn(add_cheat_name, move |code: ImmutableString| -> i64 {
         let mut state = state_for_add_cheat
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        enqueue_nds_request(
+        enqueue_core_request(
             &mut state,
             &extension_for_add_cheat,
+            core_id,
+            operation_prefix,
+            label,
             "cheat_add",
             serde_json::json!({ "code": code.to_string() }),
         )
@@ -1182,13 +1209,17 @@ fn register_nds_host_functions(
 
     let state_for_remove_cheat = Arc::clone(state);
     let extension_for_remove_cheat = extension_id.to_owned();
-    engine.register_fn("nds_remove_cheat", move |code: ImmutableString| -> i64 {
+    let remove_cheat_name = format!("{function_prefix}_remove_cheat");
+    engine.register_fn(remove_cheat_name, move |code: ImmutableString| -> i64 {
         let mut state = state_for_remove_cheat
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        enqueue_nds_request(
+        enqueue_core_request(
             &mut state,
             &extension_for_remove_cheat,
+            core_id,
+            operation_prefix,
+            label,
             "cheat_remove",
             serde_json::json!({ "code": code.to_string() }),
         )
@@ -1196,33 +1227,42 @@ fn register_nds_host_functions(
 
     let state_for_clear_cheats = Arc::clone(state);
     let extension_for_clear_cheats = extension_id.to_owned();
-    engine.register_fn("nds_clear_cheats", move || -> i64 {
+    let clear_cheats_name = format!("{function_prefix}_clear_cheats");
+    engine.register_fn(clear_cheats_name, move || -> i64 {
         let mut state = state_for_clear_cheats
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        enqueue_nds_request(
+        enqueue_core_request(
             &mut state,
             &extension_for_clear_cheats,
+            core_id,
+            operation_prefix,
+            label,
             "cheat_clear",
             Value::Null,
         )
     });
 }
 
-fn enqueue_nds_request(
+fn enqueue_core_request(
     state: &mut ScriptState,
     extension_id: &str,
+    core_id: &str,
+    operation_prefix: &str,
+    label: &str,
     operation: &str,
     arguments: Value,
 ) -> i64 {
-    if state.core_id.as_deref() != Some("nds") {
-        state.last_error = Some("NDS functions are only available in an NDS session".into());
+    if state.core_id.as_deref() != Some(core_id) {
+        state.last_error = Some(format!(
+            "{label} functions are only available while a {label} session is active"
+        ));
         return -1;
     }
     enqueue_request(
         state,
         extension_id,
-        &format!("__nds.{operation}"),
+        &format!("{operation_prefix}.{operation}"),
         arguments,
     )
     .map_or(-1, |id| id as i64)
@@ -1568,6 +1608,24 @@ fn on_shutdown() {}
         .unwrap()
     }
 
+    fn gba_package() -> ExtensionPackage {
+        ExtensionPackage::from_rhai(
+            "gba-test",
+            r#"// fanplay:cores = gba
+fn build_ui() { [] }
+fn on_activate() {
+    gba_read("cartridge", 0x100, 4);
+    gba_add_cheat("82005274 0044");
+}
+fn on_ui_event(_id, _value) {}
+fn on_operation_result(_id, _result) {}
+fn on_shutdown() { gba_clear_cheats(); }
+"#
+            .into(),
+        )
+        .unwrap()
+    }
+
     fn pokedex_package() -> ExtensionPackage {
         ExtensionPackage::load(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -1904,6 +1962,22 @@ fn on_shutdown() {}
         assert_eq!(request.arguments["space"], "cartridge");
         assert_eq!(request.arguments["address"], 0x100);
         assert_eq!(request.arguments["width"], 4);
+    }
+
+    #[test]
+    fn gba_plugins_queue_core_memory_and_cheat_requests_only_for_gba_sessions() {
+        let mut host = ExtensionHost::new();
+        host.load(gba_package()).unwrap();
+        host.activate_for_core("nds").unwrap();
+        assert!(host.take_requests().is_empty());
+
+        host.activate_for_core("gba").unwrap();
+        let requests = host.take_requests();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].operation, "gba-test.__gba.read");
+        assert_eq!(requests[0].arguments["space"], "cartridge");
+        assert_eq!(requests[1].operation, "gba-test.__gba.cheat_add");
+        assert_eq!(requests[1].arguments["code"], "82005274 0044");
     }
 
     #[test]

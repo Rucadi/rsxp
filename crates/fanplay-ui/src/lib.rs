@@ -430,8 +430,8 @@ impl SharedApp {
     }
 
     /// Activates loaded Rhai packages for a specific emulator core. This is
-    /// used by cartridge sessions so an NDS package can expose memory and
-    /// cheat helpers without waking RGSS-only packages.
+    /// used by cartridge sessions so an NDS or GBA package can expose memory
+    /// and cheat helpers without waking RGSS-only packages.
     pub fn activate_plugins_for_core(&mut self, core_id: &str) -> Result<(), String> {
         self.extensions
             .activate_for_core(core_id)
@@ -523,6 +523,47 @@ impl SharedApp {
             frame.set(image, egui::TextureOptions::NEAREST);
         }
         self.frame_revision = Some(revision);
+        self.workspace
+            .set_frame_texture(self.frame.as_ref().map(egui::TextureHandle::id));
+        context.request_repaint();
+    }
+
+    /// Uploads a frame that is already in egui's RGBA8 wire format.
+    ///
+    /// Native cartridge runners receive RGBA bytes from shared memory. Keep
+    /// those bytes in that representation until the texture upload instead
+    /// of constructing a packed [`Bitmap`] and converting it back again.
+    pub fn set_rgba_frame(
+        &mut self,
+        context: &egui::Context,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) {
+        let size = [width as usize, height as usize];
+        let Some(pixel_count) = size[0].checked_mul(size[1]) else {
+            return;
+        };
+        let Some(byte_count) = pixel_count.checked_mul(4) else {
+            return;
+        };
+        if width == 0 || height == 0 || rgba.len() < byte_count {
+            return;
+        }
+
+        self.info.logical_size = (width, height);
+        let image = egui::ColorImage::from_rgba_unmultiplied(size, &rgba[..byte_count]);
+        if self.frame_size != Some(size) {
+            self.frame = Some(context.load_texture(
+                "fanplay-game-frame",
+                image,
+                egui::TextureOptions::NEAREST,
+            ));
+            self.frame_size = Some(size);
+        } else if let Some(frame) = &mut self.frame {
+            frame.set(image, egui::TextureOptions::NEAREST);
+        }
+        self.frame_revision = None;
         self.workspace
             .set_frame_texture(self.frame.as_ref().map(egui::TextureHandle::id));
         context.request_repaint();

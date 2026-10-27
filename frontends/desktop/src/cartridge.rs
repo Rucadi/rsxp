@@ -437,7 +437,14 @@ impl TransportInput for HostInput {
             data: data.to_vec(),
         });
     }
-    fn extension_request(&mut self, id: u64, generation: u64, operation: &str, arguments: &Value) {
+    fn extension_request(
+        &mut self,
+        id: u64,
+        generation: u64,
+        extension: &str,
+        operation: &str,
+        arguments: &Value,
+    ) {
         let Ok(payload) = serde_json::to_vec(&serde_json::json!({
             "request_id": id,
             "generation": generation,
@@ -447,7 +454,7 @@ impl TransportInput for HostInput {
             return;
         };
         let _ = self.control.send_request(CoreCommand::Extension {
-            id: "nds.rhai".into(),
+            id: extension.to_owned(),
             payload,
         });
     }

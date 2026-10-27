@@ -138,6 +138,54 @@ White (Spain/EUR) is running, open the plugin panel and select **Enable max
 money**. This address is region-specific; do not use it for the US/NA release
 or Pokémon White 2.
 
+## GBA memory and cheats
+
+A GBA plugin opts into the GBA session with:
+
+```rhai
+// fanplay:cores = gba
+```
+
+The GBA helpers mirror the NDS ones and are asynchronous. They return a request
+ID and deliver their result to `on_operation_result(id, result)`. `gba_read`
+reads a little-endian 1-, 2-, or 4-byte value; `gba_read_bytes` reads up to
+1 MiB; `gba_write` writes live console memory. The `space` argument may be
+`"ram"`/`"memory"` (GBA CPU address space: EWRAM, IWRAM, I/O, palette, VRAM,
+OAM), `"cartridge"`/`"rom"` (byte offsets into the ROM, or `0x08000000`-based
+ROM addresses), or `"save"`/`"save_ram"` (read-only battery save contents).
+Cartridge ROM and save RAM are read-only from plugins.
+
+```rhai
+// fanplay:cores = gba
+
+fn on_activate() {
+    gba_read("ram", 0x02000000, 4);
+    gba_read_bytes("cartridge", 0, 16);
+}
+
+fn on_operation_result(id, result) {
+    state_set("last_gba_request", id);
+    state_set("last_gba_result", result);
+}
+```
+
+`gba_add_cheat(code)`, `gba_remove_cheat(code)`, and `gba_clear_cheats()` accept
+the usual GBA formats:
+
+- CodeBreaker `XXXXXXXX YYYY`, for example `82005274 0044`.
+- GameShark / Action Replay `XXXXXXXX YYYYYYYY`. Plain codes and
+  TEA-encrypted GameShark Advance v1/v2 and Action Replay v3 codes are detected
+  automatically.
+- VBA `ADDRESS:VALUE`, for example `02000000:63` (1 by default), or
+  `02000000:0063` / `02000000:00000063` for 2/4-byte writes.
+
+Ordinary memory writes, fills, 8/16-bit arithmetic (`OR`/`AND`/`add`), and the
+one- or two-line conditional forms are applied once per emulated frame. ROM
+hooks/patches, EEPROM commands, keypad action codes, and PARv3 block conditions
+are rejected with an explicit error rather than silently ignored. Titles,
+comments, blank lines, and `#` lines are skipped; `//` starts a trailing
+comment and a leading `;` is ignored.
+
 ## HTML plugin views
 
 A plugin that declares `ui.webview` can open an HTML GUI from its Rhai event

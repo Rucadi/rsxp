@@ -81,6 +81,9 @@ fn start_control_server(
 #[derive(Default)]
 struct Exchange {
     frame: Option<Bitmap>,
+    /// Raw NDS frames stay in wire format until the UI texture upload.
+    /// This avoids an RGBA -> packed ARGB -> RGBA round trip in the I/O thread.
+    rgba_frame: Option<RgbaFrame>,
     gpu_frame: Option<fanplay_rgss::gpu::GpuFrame>,
     gpu_view: bool,
     logs: std::collections::VecDeque<String>,
@@ -92,6 +95,12 @@ struct Exchange {
     text_input: bool,
     cursor: bool,
     extension_responses: Vec<OperationResponse>,
+}
+
+struct RgbaFrame {
+    width: u32,
+    height: u32,
+    pixels: Vec<u8>,
 }
 struct Session {
     core_id: &'static str,
@@ -466,6 +475,12 @@ impl Session {
                             || extension.eq_ignore_ascii_case("gbc")
                     })
         });
+        let is_gba = args.windows(2).any(|pair| {
+            pair[0] == "--game"
+                && PathBuf::from(&pair[1])
+                    .extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("gba"))
+        });
         let shared_frame_path = if is_nds {
             let path = std::env::temp_dir().join(format!(
                 "fanplay-frames-{}-{}.bin",
@@ -542,7 +557,7 @@ impl Session {
                             state.control["scroll"] = json!(0);
                             state.control["text"] = json!("");
                             state.control["api"] = json!("");
-                            state.control["nds_requests"] = json!([]);
+                            state.control["core_requests"] = json!([]);
                             // Save/load state requests are one-shot commands.
                             // Clear them in the transport thread immediately
                             // after cloning so a fast runner cannot apply the
@@ -560,7 +575,8 @@ impl Session {
                         if w == 0 || h == 0 || u64::from(w) * u64::from(h) > 16_777_216 {
                             return Err("Invalid runner frame".into());
                         }
-                        let (frame, gpu_frame) = if let Some(slot) = header["shared_slot"].as_u64()
+                        let (frame, rgba_frame, gpu_frame) = if let Some(slot) =
+                            header["shared_slot"].as_u64()
                         {
                             let length = w as usize * h as usize * 4;
                             let Some(shared) = &shared_frames else {
@@ -569,10 +585,18 @@ impl Session {
                             let Some(bytes) = shared.read(slot as usize, length) else {
                                 return Err("runner sent an invalid shared frame slot".into());
                             };
-                            let frame =
-                                Bitmap::from_rgba(w, h, bytes).map_err(|e| e.to_string())?;
+                            let mut pixels = Vec::with_capacity(length);
+                            pixels.extend_from_slice(bytes);
                             shared.release(slot as usize);
-                            (Some(frame), None)
+                            (
+                                None,
+                                Some(RgbaFrame {
+                                    width: w,
+                                    height: h,
+                                    pixels,
+                                }),
+                                None,
+                            )
                         } else if let Some(length) = header["gpu_bytes"].as_u64() {
                             if length > 512 * 1024 * 1024 {
                                 return Err("GPU packet exceeds transport limit".into());
@@ -581,7 +605,11 @@ impl Session {
                             std::io::Read::read_exact(&mut *stream, &mut bytes).map_err(
                                 |error| format!("dashboard IPC GPU frame read failed: {error}"),
                             )?;
-                            (None, Some(fanplay_rgss::gpu::GpuFrame::decode(&bytes)?))
+                            (
+                                None,
+                                None,
+                                Some(fanplay_rgss::gpu::GpuFrame::decode(&bytes)?),
+                            )
                         } else {
                             let mut bytes = vec![0; w as usize * h as usize * 4];
                             std::io::Read::read_exact(&mut *stream, &mut bytes).map_err(
@@ -589,6 +617,7 @@ impl Session {
                             )?;
                             (
                                 Some(Bitmap::from_rgba(w, h, &bytes).map_err(|e| e.to_string())?),
+                                None,
                                 None,
                             )
                         };
@@ -613,8 +642,10 @@ impl Session {
                                     serde_json::from_str::<Value>(body).unwrap_or(Value::Null);
                                 let result = if let Some(error) = body.get("error") {
                                     Err(OperationError::new(
-                                        error["code"].as_str().unwrap_or("nds"),
-                                        error["message"].as_str().unwrap_or("NDS operation failed"),
+                                        error["code"].as_str().unwrap_or("core"),
+                                        error["message"]
+                                            .as_str()
+                                            .unwrap_or("cartridge operation failed"),
                                     ))
                                 } else {
                                     Ok(body.get("result").cloned().unwrap_or(Value::Null))
@@ -632,6 +663,10 @@ impl Session {
                         state.cursor = header["cursor"].as_bool().unwrap_or(true);
                         if let Some(frame) = frame {
                             state.frame = Some(frame);
+                            state.gpu_view = false;
+                        }
+                        if let Some(frame) = rgba_frame {
+                            state.rgba_frame = Some(frame);
                             state.gpu_view = false;
                         }
                         if let Some(frame) = gpu_frame {
@@ -677,6 +712,8 @@ impl Session {
         Ok(Self {
             core_id: if is_nds {
                 "nds"
+            } else if is_gba {
+                "gba"
             } else if is_gbc {
                 "gbc"
             } else {
@@ -722,6 +759,7 @@ struct DesktopApp {
     session: Option<Session>,
     input: Input,
     frame: Bitmap,
+    frame_is_rgba: bool,
     logical_size: (u32, u32),
     game_rect: egui::Rect,
     touch_rect: egui::Rect,
@@ -805,6 +843,7 @@ impl DesktopApp {
             session: None,
             input: Input::default(),
             frame: Bitmap::new(640, 480).expect("640×480 bitmap allocation"),
+            frame_is_rgba: false,
             logical_size: (640, 480),
             game_rect: egui::Rect::ZERO,
             touch_rect: egui::Rect::ZERO,
@@ -1221,6 +1260,7 @@ impl DesktopApp {
         self.shared.workspace = fanplay_ui::Workspace::new();
         self.shared.workspace.session = panel;
         self.frame = Bitmap::new(640, 480).expect("640×480 bitmap allocation");
+        self.frame_is_rgba = false;
         self.logical_size = (640, 480);
         let game_path = args
             .windows(2)
@@ -1454,22 +1494,23 @@ impl DesktopApp {
                 });
                 continue;
             }
-            if let Some(operation) = request
-                .operation
-                .split_once(".__nds.")
-                .map(|(_, operation)| operation)
-            {
+            let core_extension = request.operation.split_once(".__").and_then(|(_, suffix)| {
+                let (core, operation) = suffix.split_once('.')?;
+                matches!(core, "nds" | "gba").then_some((core, operation))
+            });
+            if let Some((core, operation)) = core_extension {
                 if let Some(session) = &self.session {
                     let mut state = session.exchange.lock().unwrap();
-                    if !state.control["nds_requests"].is_array() {
-                        state.control["nds_requests"] = json!([]);
+                    if !state.control["core_requests"].is_array() {
+                        state.control["core_requests"] = json!([]);
                     }
-                    let requests = state.control["nds_requests"]
+                    let requests = state.control["core_requests"]
                         .as_array_mut()
-                        .expect("NDS request queue must be an array");
+                        .expect("core request queue must be an array");
                     requests.push(json!({
                         "id": request.id,
                         "generation": request.generation,
+                        "extension": format!("{core}.rhai"),
                         "operation": operation,
                         "arguments": request.arguments,
                     }));
@@ -1477,7 +1518,10 @@ impl DesktopApp {
                     let _ = self.shared.dispatch_plugin_response(OperationResponse {
                         id: request.id,
                         generation: request.generation,
-                        result: Err(OperationError::new("no_session", "no active NDS session")),
+                        result: Err(OperationError::new(
+                            "no_session",
+                            "no active cartridge session",
+                        )),
                     });
                 }
                 continue;
@@ -1686,9 +1730,11 @@ impl DesktopApp {
         }
         let mut state = session.exchange.lock().unwrap();
         self.shared.workspace.logs = state.logs.iter().cloned().collect();
+        let rgba_frame = state.rgba_frame.take();
         if let Some(frame) = state.frame.take() {
             self.logical_size = (frame.width(), frame.height());
             self.frame = frame;
+            self.frame_is_rgba = false;
             let panel = self.shared.workspace.session.as_mut().unwrap();
             panel.status = "Running".into();
         }
@@ -1781,19 +1827,26 @@ impl DesktopApp {
         if paused {
             self.shared.workspace.session.as_mut().unwrap().status = "Paused".into();
         }
-        let nds_requests = std::mem::take(&mut state.control["nds_requests"]);
+        let core_requests = std::mem::take(&mut state.control["core_requests"]);
         state.control = json!({"paused":paused,"performance":self.shared.workspace.performance_visible(),
             "downs":downs,"ups":ups,"keys":(-8..640).filter(|key| ![58,59,60,61,67,68].contains(key) && self.input.pressed(*key)).collect::<Vec<_>>(),
             "x":mouse.x as i32,"y":mouse.y as i32,"inside":self.input.mouse_inside,
             "scroll":self.input.scroll_v,"text":std::mem::take(&mut self.input.text),"fast":fanplay_rgss::runtime_settings::fast_forward(),
             "rate":fanplay_rgss::runtime_settings::rate_override(),"api":old_api+api.as_str(),
-            "nds_requests":nds_requests,
+            "core_requests":core_requests,
             "state":self.pending_state.take().unwrap_or(Value::Null),
             "patches":fanplay_rgss::runtime_patch::patches().iter().map(|patch|json!([patch.id,fanplay_rgss::runtime_patch::is_enabled(&patch.id),fanplay_rgss::runtime_patch::value(&patch.id)])).collect::<Vec<_>>()});
         if let Some(error) = state.error.take() {
             self.shared.workspace.session.as_mut().unwrap().error = Some(error);
         }
         drop(state);
+        if let Some(frame) = rgba_frame {
+            self.logical_size = (frame.width, frame.height);
+            self.frame_is_rgba = true;
+            self.shared
+                .set_rgba_frame(ctx, frame.width, frame.height, &frame.pixels);
+            self.shared.workspace.session.as_mut().unwrap().status = "Running".into();
+        }
         if let Ok(Some(status)) = session.child.try_wait() {
             if session
                 .output_threads
@@ -1924,7 +1977,9 @@ impl eframe::App for DesktopApp {
             }
         } else {
             self.shared.set_game_paint_callback(None);
-            self.shared.set_bitmap(&ctx, &self.frame);
+            if !self.frame_is_rgba {
+                self.shared.set_bitmap(&ctx, &self.frame);
+            }
         }
         self.shared.draw(ui);
         if self.shared.take_plugin_import_request() {

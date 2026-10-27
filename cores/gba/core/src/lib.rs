@@ -15,6 +15,8 @@
 //! own `u32` framebuffer, which is submitted zero-copy as `Bgrx8` on
 //! little-endian hosts, and audio is drained from a preallocated ring buffer.
 
+mod cheats;
+
 use fanplay_core::{
     content_hash, AudioInfo, Button, CommandOutcome, CommandRequest, Content, ContentKind,
     ContentProbe, Core, CoreCapabilities, CoreCommand, CoreContext, CoreError, CoreEvent, CoreInfo,
@@ -28,6 +30,7 @@ use rustboyadvance_core::prelude::{
 };
 use rustboyadvance_utils::audio::SampleConsumer;
 use rustboyadvance_utils::Consumer;
+use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -70,6 +73,7 @@ pub const INFO: CoreInfo = CoreInfo {
     extensions: &["gba"],
     capabilities: CoreCapabilities::SAVE_STATES
         .union(CoreCapabilities::SAVE_RAM)
+        .union(CoreCapabilities::CHEATS)
         .union(CoreCapabilities::SCREENSHOTS)
         .union(CoreCapabilities::RESET),
     presentation: PresentationSupport::Cpu,
@@ -119,6 +123,7 @@ struct GbaAdapter {
     rom: Vec<u8>,
     save_path: Option<PathBuf>,
     sample_rate: u32,
+    cheats: cheats::GbaCheats,
     frames: u64,
     /// Used only when the host is big-endian; the common path is zero-copy.
     #[cfg(target_endian = "big")]
@@ -265,42 +270,268 @@ impl GbaAdapter {
         for request in commands.drain(..) {
             let id = request.id;
             let generation = request.generation;
-            let outcome = match request.command {
-                CoreCommand::Reset => match self.reset() {
-                    Ok(()) => {
-                        self.flush_audio();
-                        CommandOutcome::Succeeded
-                    }
-                    Err(error) => {
-                        self.emit_error(error.to_string());
-                        CommandOutcome::Failed(error.to_string())
-                    }
-                },
-                CoreCommand::SaveState { slot } => self.save_state(&slot),
-                CoreCommand::LoadState { slot, data } => self.load_state(&slot, &data),
+            let (outcome, response) = match request.command {
+                CoreCommand::Reset => {
+                    let outcome = match self.reset() {
+                        Ok(()) => {
+                            self.flush_audio();
+                            CommandOutcome::Succeeded
+                        }
+                        Err(error) => {
+                            self.emit_error(error.to_string());
+                            CommandOutcome::Failed(error.to_string())
+                        }
+                    };
+                    (outcome, None)
+                }
+                CoreCommand::SaveState { slot } => (self.save_state(&slot), None),
+                CoreCommand::LoadState { slot, data } => (self.load_state(&slot, &data), None),
                 CoreCommand::SaveRam => {
                     self.emit_save_ram();
-                    CommandOutcome::Succeeded
+                    (CommandOutcome::Succeeded, None)
                 }
                 CoreCommand::Screenshot => {
                     self.emit_screenshot();
-                    CommandOutcome::Succeeded
+                    (CommandOutcome::Succeeded, None)
                 }
-                CoreCommand::SetOption { .. } | CoreCommand::Extension { .. } => {
-                    CommandOutcome::Unsupported
-                }
+                CoreCommand::SetOption { .. } => (CommandOutcome::Unsupported, None),
+                CoreCommand::Extension { id, payload } => self.extension_command(&id, &payload),
             };
-            self.report(generation, id, outcome);
+            self.report(generation, id, outcome, response);
         }
     }
 
-    fn report(&mut self, generation: u64, id: u64, outcome: CommandOutcome) {
+    fn extension_command(&mut self, id: &str, payload: &[u8]) -> (CommandOutcome, Option<Vec<u8>>) {
+        if id != "gba.rhai" {
+            return (CommandOutcome::Unsupported, None);
+        }
+        let request = serde_json::from_slice::<Value>(payload);
+        let request_id = request
+            .as_ref()
+            .ok()
+            .and_then(|request| request.get("request_id"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        let generation = request
+            .as_ref()
+            .ok()
+            .and_then(|request| request.get("generation"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        let response = match request {
+            Ok(request) => {
+                let operation = request
+                    .get("operation")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                let arguments = request.get("arguments").unwrap_or(&Value::Null);
+                match self.handle_extension_operation(operation, arguments) {
+                    Ok(result) => {
+                        json!({"request_id": request_id, "generation": generation, "result": result})
+                    }
+                    Err(error) => {
+                        json!({"request_id": request_id, "generation": generation, "error": {"code": "gba", "message": error}})
+                    }
+                }
+            }
+            Err(error) => {
+                json!({"request_id": request_id, "generation": generation, "error": {"code": "invalid_request", "message": error.to_string()}})
+            }
+        };
+        let body = serde_json::to_vec(&response).unwrap_or_else(|_| b"{}".to_vec());
+        (CommandOutcome::Succeeded, Some(body))
+    }
+
+    fn handle_extension_operation(
+        &mut self,
+        operation: &str,
+        arguments: &Value,
+    ) -> Result<Value, String> {
+        match operation {
+            "read" => {
+                let (space, address, width) = memory_arguments(arguments)?;
+                Ok(json!({
+                    "space": space,
+                    "address": address,
+                    "width": width,
+                    "value": self.read_space(space, address, width)?,
+                }))
+            }
+            "read_bytes" => {
+                let space = arguments
+                    .get("space")
+                    .and_then(Value::as_str)
+                    .ok_or("read_bytes is missing space")?;
+                let address = number_u32(arguments, "address")?;
+                let length = arguments
+                    .get("length")
+                    .and_then(Value::as_u64)
+                    .ok_or("read_bytes is missing length")?;
+                let length =
+                    usize::try_from(length).map_err(|_| "read_bytes length is too large")?;
+                if length > 1_048_576 {
+                    return Err("read_bytes length exceeds 1 MiB".into());
+                }
+                Ok(json!({
+                    "space": space,
+                    "address": address,
+                    "bytes": self.read_bytes(space, address, length)?,
+                }))
+            }
+            "write" => {
+                let (space, address, width) = memory_arguments(arguments)?;
+                let value = arguments
+                    .get("value")
+                    .and_then(Value::as_u64)
+                    .ok_or("write is missing value")?;
+                self.write_space(space, address, width, value)?;
+                Ok(json!({"written": true, "space": space, "address": address, "width": width}))
+            }
+            "cheat_add" => {
+                let code = arguments
+                    .get("code")
+                    .and_then(Value::as_str)
+                    .ok_or("cheat_add is missing code")?;
+                let lines = self.cheats.add(code)?;
+                Ok(json!({"added": true, "lines": lines}))
+            }
+            "cheat_remove" => {
+                let code = arguments
+                    .get("code")
+                    .and_then(Value::as_str)
+                    .ok_or("cheat_remove is missing code")?;
+                let removed = self.cheats.remove(code)?;
+                Ok(json!({"removed": removed}))
+            }
+            "cheat_clear" => {
+                self.cheats.clear();
+                Ok(json!({"cleared": true}))
+            }
+            _ => Err(format!("unknown GBA extension operation {operation:?}")),
+        }
+    }
+
+    fn read_space(&mut self, space: &str, address: u32, width: u32) -> Result<u32, String> {
+        match space {
+            "ram" | "memory" => self
+                .core
+                .as_mut()
+                .map(|core| cheats::read_memory(core, address, width))
+                .ok_or_else(|| "GBA emulator is not running".into()),
+            "cartridge" | "rom" => self.read_cartridge(address, width),
+            "save" | "save_ram" => self.read_save(address, width),
+            _ => Err(format!("unknown GBA memory space {space:?}")),
+        }
+    }
+
+    fn read_bytes(&mut self, space: &str, address: u32, length: usize) -> Result<Vec<u8>, String> {
+        match space {
+            "ram" | "memory" => self
+                .core
+                .as_mut()
+                .map(|core| cheats::read_memory_bytes(core, address, length))
+                .ok_or_else(|| "GBA emulator is not running".into()),
+            "cartridge" | "rom" => self.read_cartridge_bytes(address, length),
+            "save" | "save_ram" => self.read_save_bytes(address, length),
+            _ => Err(format!("unknown GBA memory space {space:?}")),
+        }
+    }
+
+    fn write_space(
+        &mut self,
+        space: &str,
+        address: u32,
+        width: u32,
+        value: u64,
+    ) -> Result<(), String> {
+        if width != 1 && width != 2 && width != 4 {
+            return Err("memory width must be 1, 2, or 4".into());
+        }
+        let max = (1_u64 << (width * 8)) - 1;
+        if value > max {
+            return Err(format!("value does not fit in {width}-byte write"));
+        }
+        match space {
+            "ram" | "memory" => {
+                if (0x0E00_0000..0x1000_0000).contains(&address) {
+                    return Err(
+                        "GBA save RAM is read-only from plugins; write through the game or a save editor"
+                            .into(),
+                    );
+                }
+                self.core
+                    .as_mut()
+                    .map(|core| cheats::write_memory(core, address, width, value as u32))
+                    .ok_or_else(|| "GBA emulator is not running".into())
+            }
+            "cartridge" | "rom" => Err("GBA cartridge ROM is read-only".into()),
+            "save" | "save_ram" => Err(
+                "GBA save RAM is read-only from plugins; write through the game or a save editor"
+                    .into(),
+            ),
+            _ => Err(format!("unknown GBA memory space {space:?}")),
+        }
+    }
+
+    fn read_cartridge(&mut self, address: u32, width: u32) -> Result<u32, String> {
+        if (0x0800_0000..0x0E00_0000).contains(&address) {
+            return self
+                .core
+                .as_mut()
+                .map(|core| cheats::read_memory(core, address, width))
+                .ok_or_else(|| "GBA emulator is not running".into());
+        }
+        read_blob(&self.rom, address, width)
+    }
+
+    fn read_cartridge_bytes(&mut self, address: u32, length: usize) -> Result<Vec<u8>, String> {
+        if (0x0800_0000..0x0E00_0000).contains(&address) {
+            return self
+                .core
+                .as_mut()
+                .map(|core| cheats::read_memory_bytes(core, address, length))
+                .ok_or_else(|| "GBA emulator is not running".into());
+        }
+        read_blob_bytes(&self.rom, address, length)
+    }
+
+    fn read_save(&self, address: u32, width: u32) -> Result<u32, String> {
+        let bytes = self.read_save_bytes(address, width as usize)?;
+        Ok(match width {
+            1 => u32::from(bytes[0]),
+            2 => u32::from(u16::from_le_bytes([bytes[0], bytes[1]])),
+            4 => u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+            _ => return Err("memory width must be 1, 2, or 4".into()),
+        })
+    }
+
+    fn read_save_bytes(&self, address: u32, length: usize) -> Result<Vec<u8>, String> {
+        let path = self
+            .save_path
+            .as_ref()
+            .ok_or("GBA battery save is not available for this session")?;
+        let bytes = std::fs::read(path).map_err(|error| {
+            format!(
+                "could not read GBA battery save {}: {error}",
+                path.display()
+            )
+        })?;
+        read_blob_bytes(&bytes, address, length)
+    }
+
+    fn report(
+        &mut self,
+        generation: u64,
+        id: u64,
+        outcome: CommandOutcome,
+        response: Option<Vec<u8>>,
+    ) {
         if let Some(context) = self.context.as_mut() {
             context.events.emit(CoreEvent::CommandResult {
                 id,
                 generation,
                 outcome,
-                response: None,
+                response,
             });
         }
     }
@@ -472,6 +703,7 @@ impl GbaAdapter {
         let Some(core) = self.core.as_mut() else {
             return;
         };
+        self.cheats.apply(core);
         core.frame();
         let pixels = core.get_frame_buffer();
         debug_assert_eq!(pixels.len(), DISPLAY_WIDTH * DISPLAY_HEIGHT);
@@ -651,6 +883,46 @@ impl Core for GbaAdapter {
 fn read_bios_file(path: &Path) -> Option<Vec<u8>> {
     let bytes = std::fs::read(path).ok()?;
     (bytes.len() >= BIOS_BYTES).then(|| bytes[..BIOS_BYTES].to_vec())
+}
+
+fn memory_arguments(arguments: &Value) -> Result<(&str, u32, u32), String> {
+    let space = arguments
+        .get("space")
+        .and_then(Value::as_str)
+        .ok_or("memory operation is missing space")?;
+    let address = number_u32(arguments, "address")?;
+    let width = number_u32(arguments, "width")?;
+    if !matches!(width, 1 | 2 | 4) {
+        return Err("memory width must be 1, 2, or 4".into());
+    }
+    Ok((space, address, width))
+}
+
+fn number_u32(arguments: &Value, key: &str) -> Result<u32, String> {
+    arguments
+        .get(key)
+        .and_then(Value::as_u64)
+        .ok_or_else(|| format!("memory operation is missing {key}"))
+        .and_then(|value| u32::try_from(value).map_err(|_| format!("{key} is too large")))
+}
+
+fn read_blob(bytes: &[u8], address: u32, width: u32) -> Result<u32, String> {
+    let data = read_blob_bytes(bytes, address, width as usize)?;
+    Ok(match width {
+        1 => data[0] as u32,
+        2 => u16::from_le_bytes([data[0], data[1]]) as u32,
+        4 => u32::from_le_bytes([data[0], data[1], data[2], data[3]]),
+        _ => return Err("memory width must be 1, 2, or 4".into()),
+    })
+}
+
+fn read_blob_bytes(bytes: &[u8], address: u32, length: usize) -> Result<Vec<u8>, String> {
+    let start = usize::try_from(address).map_err(|_| "address is outside the host range")?;
+    let end = start.checked_add(length).ok_or("memory range overflows")?;
+    bytes
+        .get(start..end)
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| "memory range is outside the selected space".into())
 }
 
 fn uses_rtc(rom: &[u8]) -> bool {
@@ -835,5 +1107,66 @@ mod tests {
                 0
             );
         }
+    }
+
+    #[test]
+    fn extension_memory_reads_writes_and_cheats_work() {
+        let (mut adapter, _) = replay_adapter();
+        adapter.rom[0x100..0x104].copy_from_slice(&0x4433_2211u32.to_le_bytes());
+
+        assert_eq!(
+            adapter
+                .handle_extension_operation(
+                    "read",
+                    &serde_json::json!({"space": "cartridge", "address": 0x100, "width": 4}),
+                )
+                .unwrap()["value"],
+            0x4433_2211u32
+        );
+
+        adapter
+            .handle_extension_operation(
+                "write",
+                &serde_json::json!({"space": "ram", "address": 0x02001000u32, "width": 4, "value": 0x12345678u32}),
+            )
+            .unwrap();
+        assert_eq!(
+            cheats::read_memory(adapter.core.as_mut().unwrap(), 0x02001000, 4),
+            0x1234_5678
+        );
+        assert!(
+            adapter
+                .handle_extension_operation(
+                    "write",
+                    &serde_json::json!({"space": "ram", "address": 0x0E000000u32, "width": 1, "value": 1}),
+                )
+                .is_err()
+        );
+
+        adapter
+            .handle_extension_operation(
+                "cheat_add",
+                &serde_json::json!({"code": "22001000 00000099"}),
+            )
+            .unwrap();
+        adapter.cheats.apply(adapter.core.as_mut().unwrap());
+        assert_eq!(
+            cheats::read_memory(adapter.core.as_mut().unwrap(), 0x02001000, 4),
+            0x99
+        );
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "request_id": 7,
+            "generation": 3,
+            "operation": "read",
+            "arguments": {"space": "ram", "address": 0x02001000u32, "width": 4},
+        }))
+        .unwrap();
+        let (outcome, response) = adapter.extension_command("gba.rhai", &payload);
+        assert_eq!(outcome, CommandOutcome::Succeeded);
+        let body: Value = serde_json::from_slice(&response.unwrap()).unwrap();
+        assert_eq!(body["request_id"], 7);
+        assert_eq!(body["generation"], 3);
+        assert_eq!(body["result"]["value"], 0x99);
     }
 }

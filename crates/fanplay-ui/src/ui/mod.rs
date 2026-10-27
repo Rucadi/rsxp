@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Workspace root: the single egui UI shared by every frontend.
 //!
-//! The desktop window and the browser canvas both render this module: the
+//! The desktop window renders this module: the
 //! toolbar, the runtime-patches panel, the output log, the performance panel, the game
 //! view placement, and — behind `game-api` — the native host controls. A frontend supplies
 //! per-frame
@@ -116,9 +116,9 @@ pub struct WorkspaceInfo {
     pub supports_save_states: bool,
     pub state_slots: Vec<StateSlot>,
     pub global_fullscreen: bool,
-    /// Show the OS/browser fullscreen button (the desktop window has one).
+    /// Show the OS fullscreen button.
     pub show_fullscreen: bool,
-    /// Show the save export/import buttons (the browser provides the dialogs).
+    /// Show the save export/import buttons.
     pub show_save_buttons: bool,
 }
 
@@ -137,7 +137,7 @@ pub struct WorkspaceOutput {
     pub fullscreen_request: Option<bool>,
     /// The native aspect ratio to enforce on the host window while the game is
     /// shown without panels. `None` when the UI is visible, fullscreen, or no
-    /// game is running. Browsers ignore this; native hosts resize the window.
+    /// game is running. Native hosts resize the window.
     pub fit_aspect: Option<f32>,
     pub export_saves: bool,
     pub import_saves: bool,
@@ -202,7 +202,7 @@ pub struct Workspace {
     was_global_fullscreen: bool,
     reset_confirm: bool,
     /// `Some((done, total))` shows a download progress screen instead of the
-    /// workspace (used while the browser preloads the game).
+    /// workspace while content is loading.
     loading: Option<(u32, u32)>,
 }
 

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
 license = "GPL-2.0-or-later"
-description = "Shared eframe application for desktop, web, and Android"
+description = "Shared eframe application for desktop and Android"
 publish = false
 
 [lib]
@@ -33,7 +33,7 @@ base64 = "0.22"
 eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "default_fonts", "android-native-activity"] }
 winit = { version = "0.30.13", default-features = false, features = ["android-native-activity"] }
 
-[target.'cfg(not(any(target_arch = "wasm32", target_os = "android")))'.dependencies]
+[target.'cfg(not(target_os = "android"))'.dependencies]
 eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "default_fonts", "x11", "wayland", "clipboard", "system_fonts"] }
 
 [package.metadata.android]

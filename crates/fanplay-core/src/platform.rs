@@ -121,7 +121,7 @@ pub trait Platform: Send + Sync {
         0.0
     }
 
-    /// Pauses the core thread. Browsers may make this a no-op.
+    /// Pauses the core thread.
     fn sleep(&self, _duration: Duration) {}
 
     /// Emits a diagnostic line. The frontend decides whether it reaches a

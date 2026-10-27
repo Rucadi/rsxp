@@ -1,4 +1,4 @@
-# Standard RGSS APIs used by older Essentials games, on desktop and ruby.wasm.
+# Standard RGSS APIs used by older Essentials games on desktop.
 def assert(value, message)
   raise message unless value
 end

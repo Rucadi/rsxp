@@ -25,7 +25,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-/// A package loaded from an installed directory or an unpacked browser blob.
+/// A package loaded from an installed directory.
 #[derive(Clone, Debug)]
 pub struct ExtensionPackage {
     pub root: PathBuf,
@@ -277,7 +277,7 @@ fn rhai_manifest(fallback_id: &str, source: &str) -> Result<ExtensionManifest, E
 
 /// Native backends implement this when they want to hand requests directly to
 /// a core. The default host keeps an internal bounded queue, which is enough
-/// for desktop, browser and headless adapters alike.
+/// for desktop and headless adapters alike.
 pub trait RequestSink {
     fn submit(&mut self, request: OperationRequest) -> Result<(), OperationError>;
 }

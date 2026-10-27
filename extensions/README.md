@@ -1,7 +1,7 @@
 # Rhai plugins
 
-The bundled plugins in this directory are embedded into the native and
-browser UI hosts. Native hosts can additionally load plugins from disk; each
+The bundled plugins in this directory are embedded into the native UI host.
+Native hosts can additionally load plugins from disk; each
 plugin owns form state, UI layout, request orchestration, loading state and
 user-facing feedback, while the RGSS bridge remains authoritative for game
 data and mutations.
@@ -65,8 +65,8 @@ The host removes that block before compiling Rhai and exposes it to
 its runtime patch. The same format works for large HTML/CSS/JavaScript
 templates, for example `text_block("html")`; it avoids escaping the template
 as a giant Rhai string. `essentials-pokedex.rhai` uses both blocks: it owns the
-Pokédex index/detail/encounter Ruby bindings, HTTP routes, and its browser-safe
-HTML explorer. `essentials-movedex.rhai` follows the same pattern for the move
+Pokédex index/detail/encounter Ruby bindings, HTTP routes, and its HTML explorer.
+`essentials-movedex.rhai` follows the same pattern for the move
 registry, including its filters, machine actions, and responsive HTML explorer.
 `essentials-world-map.rhai` follows the same pattern for map metadata, tile
 previews, connected-map layout, Canvas tile composition, interior selection,
@@ -200,10 +200,7 @@ On desktop this creates a native Wry/WebKit view (a separate resizable window
 on Linux and macOS). The host starts the loopback game API when the view is
 opened and rewrites relative `/v1/...` requests to that API. The transport
 includes CORS headers for plugin pages.
-In the browser the same plugin HTML is placed in an iframe overlay; its
-`fetch('/v1/...')` calls are routed through the WebAssembly game API bridge,
-so plugins do not need separate native and browser source files. The browser
-view's close button removes the view; a plugin can also call
+The view's close button removes the view; a plugin can also call
 `webview_close("main")`.
 
 `essentials-game-api` uses the same mechanism for its game-facing API: its

@@ -14,7 +14,6 @@ work are described separately.
 | Native workspace | [Dashboard](dashboard.md) |
 | Shared UI and host boundaries | [Shared frontend](shared-frontend.md) |
 | RPG Maker compatibility | [Runtime](rust-port.md) |
-| Browser runtime | [Browser guide](../platforms/web/README.md) |
 | GBA / DS behavior | [GBA](../cores/gba/README.md), [DS](../cores/nds/README.md) |
 | Library, storage and downloads | [Provisioning](software-provision.md) |
 | Local API and MCP | [Control API](control-api.md), [MCP](../crates/fanplay-mcp/README.md) |
@@ -30,7 +29,7 @@ evidence, including their original names and paths. They are not a current
 support matrix or guaranteed frame rate:
 [renderer](fanplay-performance.md), [tilemaps](native-tilemap-performance.md),
 [retained state](retained-render-state.md), [session transport](session-performance.md),
-[web](web-performance.md), [Pokémon Z](pokemonz-performance.md).
+[Pokémon Z](pokemonz-performance.md).
 
 [The simplification baseline](simplification-baseline.md) is historical.
 [Remaining boundary work](codebase-simplification-plan.md) and

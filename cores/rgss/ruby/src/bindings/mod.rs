@@ -11,7 +11,7 @@
 //!
 //! Shared data and algorithms stay in the `fanplay` library (`data`, `graphics`).
 //! Ruby source is bundled by `fanplay_rgss::ruby::RGSS_SOURCE`; serialized callbacks
-//! and timing live in this crate's `bridge`. Browser Ruby uses the shared source
+//! and timing live in this crate's `bridge`.
 //! without depending on these desktop-only Magnus bindings.
 //!
 //! Submodules: `retained` (change-driven sync plus the bundled `retained.rb`

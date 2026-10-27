@@ -16,7 +16,7 @@
 // fanplay:panel = pokedex,Essentials Pokédex
 
 // The complete explorer is one portable plugin. Its UI is HTML so the same
-// source runs in the native Wry window and in the browser iframe host.
+// source runs in the native Wry window.
 fn pokedex_html() {
     text_block("html")
 }

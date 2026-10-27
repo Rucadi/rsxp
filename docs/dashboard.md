@@ -11,8 +11,8 @@ features, launching without arguments opens the game library. Interactive
 `frontends/desktop/src/launcher.rs` owns the native library, repositories and
 storage page. `launcher_settings.rs` edits typed launch settings. The shared
 workspace and library/session widgets live in `crates/fanplay-ui/src/ui`.
-The native and browser hosts share widgets but expose different import and
-filesystem capabilities; they are not identical applications.
+The shared workspace exposes native import and filesystem capabilities through
+the desktop host.
 
 The library can launch RPG Maker folders/Game.ini and GB/GBC, GBA or DS ROMs. Provisioned
 catalog entries can be installed after download/hash validation. Selection is
@@ -38,10 +38,10 @@ and requests through `session.rs`. `cartridge.rs` adapts generic cores;
 HTTP listener while a session is running.
 
 Game-specific tools are Rhai extensions. On native hosts, HTML tools use
-webviews; browser hosts use their own JS adapter. The shared runtime-service
-adapter is in `fanplay-ui/src/workspace_services.rs`, and RGSS data/mutations
-remain owned by the loaded extensions. Tool availability depends on the loaded
-game and extension declarations.
+webviews. The shared runtime-service adapter is in
+`fanplay-ui/src/workspace_services.rs`, and RGSS data/mutations remain owned by
+the loaded extensions. Tool availability depends on the loaded game and
+extension declarations.
 
 ## Saves and appearance
 

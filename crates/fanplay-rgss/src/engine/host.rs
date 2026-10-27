@@ -1,18 +1,17 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Platform services the engine needs, so the same engine runs under winit on
-//! desktop and under WebAssembly in the browser.
+//! Platform services the engine needs for desktop and headless execution.
 //!
 //! [`Host`] is the object-safe backend trait: loose-file reads, image/font
 //! decoding and text, input polling, presentation, window state and optional
-//! audio/performance/GPU hooks, most with no-op defaults for headless or WASM.
+//! audio/performance/GPU hooks, most with no-op defaults for headless execution.
 //! [`AudioBackend`] is reached through `Host::audio` and plays the BGM/BGS/ME/SE
-//! channels. [`InputEvent`] carries browser-side events into the runtime, and
+//! channels. [`InputEvent`] carries host events into the runtime, and
 //! `Host` exposes FPS display visibility hooks for the optional performance panel.
 use crate::graphics::{Bitmap, Color};
 use crate::input::Input;
 use std::time::Duration;
 
-/// An input event queued from a host (used by the browser frontend).
+/// An input event queued from a host.
 #[derive(Clone, Debug)]
 pub enum InputEvent {
     KeyDown(i32),
@@ -32,8 +31,7 @@ pub enum AudioChannel {
     Se,
 }
 
-/// Audio backend. The desktop frontend uses Kira/CPAL; the browser frontend
-/// uses the browser media and Web Audio APIs.
+/// Audio backend used by the desktop frontend.
 pub trait AudioBackend {
     /// Starts playback. `volume` is 0..100, `pitch` 100 is normal, and
     /// `position` is the start offset in seconds.
@@ -54,8 +52,7 @@ pub trait AudioBackend {
     fn volume(&self, channel: AudioChannel) -> i32;
 }
 
-/// Platform backend. Implemented by the winit desktop frontend and the wasm
-/// browser frontend.
+/// Platform backend implemented by the desktop frontend.
 pub trait Host {
     /// Audio backend, or `None` where the platform cannot play sound.
     fn audio(&mut self) -> Option<&mut dyn AudioBackend> {
@@ -69,7 +66,7 @@ pub trait Host {
     fn performance_enabled(&self) -> Option<bool> {
         None
     }
-    /// Optional native compositor. Software-only and browser hosts return None.
+    /// Optional native compositor. Software-only hosts return `None`.
     #[cfg(feature = "gpu")]
     fn gpu(&mut self) -> Option<&mut crate::gpu::GpuRenderer> {
         None
@@ -122,8 +119,7 @@ pub trait Host {
     fn power_state(&self) -> (i32, i32, bool) {
         (-1, -1, false)
     }
-    /// Pause for one frame of pacing. Default is a no-op so the browser build
-    /// (where sleeping is unavailable) does not block.
+    /// Pause for one frame of pacing.
     fn sleep(&self, _duration: Duration) {}
     /// Monotonic seconds since the host started, or 0.0 if unavailable. Used
     /// for the on-screen frame counter.

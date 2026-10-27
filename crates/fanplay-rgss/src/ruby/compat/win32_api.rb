@@ -1,5 +1,5 @@
 # The desktop binding defines these methods before the shim is loaded.
-# ruby.wasm has no OS DLL loader; keep the same alias/fallback contract there.
+# The portable Ruby runtime has no OS DLL loader; keep the same alias/fallback contract.
 unless defined?(Win32API)
   class Win32API
     def initialize(*)

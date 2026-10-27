@@ -49,8 +49,7 @@ impl RubyJit {
 pub struct SessionCapabilities {
     pub paths: bool,
     pub directory_backups: bool,
-    /// Named save snapshots are available through an adapter (filesystem on
-    /// desktop, browser storage in the web player).
+    /// Named save snapshots are available through an adapter.
     pub save_backups: bool,
     pub ruby_jit: bool,
     pub zip_import: bool,
@@ -67,15 +66,6 @@ impl SessionCapabilities {
         zip_import: false,
         torrent_import: false,
         rom_import: false,
-    };
-    pub const BROWSER: Self = Self {
-        paths: false,
-        directory_backups: false,
-        save_backups: true,
-        ruby_jit: false,
-        zip_import: true,
-        torrent_import: true,
-        rom_import: true,
     };
 }
 impl Default for SessionCapabilities {
@@ -100,12 +90,11 @@ pub struct SessionPanel {
     pub save_directory: String,
     pub backup_directory: String,
     /// Control API state shown in the shared header. Desktop adapters sync
-    /// these from the real listener; browser adapters expose the JS bridge.
+    /// these from the real listener.
     pub api_port: String,
     pub api_running: bool,
     pub api_status: String,
     pub api_error: Option<String>,
-    pub api_bridge: bool,
     pub api_open: bool,
     pub(super) library_query: String,
     pub(super) library_platform: String,
@@ -136,7 +125,6 @@ impl Default for SessionPanel {
             api_running: false,
             api_status: String::new(),
             api_error: None,
-            api_bridge: false,
             api_open: false,
             library_query: String::new(),
             library_platform: "All".into(),
@@ -334,26 +322,7 @@ impl SessionPanel {
             .resizable(true)
             .default_width(520.0)
             .show(context, |ui| {
-                if self.api_bridge {
-                    theme::section_label(ui, "JavaScript bridge", theme::CYAN);
-                    ui.label(
-                        "This browser host exposes the same typed operation catalog through the JavaScript bridge.",
-                    );
-                    ui.add_space(6.0);
-                    ui.label(theme::eyebrow("Try"));
-                    ui.code("await window.FANPLAY.control.discovery()");
-                    if theme::button_sized(
-                        ui,
-                        "Copy discovery call",
-                        theme::ButtonKind::Secondary,
-                        theme::ButtonSize::Sm,
-                    )
-                    .clicked()
-                    {
-                        ui.ctx()
-                            .copy_text("await window.FANPLAY.control.discovery()".into());
-                    }
-                } else {
+                {
                     theme::section_label(ui, "Loopback server", theme::PINK);
                     ui.label(
                         "One server controls the launcher and the active game. Every endpoint and parameter type is listed at /v1/discovery.",

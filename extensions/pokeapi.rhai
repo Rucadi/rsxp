@@ -84,7 +84,7 @@ fn on_shutdown() { }
     <div class="layout">
       <aside class="left">
         <div class="card"><div class="section-title"><h2>Common operations</h2><button id="clear">Clear</button></div><div id="operations"></div></div>
-        <div class="card"><h2>Request body</h2><label>JSON body <textarea id="body" placeholder="Optional JSON body (reserved for future plugin operations)"></textarea></label><p class="muted">Most game operations use query parameters in the URL. The live route matcher is shared with the external API and browser host.</p></div>
+        <div class="card"><h2>Request body</h2><label>JSON body <textarea id="body" placeholder="Optional JSON body (reserved for future plugin operations)"></textarea></label><p class="muted">Most game operations use query parameters in the URL. The live route matcher is shared with the external API.</p></div>
       </aside>
       <main class="right"><div class="card"><div class="section-title"><h2>Response</h2><button id="copy">Copy JSON</button></div><div id="status" class="status">Choose an operation or enter a route.</div><pre id="response">Responses will appear here.</pre></div><div class="card"><h2>Quick reference</h2><p class="muted">Game status, surroundings, teleport, input, world map, Pokémon Essentials data, movedex, Pokédex, and all loaded plugin routes are available through the same <code>/v1/</code> transport.</p></div></main>
     </div>

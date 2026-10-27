@@ -751,10 +751,10 @@ fn write_response(stream: &mut TcpStream, response: ControlResponse) -> std::io:
     } else {
         response.body.to_string()
     };
-    // CORS is opt-in. A wildcard would let any web page in the browser control
+    // CORS is opt-in. A wildcard would let any web page control
     // the local launcher, so the default is "no cross-origin access"; local CLI
     // and MCP clients are unaffected. Set FANPLAY_API_CORS=1 for a trusted
-    // browser-based local tool.
+    // a local tool.
     let cors = if std::env::var("FANPLAY_API_CORS").as_deref() == Ok("1") {
         "Access-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\n"
     } else {

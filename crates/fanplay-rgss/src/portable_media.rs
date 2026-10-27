@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Shared image and font services for browser and mobile hosts.
+//! Shared image and font services for mobile hosts.
 use crate::graphics::{Bitmap, Color};
 pub fn image(bytes: &[u8]) -> Result<Bitmap, String> {
     let image = image::load_from_memory(bytes).map_err(|e| e.to_string())?;

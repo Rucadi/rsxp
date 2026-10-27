@@ -54,7 +54,6 @@ pub struct GpuDisplay {
     frames: u64,
     bound_frame: Option<(wgpu::Buffer, wgpu::BindGroup)>,
     previous_dimensions: [f32; 8],
-    // The workspace UI is shared with the browser frontend.
     workspace: fanplay_ui::Workspace,
     global_fullscreen_request: Option<bool>,
     game_pointer_rect: egui::Rect,

@@ -148,7 +148,7 @@ module FANPLAY
     result
   end
   # Sprite/plane/viewport snapshots are only consumed by Graphics.update. Batch
-  # adjacent snapshots to avoid crossing the Ruby/WASM bridge once per object.
+  # adjacent snapshots to avoid crossing the Ruby bridge once per object.
   def self.flush_sync
     return if SYNC_QUEUE.empty?
     payload = SYNC_QUEUE.join("\x1e").b
@@ -201,7 +201,7 @@ module FANPLAY
   def self.finalizer(op, id)
     proc { call(op, id) rescue nil }
   end
-  # Extension point: hosts (the browser frontend) may hook here after the RGSS
+  # Extension point: hosts may hook here after the RGSS
   # API is defined but before the game's scripts run. Defined only if a host
   # has not already provided one.
   def self.before_scripts; end unless singleton_class.method_defined?(:before_scripts)
@@ -308,7 +308,7 @@ module FANPLAY
   def self.eval_game_script(source,binding=TOPLEVEL_BINDING,filename='(eval)',lineno=1)
     eval(decode_script_source(source),binding || TOPLEVEL_BINDING,filename || '(eval)',lineno || 1)
   end
-  # Browser hosts use this hook to cooperatively yield during large startup
+  # Hosts may use this hook to cooperatively yield during large startup
   # workloads. Desktop execution leaves it as a no-op.
   def self.startup_yield; end unless singleton_class.method_defined?(:startup_yield)
   # fanplay re-tags ASCII-8BIT strings from Marshal data as UTF-8.

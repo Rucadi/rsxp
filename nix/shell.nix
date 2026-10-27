@@ -25,9 +25,6 @@ pkgs.mkShell {
       rustc
       rustfmt
       clippy
-      wasm-bindgen-cli
-      binaryen
-      lld
       nodejs
     ]
     ++ lib.optionals isLinux [ pkgs.mold ];
@@ -52,6 +49,4 @@ pkgs.mkShell {
   # rustc usable for the default DS-enabled build.
   RUSTC_BOOTSTRAP = "1";
 
-  # WebAssembly builds need a wasm-capable linker (rust-lld is not shipped here).
-  CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_LINKER = "${pkgs.lld}/bin/wasm-ld";
 }

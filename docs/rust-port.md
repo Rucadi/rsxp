@@ -1,8 +1,7 @@
 # RPG Maker runtime and compatibility
 
 `fanplay-rgss` is the Rust engine package. `cores/rgss/ruby` embeds native MRI
-and supplies Magnus bindings; browser games run the Ruby shim in ruby.wasm
-and reach the engine through JavaScript. RGSS 1, 2 and 3 are selectable, but
+and supplies Magnus bindings. RGSS 1, 2 and 3 are selectable, but
 selection does not imply complete XP/VX/VX Ace or plugin compatibility.
 
 ## Startup
@@ -38,14 +37,12 @@ separate from generic RGSS compatibility. See [extensions](../extensions/README.
 The native interpreter is modern MRI, not RPG Maker's original embedded Ruby.
 Language differences, Windows APIs, arbitrary DLL extensions, RTP conventions
 and game/plugin assumptions can still prevent execution. Targeted compatibility
-helpers do not reproduce a complete Windows environment. Browser WASM has
-additional filesystem, networking and native-extension restrictions.
+helpers do not reproduce a complete Windows environment.
 
 Theora movie decoding is implemented, but the movie path does not provide a
 complete general-purpose media player. Unsupported operations/effects can fail
 or take a software path; inspect the dispatcher and renderers before claiming
-specific APIs or visual effects are supported. Browser and desktop behavior
-must be tested independently.
+specific APIs or visual effects are supported.
 
 ## Running and diagnosing
 

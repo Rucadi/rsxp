@@ -94,7 +94,7 @@ impl CoreCatalog {
 
     /// Chooses a core from a probe whose bytes were supplied by the caller.
     ///
-    /// Browser and archive-backed hosts already own the content bytes and use
+    /// Archive-backed hosts already own the content bytes and use
     /// this entry point to share routing policy without native filesystem I/O.
     pub fn route_probe(&self, probe: &ContentProbe<'_>) -> Result<CoreRegistration, RouteError> {
         self.registry
@@ -407,7 +407,7 @@ mod tests {
     fn catalog_routes_a_caller_supplied_probe_without_file_io() {
         let mut catalog = CoreCatalog::new();
         catalog.register(registration());
-        let path = Path::new("browser-content.test");
+        let path = Path::new("archive-content.test");
         let probe = ContentProbe::new(path, false, b"already loaded");
         assert_eq!(catalog.route_probe(&probe).unwrap().info.id, "test");
     }

@@ -3,8 +3,8 @@
 //!
 //! The launcher exposes the same three locations through the UI and the control
 //! API: the game installation, the game's save directory, and its `patches/`
-//! directory. Centralising path policy here prevents the desktop UI, the
-//! browser adapter, and the HTTP API from disagreeing about where a file lives.
+//! directory. Centralising path policy here prevents the desktop UI and the
+//! HTTP API from disagreeing about where a file lives.
 
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -45,7 +45,6 @@ impl ExtensionUi {
                     value: Value::Bool(true),
                 });
             }
-            #[cfg(not(target_arch = "wasm32"))]
             if ui.button("Import plugin…").clicked() {
                 self.events.push(UiEvent {
                     panel_id: "__host".into(),

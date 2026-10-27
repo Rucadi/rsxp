@@ -15,26 +15,16 @@ pub struct Renderers {
 }
 
 pub struct GpuOutput {
-    #[cfg(not(target_arch = "wasm32"))]
     channels: dust_wgpu_2d::FrontendChannels,
-    #[cfg(not(target_arch = "wasm32"))]
     _three_d_channels: dust_wgpu_3d::threaded::FrontendChannels,
-    #[cfg(not(target_arch = "wasm32"))]
     last_frame: Option<u64>,
 }
 
 impl GpuOutput {
     pub fn next_rgba(&mut self) -> Option<Vec<u8>> {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let (index, frame) = self.channels.wait_newer_frame(self.last_frame);
-            self.last_frame = Some(index);
-            Some(frame)
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            None
-        }
+        let (index, frame) = self.channels.wait_newer_frame(self.last_frame);
+        self.last_frame = Some(index);
+        Some(frame)
     }
 }
 struct Shared {
@@ -66,7 +56,6 @@ fn new_software() -> (Box<dyn RendererTx>, Box<dyn SoftRendererRx>) {
 }
 
 pub fn new() -> Renderers {
-    #[cfg(not(target_arch = "wasm32"))]
     // The wgpu backend is useful for experimentation, but the current
     // frontend contract carries CPU frames. Its per-frame GPU readback would
     // serialize emulation on `device.poll(Wait)` and then upload the same
@@ -89,7 +78,6 @@ pub fn new() -> Renderers {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn new_wgpu() -> Result<Renderers, String> {
     use dust_wgpu_2d::Renderer3dRx;
     use std::sync::Arc;

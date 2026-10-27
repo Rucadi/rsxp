@@ -109,7 +109,7 @@ end
 
 class Sprite
   # Keep virtual getter calls on the Ruby side. Desktop submits typed values;
-  # the browser serializes only changed sprites. A reusable snapshot
+  # the host serializes only changed sprites. A reusable snapshot
   # of the last submitted state is compared first so an unchanged sprite costs
   # no native call; sprites that are not drawn (no bitmap/viewport) take an even
   # shorter path because their geometry is irrelevant.

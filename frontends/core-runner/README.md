@@ -1,7 +1,7 @@
 # Headless core runner
 
 `fanplay-core-runner` is a small frontend used to exercise a core through the same
-`fanplay-core` contract the desktop/browser frontends use. It routes content to an
+`fanplay-core` contract the desktop frontend uses. It routes content to an
 enabled core, runs it on the dedicated core thread, counts frames, writes an
 optional final PPM, and persists save states/battery saves.
 

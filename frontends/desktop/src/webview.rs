@@ -11,8 +11,7 @@
 //! GTK events are pumped from the egui update loop, as wry recommends for
 //! winit hosts. macOS and Windows use a hidden child only as a Wry opener and
 //! present the actual page in Wry's native popup window; other desktop platforms keep
-//! the embedded child webview. The browser frontend uses a DOM iframe for the
-//! equivalent operation.
+//! the embedded child webview.
 
 use eframe::Frame;
 use std::sync::{Arc, Mutex};

@@ -63,7 +63,7 @@ pub fn patches() -> Vec<std::sync::Arc<RuntimePatch>> {
 }
 
 /// Register one host-provided file from patches/<name>.rb. Desktop files and
-/// browser virtual files share naming, metadata, replacement and sort rules.
+/// virtual files share naming, metadata, replacement and sort rules.
 pub fn register_user_patch(name: &str, source: String) -> bool {
     if name.is_empty()
         || !name
@@ -232,7 +232,7 @@ pub fn state_report() -> String {
 }
 
 /// `id<TAB>name<TAB>enabled<TAB>value<TAB>min<TAB>max<TAB>step<TAB>suffix<TAB>description`
-/// lines, used by the browser panel (which has no shared process to read the
+/// lines, used by panels without a shared process to read the
 /// catalog from).
 pub fn list_report() -> String {
     let mut report = String::new();

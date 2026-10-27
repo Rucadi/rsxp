@@ -26,7 +26,7 @@ earlier baseline.
 | Scene ordering | Ordered native scene list, reinserted on relevant changes | HashMap traversal, grouping and sorting each rendered frame | Retaining sorted draw lists could save CPU, especially while idle; invalidation must cover z, y, viewport and lifecycle changes. |
 | Bitmap authority | GPU textures/FBO operations, lazy CPU surface for pixel reads | CPU bitmap pixels, revisions and GPU uploads | GPU-authoritative blits could remove CPU work and repeated uploads for animated bitmap mutations, at the cost of readback and coherence complexity. |
 | Resource reuse | Bounded texture/FBO pool | Persistent atlas slots and coalesced free ranges; CPU copy-on-write clones | Both reuse storage. Pooling alone is unlikely to fix the observed sprite traversal/submission costs. |
-| Runtime/platform | MRI, SDL, OpenGL; graphics update releases the GVL | MRI/Magnus, winit, wgpu; shared Rust core also used with ruby.wasm | Native bindings suit desktop; the shared portable bridge suits the browser. Releasing the GVL would help other Ruby threads, but is not evidence that the main game loop becomes faster. |
+| Runtime/platform | MRI, SDL, OpenGL; graphics update releases the GVL | MRI/Magnus, winit, wgpu | Native bindings suit the desktop. Releasing the GVL would help other Ruby threads, but is not evidence that the main game loop becomes faster. |
 | Ruby JIT | Configurable YJIT | Enabled by default when supported | Keep JIT settings consistent in benchmarks; changing languages does not remove Ruby game logic costs. |
 
 The comparison reviewed source areas for bindings, tilemap batching, scene ordering, bitmap and texture pooling, graphics scheduling, and JIT setup.
@@ -175,4 +175,4 @@ dispatch, `--output /tmp/frame.ppm` for a final capture, or the documented
    change than batching and not a measured improvement here.
 
 These are engineering hypotheses, not claimed multipliers. Battles, menus,
-other maps, native windows and browsers require separate measurements.
+other maps and native windows require separate measurements.

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Desktop adapter. Game code and the serialized/browser RGSS API stay unchanged.
+# Desktop adapter. Game code and the serialized RGSS API stay unchanged.
 module FANPLAY::Retained
   ENABLED = ENV['FANPLAY_NATIVE_STATE'] != '0' && Sprite::NATIVE_SYNC
   FIELDS = {

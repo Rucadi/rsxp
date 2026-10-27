@@ -1,14 +1,13 @@
 # Shared frontend and platform adapters
 
 `fanplay-ui::SharedApp` and `fanplay-ui::ui` own the eframe workspace, session
-widgets, themes, game texture and plugin interaction. Desktop and browser
-adapters supply capabilities and execute user intents. File dialogs, native
-process creation, browser downloads and device audio belong to those adapters.
+widgets, themes, game texture and plugin interaction. The desktop adapter
+supplies capabilities and executes user intents. File dialogs, native process
+creation and device audio belong to that adapter.
 
 ```mermaid
 flowchart TD
     Native[Desktop dashboard] --> App[SharedApp / workspace]
-    Web[WebRunner + JS launcher] --> App
     App --> Session[SessionCapabilities / SessionActions]
     App --> Services[Backend service contract]
     App --> DS[fanplay-nds presentation]
@@ -22,8 +21,6 @@ Sources:
 - `crates/fanplay-ui/src/ui/backend.rs`: runtime-service boundary.
 - `crates/fanplay-ui/src/ui/session.rs`: capabilities and session actions.
 - `frontends/desktop/src/dashboard.rs`: native lifecycle and intent handling.
-- `platforms/web/browser/launcher-controller.js`: browser import/launch state.
-- `platforms/web/engine/src/lib.rs`: WASM exports and shared UI integration.
 
 The shared application still depends on `fanplay-rgss` for bitmap, controls and
 runtime-service integration. It is not a fully generic shell. The cartridge UI

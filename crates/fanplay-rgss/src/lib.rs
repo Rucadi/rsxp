@@ -3,8 +3,8 @@
 //! games.
 //!
 //! This library is the reusable engine, not a frontend: the native desktop
-//! binary and the WebAssembly browser host both link it and supply platform
-//! services. Native MRI/Magnus bindings live in `cores/rgss/ruby`; this library
+//! binary links it and supplies platform services. Native MRI/Magnus bindings
+//! live in `cores/rgss/ruby`; this library
 //! embeds the portable Ruby shim through its `ruby` module.
 //!
 //! ## Module map
@@ -25,8 +25,8 @@
 //!   fast-forward, reset) a host UI can change while the game runs.
 //! * [`controls`] — the shared gamepad-to-RGSS-action mapping.
 //! * [`api_bridge`] *(feature `game-api`)* — the local game-command queue and
-//!   HTTP routing used by the desktop and browser tools.
-//! * [`cable_club`] / [`cable_unmod`] *(feature `game-api`, non-WASM)* — the
+//!   HTTP routing used by the desktop tools.
+//! * [`cable_club`] / [`cable_unmod`] *(feature `game-api`)* — the
 //!   Cable Club peer-relay servers.
 //!
 //! ## Features
@@ -34,9 +34,9 @@
 //! transport used by extension packages and frontend control surfaces.
 #[cfg(feature = "game-api")]
 pub mod api_bridge;
-#[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
+#[cfg(feature = "game-api")]
 pub mod cable_club;
-#[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
+#[cfg(feature = "game-api")]
 pub mod cable_unmod;
 pub mod controls;
 pub mod data;

@@ -28,7 +28,6 @@ and shared services. This is the implemented layout, not a target architecture.
 | `crates/fanplay-extension-ui` | Plugin UI declarations and host adaptation |
 | `frontends/desktop` | `fanplay` executable, device services, dashboard, child processes and webviews |
 | `frontends/core-runner` | Headless generic-core driver |
-| `platforms/web` | Separate Cargo workspace: native web host, WASM engine and build task |
 
 ## Native execution
 
@@ -95,27 +94,6 @@ RGSS has its own Ruby-to-Rust command bridge and retained rendering path.
 `fanplay-rgss/src/engine` owns resources, scene/frame execution and commands;
 `graphics` supplies CPU composition, and `gpu` supplies wgpu composition and
 remote submissions. Composition and host presentation are separate choices.
-
-## Browser execution
-
-```mermaid
-flowchart LR
-    Page[HTML + JS host] --> UI[eframe WebRunner / fanplay-ui]
-    Page --> Ruby[ruby.wasm: RGSS scripts]
-    Ruby --> Bridge[JS native-call bridge]
-    Bridge --> Engine[WASM fanplay-rgss]
-    Page --> Pump[cooperative cartridge frame driver]
-    Pump --> Core[WASM GBA / DS core]
-    Engine --> UI
-    Core --> UI
-```
-
-The browser owns scheduling and virtual files. It cannot block the main thread
-in a native-style infinite core loop. Cartridge core calls cooperate with the
-browser frame driver. RGSS runs in a separate Ruby WASM module and uses the JS
-bridge to reach the Rust engine. RGSS composition is software; eframe uses
-wgpu for presentation. No native MRI process or desktop loopback listener is
-embedded in a browser tab.
 
 ## Current dependency limits
 

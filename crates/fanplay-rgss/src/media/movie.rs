@@ -2,7 +2,7 @@
 //! Cross-platform Theora (`.ogv`) movie decoding for `Graphics.play_movie`.
 //!
 //! A pure-Rust Ogg demuxer feeds the Theora decoder so movies work on every
-//! frontend (desktop, Android, iOS and WebAssembly) without system codecs.
+//! frontend without system codecs.
 //! Playback is driven by the game's normal update loop: the caller asks for the
 //! frame that should be visible at a given elapsed time, and this module decodes
 //! ahead only as far as needed.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Shared local game-command queue and HTTP routing used by the desktop and
-//! browser tools (the egui inspector, the desktop workspace, and `fanplay-mcp`).
+//! Shared local game-command queue and HTTP routing used by the desktop tools
+//! (the egui inspector, the desktop workspace, and `fanplay-mcp`).
 //!
 //! The bridge is a process-local request queue. A caller submits a named
 //! operation ([`send_from_ui`], or the desktop HTTP transport) and the *game
@@ -23,8 +23,7 @@
 //! requests handed to Ruby, and the receivers polled by the egui workspace.
 //! [`initialize`] creates it lazily. The network transports ([`start`],
 //! [`start_from_env`], [`listening_port`]) are desktop-only and live in the
-//! private `transport` submodule; on WASM they are stubbed because external
-//! networking is unavailable. The runner side (a separate process) uses the
+//! private `transport` submodule. The runner side (a separate process) uses the
 //! [`relay_enable`] / [`relay_requests`] / [`relay_replies`] thread-locals to
 //! shuttle the same protocol across the session boundary. [`end_session`] fails
 //! any in-flight requests when the selected game ends, so they are never
@@ -38,18 +37,8 @@ use std::{
         Mutex, OnceLock,
     },
 };
-#[cfg(not(target_arch = "wasm32"))]
 mod transport;
-#[cfg(not(target_arch = "wasm32"))]
 pub use transport::{listening_port, start, start_from_env};
-#[cfg(target_arch = "wasm32")]
-pub fn listening_port() -> Option<u16> {
-    None
-}
-#[cfg(target_arch = "wasm32")]
-pub fn start(_port: u16) -> Result<(), String> {
-    Err("External networking is not available in this browser host".into())
-}
 
 struct Request {
     id: u64,

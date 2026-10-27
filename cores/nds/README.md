@@ -23,9 +23,8 @@ the CPU for the desktop cartridge transport, so it is not the recommended
 gameplay path. The 3D pass and 2D compositor submissions are serialized on the
 graphics thread to avoid cross-thread wgpu queue submission stalls. wgpu falls
 back to Dust's synchronous software renderers if initialization fails.
-WebAssembly uses the same Dust software 2D/3D renderers and shared emulation/UI
-code; browser GPU threading is not required. Because the current cartridge
-transport carries CPU `VideoFrame`s between processes, desktop wgpu frames are
+Because the current cartridge transport carries CPU `VideoFrame`s between
+processes, desktop wgpu frames are
 read back before presentation. Pause, fast-forward,
 reset, frame limits, screenshots, cartridge saves and versioned save states
 use the shared core contract. RTC reads the host's local clock.

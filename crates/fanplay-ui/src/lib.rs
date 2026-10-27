@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Shared eframe application, egui workspace, themes, and input controls for
-//! native, browser, and mobile runners. Frontends should use this crate as the
+//! native and mobile runners. Frontends should use this crate as the
 //! public UI boundary; RGSS remains an implementation dependency underneath.
 use base64::Engine as _;
 use fanplay_rgss::graphics::Bitmap;
@@ -12,7 +12,6 @@ pub mod ui;
 pub mod workspace_services;
 use fanplay_extension_api::{OperationRequest, OperationResponse, UiDescription};
 use fanplay_extensions::{ExtensionError, ExtensionHost, ExtensionPackage};
-#[cfg(not(target_arch = "wasm32"))]
 use std::{env, fs, path::PathBuf};
 pub use ui::session;
 pub use ui::theme;
@@ -123,7 +122,6 @@ impl Default for SharedApp {
         plugins
             .load(package)
             .expect("bundled Essentials inventory plugin must load");
-        #[cfg(not(target_arch = "wasm32"))]
         {
             let package = ExtensionPackage::from_rhai(
                 "essentials-online-play",
@@ -134,7 +132,6 @@ impl Default for SharedApp {
                 .load(package)
                 .expect("bundled Essentials online-play plugin must load");
         }
-        #[cfg(not(target_arch = "wasm32"))]
         load_external_plugins(&mut plugins);
         fanplay_rgss::api_bridge::register_extension_routes(plugins.route_aliases());
         Self::new(
@@ -161,7 +158,6 @@ impl Default for SharedApp {
 /// package subdirectories. Embedded bundles win when an external package uses
 /// the same ID; unrelated packages are loaded through the same manifest,
 /// capability, Rhai and Ruby-source paths as bundled plugins.
-#[cfg(not(target_arch = "wasm32"))]
 fn load_external_plugins(plugins: &mut ExtensionHost) {
     let Some(root) = env::var_os("FANPLAY_EXTENSIONS_DIR").map(PathBuf::from) else {
         return;
@@ -240,10 +236,9 @@ impl SharedApp {
         Ok(())
     }
 
-    /// Loads a single `.rhai` plugin file from disk on native
-    /// hosts. The importer uses exactly the same package validation as startup
+    /// Loads a single `.rhai` plugin file from disk. The importer uses exactly
+    /// the same package validation as startup
     /// discovery and accepts embedded-Ruby source inside the Rhai script.
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn import_plugin(&mut self, path: impl AsRef<std::path::Path>) -> Result<(), String> {
         let package =
             ExtensionPackage::load(path).map_err(|error| self.record_extension_error(error))?;
@@ -259,7 +254,7 @@ impl SharedApp {
     }
 
     /// Enables the toolbar's save export/import and snapshot actions for hosts
-    /// that provide their own save adapter (the browser page does).
+    /// that provide their own save adapter.
     pub fn set_save_buttons(&mut self, enabled: bool) {
         self.info.show_save_buttons = enabled;
     }
@@ -340,7 +335,6 @@ impl SharedApp {
     }
 
     /// Compatibility alias for callers migrating from extensions to plugins.
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn import_extension(&mut self, path: impl AsRef<std::path::Path>) -> Result<(), String> {
         self.import_plugin(path)
     }
@@ -452,8 +446,8 @@ impl SharedApp {
         self.reset_plugins();
     }
 
-    /// Drains plugin requests for the host adapter (desktop HTTP/RGSS, browser
-    /// JS, or a headless executor) without executing script code in layout.
+    /// Drains plugin requests for the host adapter (desktop HTTP/RGSS or a
+    /// headless executor) without executing script code in layout.
     pub fn take_plugin_requests(&mut self) -> Vec<OperationRequest> {
         self.extensions.take_requests()
     }
@@ -590,7 +584,7 @@ impl SharedApp {
     }
 
     /// Consumes only the save-related intents from the last workspace frame,
-    /// leaving `game_rect` intact for the browser's pointer mapping.
+    /// leaving `game_rect` intact for pointer mapping.
     pub fn take_save_actions(&mut self) -> (bool, bool, bool, bool) {
         let actions = (
             self.output.export_saves,
@@ -629,10 +623,6 @@ impl eframe::App for SharedApp {
         self.draw(ui);
     }
 
-    #[cfg(target_arch = "wasm32")]
-    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
-        Some(self)
-    }
 }
 
 #[cfg(target_os = "android")]

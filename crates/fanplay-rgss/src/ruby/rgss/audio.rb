@@ -1,8 +1,8 @@
-# Host-backed audio API for the desktop Kira/CPAL backend and browser media
+# Host-backed audio API for the desktop Kira/CPAL backend.
 # backend. The host owns playback while Ruby retains the RGSS method surface.
 module Audio
   # Desktop MRI installs these entry points through Magnus. Keep this bridge
-  # implementation for mobile MRI and browser Ruby, which do not load them.
+  # implementation for mobile MRI, which does not load them.
   unless singleton_class.method_defined?(:bgm_play)
   # Native ops; `channel` is one of bgm/bgs/me/se. Positions are seconds and
   # fade times are milliseconds, matching fanplay.

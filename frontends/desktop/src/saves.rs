@@ -2,7 +2,7 @@
 //! Desktop save-copy adapter.
 //!
 //! The implementation lives in `fanplay-provision::backup` so the launcher UI, the
-//! control API, and the browser adapter all follow the same staging and safety
+//! control API follows the same staging and safety
 //! rules. This module keeps the historical `crate::saves::copy` path stable for
 //! the desktop workspace.
 

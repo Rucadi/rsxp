@@ -27,9 +27,8 @@ flowchart LR
 ```
 
 `fanplay-frontend::spawn_core` supplies a native worker and completion handling.
-The browser uses cooperative execution instead; it does not spawn that native
-thread. RGSS embeds MRI and changes the working directory, so hosts must
-respect its process-level ownership requirements.
+RGSS embeds MRI and changes the working directory, so hosts must respect its
+process-level ownership requirements.
 
 ## Implementations
 
@@ -64,11 +63,8 @@ name. See [rename compatibility](rename.md).
 
 ## Host limits
 
-Desktop storage is persistent. The browser cartridge host currently uses an
-in-memory store; GBA's upstream filesystem save path is also unavailable as a
-normal writable native directory on WASM. Do not describe browser cartridge
-persistence as equivalent to native persistence. RGSS browser save mirroring
-is a separate JavaScript facility.
+Desktop storage is persistent. The frontend's in-memory store is used for
+ephemeral sessions; native cartridge data uses the provision home.
 
 The [core conformance guide](core-conformance.md) identifies the available
 tests. Passing generated-ROM tests does not establish compatibility or frame

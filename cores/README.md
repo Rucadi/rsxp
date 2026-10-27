@@ -21,8 +21,8 @@ default desktop features.
 For a new core, provide content detection, metadata, a core factory, platform
 services integration, bounded frame/audio output and deterministic tests.
 Use capability declarations for commands a core really supports. Keep the
-interface crate independent of the backend. Native workers and browser
-cooperative scheduling have different lifecycle requirements.
+interface crate independent of the backend. Native workers have explicit
+lifecycle requirements.
 
 Release LTO is intentionally disabled in the workspace because of the upstream
 GBA interpreter. Do not enable it as a generic optimization without checking

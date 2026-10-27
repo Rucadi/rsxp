@@ -3,7 +3,7 @@
 //!
 //! This module defines [`Backend`], the boundary through which the egui
 //! workspace (`super`) reaches the running game and the host platform without
-//! knowing whether it is embedded in the desktop runner or the browser build.
+//! knowing the details of the desktop runner.
 //! Panels hold a `Box<dyn Backend>`; the concrete adapter lives elsewhere
 //! (`crate::workspace_services::LocalServices` is the default). No VM, window,
 //! renderer, or egui types cross this boundary — only plain values (`bool`,
@@ -53,7 +53,7 @@ pub trait Backend {
     /// Gives a native host service an opportunity to answer a plugin-owned
     /// operation. `None` means the operation belongs to the game bridge or a
     /// different host adapter.
-    #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
+    #[cfg(feature = "game-api")]
     fn handle_plugin_operation(
         &self,
         operation: &str,

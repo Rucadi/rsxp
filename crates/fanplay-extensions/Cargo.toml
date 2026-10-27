@@ -12,6 +12,3 @@ fanplay-api = { path = "../fanplay-api" }
 fanplay-extension-api = { path = "../fanplay-extension-api" }
 rhai = { version = "1.27", features = ["serde"] }
 serde_json = "1"
-
-[target.'cfg(target_family = "wasm")'.dependencies]
-rhai = { version = "1.27", features = ["serde", "wasm-bindgen"] }

@@ -816,7 +816,7 @@ impl Core for GbaAdapter {
         let mut commands = Vec::with_capacity(16);
         let mut next_deadline = 0.0f64;
         let mut audio_paused = false;
-        // The frontend may drive the core one frame at a time (the browser
+        // The frontend may drive the core one frame at a time (a headless
         // cannot block its main thread across a whole session). Treat the
         // frame limit as a per-`run` budget so repeated calls each advance.
         let mut run_frames = 0u64;

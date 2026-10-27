@@ -6,7 +6,7 @@
 // fanplay:panel = encounters,Current Map Encounters
 
 // The encounter endpoint is supplied by the generic Essentials game API. This
-// plugin owns the browser UI and watches the status endpoint for map changes.
+// plugin owns the HTML UI and watches the status endpoint for map changes.
 fn on_activate() {
     let ruby = text_block("ruby");
     let apply = "{ apply: proc { " + ruby + "; FANPLAY::EncountersPlugin.install }, revert: proc { FANPLAY::EncountersPlugin.uninstall if defined?(FANPLAY::EncountersPlugin) } }";

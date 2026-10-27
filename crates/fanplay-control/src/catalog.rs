@@ -567,8 +567,7 @@ impl Catalog {
             "notes": [
                 "Mutating requests accept parameters in the JSON body or in the query string.",
                 "Operations under /v1/game and /v1/input are unavailable with HTTP 409 when no game is running.",
-                "Extension routes are merged into this catalog while their plugin is loaded.",
-                "The browser host exposes the same catalog through its JavaScript bridge because browsers cannot bind a loopback TCP listener."
+                "Extension routes are merged into this catalog while their plugin is loaded."
             ]
         })
     }

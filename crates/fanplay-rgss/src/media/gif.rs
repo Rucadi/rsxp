@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Animated GIF decoding shared by every frontend. Decoding lives in the
-//! engine rather than the platform host so desktop and browser bitmaps behave
-//! identically.
+//! engine rather than the platform host so bitmap behavior is deterministic.
 //!
 //! [`is_gif`] sniffs the GIF87a/GIF89a signature. [`decode`] builds a
 //! [`Bitmap`] from ARGB (`0xAARRGGBB`) pixels: a single-frame GIF stays static,

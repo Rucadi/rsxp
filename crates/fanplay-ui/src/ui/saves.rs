@@ -1,16 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! The `SessionPanel` "Save files" screen.
 //!
-//! Two adapters share one presentation:
-//!
-//! * Desktop hosts expose real save/backup paths and keep the directory-to-
-//!   directory copy controls.
-//! * Browser hosts expose named snapshots in browser storage plus the existing
-//!   export/import bundle. They have no filesystem paths, so the path editor is
-//!   hidden rather than disabled.
-//!
-//! The panel only emits [`SessionActions`]; the platform adapter performs the
-//! copy or asks the page to snapshot local storage.
+//! Desktop hosts expose real save/backup paths and keep the directory-to-
+//! directory copy controls. The panel only emits [`SessionActions`]; the
+//! platform adapter performs the copy.
 use super::session::{SessionActions, SessionPanel};
 use super::theme::{self, ButtonKind, ButtonSize, Tone};
 
@@ -43,7 +36,7 @@ impl SessionPanel {
                         if self.capabilities.directory_backups {
                             "FANPLAY/backups"
                         } else {
-                            "browser storage"
+                            "session storage"
                         },
                         Tone::Neutral,
                     );
@@ -53,7 +46,7 @@ impl SessionPanel {
                     egui::RichText::new(if self.capabilities.directory_backups {
                         "Snapshots are stored under FANPLAY/backups and are safe to copy between machines."
                     } else {
-                        "Snapshots are stored in this browser. Export a bundle to move them between browsers or machines."
+                        "Snapshots are stored for the current session."
                     })
                     .font(theme::body_font(13.0))
                     .color(theme::TEXT_MUTED),
@@ -66,14 +59,6 @@ impl SessionPanel {
                         }
                         if theme::button(ui, "Restore latest", ButtonKind::Secondary).clicked() {
                             actions.restore_latest = true;
-                        }
-                        if !self.capabilities.directory_backups {
-                            if theme::button(ui, "Export saves", ButtonKind::Ghost).clicked() {
-                                actions.export_saves = true;
-                            }
-                            if theme::button(ui, "Import saves", ButtonKind::Ghost).clicked() {
-                                actions.import_saves = true;
-                            }
                         }
                     });
                 });

@@ -126,8 +126,8 @@ impl Runtime {
             "window_cursor" => self.host.show_cursor(number::<u8>(&args, 1)? != 0),
             // Runtime patches are a host-drivable catalog. `states` is what the
             // Ruby shim polls, `source` hands a patch its program on first use,
-            // `list` feeds the browser panel, and `set` lets a host without a
-            // shared process (browser, tests) toggle one by id.
+            // `list` feeds the runtime panel, and `set` lets a host without a
+            // shared process (tests) toggle one by id.
             "runtime_patch_states" => return Ok(text(crate::runtime_patch::state_report())),
             "runtime_patch_list" => return Ok(text(crate::runtime_patch::list_report())),
             "runtime_patch_source" => {
@@ -177,8 +177,8 @@ impl Runtime {
                     return Err(format!("unknown user runtime patch: {id}"));
                 }
             }
-            // Live frame pacing for hosts without a shared process (browser,
-            // tests). The desktop workspace sets these in-process instead.
+            // Live frame pacing for hosts without a shared process (tests).
+            // The desktop workspace sets these in-process instead.
             "runtime_settings" => {
                 return Ok(text(format!(
                     "{}\t{}",
@@ -662,12 +662,12 @@ impl Runtime {
                     let bitmap = self.bitmap(number(&args, 1)?)?;
                     (bitmap.width(), bitmap.height(), bitmap.to_rgba())
                 };
-                #[cfg(all(feature = "game-api", not(target_arch = "wasm32")))]
+                #[cfg(feature = "game-api")]
                 {
                     image::save_buffer(path, &rgba, width, height, image::ExtendedColorType::Rgba8)
                         .map_err(|error| error.to_string())?;
                 }
-                #[cfg(not(all(feature = "game-api", not(target_arch = "wasm32"))))]
+                #[cfg(not(feature = "game-api"))]
                 {
                     let _ = (path, width, height, rgba);
                     return Err("writing bitmap files is not supported on this platform".into());

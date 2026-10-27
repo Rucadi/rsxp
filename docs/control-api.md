@@ -19,7 +19,7 @@ exposes the RGSS game-side listener.
 
 The server is loopback-only, uses bounded requests/timeouts, and has no TLS,
 HTTP/2 or general-purpose web-server behavior. Cross-origin access is opt-in
-with `FANPLAY_API_CORS=1`. Local clients do not need browser CORS headers.
+with `FANPLAY_API_CORS=1`. Local clients do not need cross-origin headers.
 
 ```sh
 curl -s http://127.0.0.1:47821/v1/discovery
@@ -51,14 +51,6 @@ sequenceDiagram
     Host-->>API: response
     API-->>Client: JSON
 ```
-
-## Browser and plugins
-
-The browser cannot listen on a native TCP port. It exposes
-`window.FANPLAY.control.discovery()` and
-`window.FANPLAY.control.request(method, path, body)` through its host adapter.
-Only browser-available operations can execute. RGSS browser saves/settings
-use local storage; cartridge persistence is currently session-local.
 
 `fanplay-api` handles operation registry/routing without owning sockets.
 `fanplay-extensions` loads Rhai declarations and orchestrates requests.

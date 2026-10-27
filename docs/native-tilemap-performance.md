@@ -48,7 +48,7 @@ Tile selection, connections between maps, bridge/reflection rules and plugin
 callbacks still execute in the game's Ruby renderer. Their resulting native
 quad ordering is preserved. This is the native atlas/geometry rendering path
 for this game; it does not claim a complete implementation of the standard
-RGSS Tilemap API or move all game map logic into Rust. Software/browser
+RGSS Tilemap API or move all game map logic into Rust. Software
 composition keeps the existing sprite path.
 
 `FANPLAY_NATIVE_TILEMAP=0` disables the adapter for A/B comparisons.

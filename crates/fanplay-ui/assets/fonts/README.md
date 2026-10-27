@@ -1,7 +1,7 @@
 # ArcadeNeon fonts
 
 These typefaces are embedded by `crates/fanplay-ui/src/ui/theme.rs` so the
-desktop, browser, and Android frontends share identical typography.
+desktop and Android frontends share identical typography.
 
 | File | Family | Source |
 | --- | --- | --- |

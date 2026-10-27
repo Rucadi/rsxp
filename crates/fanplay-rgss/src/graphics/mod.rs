@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Deterministic CPU software rendering shared by the desktop, browser and
-//! headless frontends.
+//! Deterministic CPU software rendering shared by the desktop and headless
+//! frontends.
 //!
 //! All operations run on caller-owned [`Bitmap`] pixel buffers, so output is
 //! byte-identical on every platform and this module doubles as the reference for

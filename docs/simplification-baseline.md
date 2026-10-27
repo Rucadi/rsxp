@@ -22,7 +22,7 @@ platform and input streams described in
 - `fanplay-cores` owns feature-selected static registration.
 - Core crates own machine- and engine-specific execution.
 - `fanplay-ui` remains the shared RGSS workspace and presentation application.
-- Desktop and browser hosts own scheduling, device APIs and transport.
+- The desktop host owns scheduling, device APIs and transport.
 
 ## Required correctness gates
 

@@ -13,7 +13,7 @@
 // The engine only supplies the reversible Ruby injection transport. The patch
 // implementations, their state, and the zoom control all belong to this
 // plugin. `payload` is intentionally one ordered string because it also makes
-// the browser route independent of JSON object key ordering.
+// the route independent of JSON object key ordering.
 fn on_activate() {
     state_set("panoramic", false);
     state_set("cable", false);

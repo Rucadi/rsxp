@@ -462,7 +462,7 @@ impl SessionPanel {
                     });
                     ui.label(
                         egui::RichText::new(
-                            "Torrents need WebRTC-compatible seeders. Your browser may share pieces while downloading.",
+                            "Torrents need WebRTC-compatible seeders and an active peer network.",
                         )
                         .font(theme::body_font(11.0))
                         .color(theme::TEXT_FAINT),

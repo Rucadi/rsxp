@@ -21,7 +21,7 @@ RPG Maker era; readable typography and straightforward controls keep the
 library comfortable for everyday use.
 
 These are target design guidelines, not a claim that every described UI state
-or feature is implemented. Apply them consistently across desktop and browser,
+or feature is implemented. Apply them consistently across the desktop,
 with touch-friendly adaptations where supported.
 
 ## Principles

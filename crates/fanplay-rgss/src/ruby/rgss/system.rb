@@ -84,7 +84,7 @@ module System
     begin
       FileUtils.mkdir_p(path)
     rescue StandardError
-      # The browser/WASI filesystem may be read-only; saves then fall back to
+      # Restricted filesystems may be read-only; saves then fall back to
       # whatever the host provides.
     end
     path

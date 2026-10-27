@@ -4,8 +4,7 @@ The product, executables, Cargo packages, crate directories, frontend bridges,
 build scripts and documentation use Fanplay names. The RGSS package is now
 `fanplay-rgss` (Rust import `fanplay_rgss`); the desktop executable is `fanplay`.
 Environment variables use `FANPLAY_*`, Ruby/JS bridges use `FANPLAY`, and new
-plugin metadata uses `// fanplay:...`. Rebuild browser output and packaged
-binaries after updating; previously exported HTML contains its own old runtime.
+plugin metadata uses `// fanplay:...`.
 
 ## Data compatibility
 
@@ -17,8 +16,6 @@ binaries after updating; previously exported HTML contains its own old runtime.
 - Legacy native library/controller locations and title-based saves remain
   migration inputs. The standalone core runner also reuses an existing legacy
   save root when its new root is absent.
-- Browser local-storage reads prefer Fanplay keys, then read/copy old keys on
-  the same origin. Old keys remain intact. RGSS saves can also be exported.
 - Core IDs, state revisions, content hashes, `RSXPSAV` envelope magic and
   `.rsxpstate` suffix remain stable. A product rename alone must not invalidate
   emulator save states.

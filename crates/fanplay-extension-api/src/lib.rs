@@ -2,7 +2,7 @@
 //! The stable contract shared by installed FANPLAY extensions and their hosts.
 //!
 //! This crate intentionally contains no Rhai, egui, emulator-core, or
-//! filesystem types. It is suitable for native, headless, and wasm hosts.
+//! filesystem types. It is suitable for native and headless hosts.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

@@ -25,9 +25,6 @@ Example client configuration:
 Start the desktop player with its API enabled before calling game tools. The
 launcher enables the local API by default; `FANPLAY_API=0` disables it. Game
 operations also need an active compatible session and the relevant plugins.
-The browser's `window.FANPLAY.control` adapter is not a TCP endpoint for this
-MCP executable.
-
 `openapi.json` is generated from `fanplay-control::Catalog::standard()`.
 Use `/v1/discovery` or `/v1/openapi.json` on the live player to inspect its
 available operations and loaded extension routes. The static file is not a

@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Live engine settings a host UI can change while the game runs.
 //!
-//! These cells are local to the runtime's owning thread. The cooperative browser
-//! adapter uses them directly. The native dashboard has its own settings mirror
-//! and relays changes across the isolated session transport; it never accesses
-//! the game thread's cells directly.
+//! These cells are local to the runtime's owning thread. The native dashboard
+//! has its own settings mirror and relays changes across the isolated session
+//! transport; it never accesses the game thread's cells directly.
 //!
 //! Four thread-local cells back the accessors: the requested frame-rate cap
 //! ([`rate_override`], stored clamped to 1..=1000 by [`set_rate_override`]), the

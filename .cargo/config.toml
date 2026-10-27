@@ -1,7 +1,6 @@
 [alias]
 # Regenerate the checked-in OpenAPI document from the shared control catalog.
 api-openapi = "run --quiet -p fanplay-mcp -- --openapi"
-xtask = "run --quiet --manifest-path platforms/web/xtask/Cargo.toml --"
 
 # Statically link the MinGW C runtime and libgcc so the portable Windows build
 # does not depend on shipping libgcc_s_seh-1.dll / libwinpthread-1.dll /

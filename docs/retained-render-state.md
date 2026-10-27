@@ -116,8 +116,7 @@ on every tile helper being invoked should use the map compatibility switch.
 - `FANPLAY_SPRITE_SYNC=ruby`: use the existing serialized binding, which also
   disables the new change-driven state path.
 
-The browser keeps its existing graphics synchronization. The visible-cell
-algorithm is portable, but its new Ruby binding is desktop-only.
+The visible-cell algorithm is portable, but its new Ruby binding is desktop-only.
 
 ## Verification
 

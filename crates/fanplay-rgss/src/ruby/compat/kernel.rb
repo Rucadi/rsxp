@@ -6,7 +6,7 @@ module Kernel
     rescue => error
       # mkxp reports a missing asset through the filesystem error that games
       # rescue while probing optional files (Essentials' pbGetFileChar uses
-      # load_data and expects Errno::ENOENT for absent graphics). The browser
+      # load_data and expects Errno::ENOENT for absent graphics). Restricted
       # engine's asset store does not see files written to Ruby's virtual
       # filesystem, so fall back to a normal read before reporting the miss.
       raise unless error.message.start_with?('asset not found: ')

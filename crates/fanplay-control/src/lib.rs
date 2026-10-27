@@ -20,24 +20,21 @@
 //!
 //! The launcher and the player both own the same catalog. A desktop dashboard
 //! additionally merges the game runner's extension routes into the catalog at
-//! runtime. The browser cannot bind a TCP socket, so its host exposes the same
-//! catalog through a JavaScript bridge instead of pretending to be a server.
+//! runtime.
 //!
-//! Keeping metadata separate from execution is deliberate: the HTTP, MCP and
-//! browser adapters can all describe an operation even when a particular host
-//! cannot execute it. Unavailable launcher operations, for example, still
+//! Keeping metadata separate from execution is deliberate: HTTP and MCP
+//! clients can describe an operation even when a particular host cannot
+//! execute it. Unavailable launcher operations, for example, still
 //! appear in a headless game's discovery document with an explicit
 //! `availability` marker, so a client never has to guess which URL is live.
 
 mod catalog;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod server;
 
 pub use catalog::{
     Catalog, Endpoint, EndpointMatch, Parameter, ParameterLocation, ParameterType, Scope,
     API_VERSION, DEFAULT_PORT,
 };
-#[cfg(not(target_arch = "wasm32"))]
 pub use server::{
     start, start_on, start_with_catalog, start_with_catalog_on, ControlHandler, ControlRequest,
     ControlResponse, ServerHandle,

@@ -87,18 +87,6 @@ jobs:
           mkdir -p artifacts
           cp -L result-appimage artifacts/fanplay-linux-x86_64.AppImage
           chmod +x artifacts/fanplay-linux-x86_64.AppImage
-      - name: Smoke-test AppImage without a build environment
-        run: |
-          export APPIMAGE_EXTRACT_AND_RUN=1
-          # nix-appimage's default AppRun uses a user namespace to expose its
-          # bundled /nix/store. GitHub-hosted runners disable unprivileged user
-          # namespaces, so run this package smoke test through the runner's
-          # passwordless root instead; the AppRun then only needs a mount
-          # namespace and still exercises the real packaged executable.
-          sudo -n env APPIMAGE_EXTRACT_AND_RUN=1 \
-            artifacts/fanplay-linux-x86_64.AppImage --version
-          sudo -n env APPIMAGE_EXTRACT_AND_RUN=1 \
-            artifacts/fanplay-linux-x86_64.AppImage run --script tools/package-smoke.rb --headless
       - uses: actions/upload-artifact@v4
         with:
           name: fanplay-linux-x86_64

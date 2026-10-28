@@ -37,9 +37,10 @@ crossPkgs.rustPlatform.buildRustPackage {
     outputHashes = {
       "arm-decoder-0.0.0" = "sha256-HG8Gh5H7ez1ad6VtWNCKcQ6ywA1yguwrMeFL5ZbKyIE=";
       "dust-core-0.0.0" = "sha256-BT/AofCPtDt22l0G/yW2bvDG+QqP2Po/8Q17Lp3lwIs=";
-      "arm7tdmi-0.1.0" = "sha256-wRsghc7uRlv+fUh7hpibQ7ajw+3kasEqdHTV+1N2QnI=";
-      "rustboyadvance-core-0.1.0" = "sha256-wRsghc7uRlv+fUh7hpibQ7ajw+3kasEqdHTV+1N2QnI=";
-      "rustboyadvance-utils-0.1.0" = "sha256-wRsghc7uRlv+fUh7hpibQ7ajw+3kasEqdHTV+1N2QnI=";
+      "arm7tdmi-0.1.0" = "sha256-AFWdWuNieoQkQbSuOy9daOiUh8ekf86TYWCMual3Zm0=";
+      "rustboyadvance-core-0.1.0" = "sha256-AFWdWuNieoQkQbSuOy9daOiUh8ekf86TYWCMual3Zm0=";
+      "rustboyadvance-utils-0.1.0" = "sha256-AFWdWuNieoQkQbSuOy9daOiUh8ekf86TYWCMual3Zm0=";
+      "rboy-0.2.0" = "sha256-9FRgeWcguV9J6eUW1wu1U51T8vkeGMco81joe5NsJ88=";
     };
   };
 
@@ -65,6 +66,11 @@ crossPkgs.rustPlatform.buildRustPackage {
 
   # Dust uses nightly-only language features and is in the desktop defaults.
   RUSTC_BOOTSTRAP = "1";
+
+  # The integration suite launches the just-built executable and is exercised
+  # by the native Windows job. Keep the cross package's post-install smoke
+  # checks, but avoid running it inside Nix's restricted test sandbox.
+  doCheck = false;
 
   buildInputs = [
     crossPkgs.windows.pthreads

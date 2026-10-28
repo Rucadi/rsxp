@@ -111,18 +111,21 @@ jobs:
         with:
           name: ${{ vars.CACHIX_CACHE || 'rsxp' }}
           authToken: '${{ secrets.CACHIX_KEY }}'
+      - name: Pin legacy nix-shell to the flake nixpkgs
+        run: |
+          echo "NIXPKGS_PATH=$(nix eval --impure --raw --expr '(builtins.getFlake (toString ./.)).inputs.nixpkgs.outPath')" >> "$GITHUB_ENV"
       - name: Build the browser Ruby image and native bindings
-        run: nix-shell --run 'tools/build-ruby-wasm.sh'
+        run: nix-shell -I "nixpkgs=$NIXPKGS_PATH" --run 'tools/build-ruby-wasm.sh'
       - name: Install the browser Ruby smoke-test adapter
-        run: nix-shell --run 'npm install --prefix target/ruby-wasm/check --no-save @ruby/wasm-wasi@2.10.1'
+        run: nix-shell -I "nixpkgs=$NIXPKGS_PATH" --run 'npm install --prefix target/ruby-wasm/check --no-save @ruby/wasm-wasi@2.10.1'
       - name: Check Ruby WASM bindings and audio bridge
-        run: nix-shell --run 'NODE_PATH="$PWD/target/ruby-wasm/check/node_modules" node tools/check-ruby-wasm.cjs'
+        run: nix-shell -I "nixpkgs=$NIXPKGS_PATH" --run 'NODE_PATH="$PWD/target/ruby-wasm/check/node_modules" node tools/check-ruby-wasm.cjs'
       - name: Check web worker JavaScript
-        run: nix-shell --run 'node --check frontends/web/rgss_worker.js'
+        run: nix-shell -I "nixpkgs=$NIXPKGS_PATH" --run 'node --check frontends/web/rgss_worker.js'
       - name: Test RGSS worker route qualification
-        run: nix-shell --run 'cargo test -p fanplay-rgss --lib'
+        run: nix-shell -I "nixpkgs=$NIXPKGS_PATH" --run 'cargo test -p fanplay-rgss --lib'
       - name: Build the production Trunk bundle
-        run: nix-shell --run 'cd frontends/web && CARGO_TARGET_DIR=../../target/web-release NO_COLOR=false trunk build --release --dist ../../target/trunk-dist'
+        run: nix-shell -I "nixpkgs=$NIXPKGS_PATH" --run 'cd frontends/web && CARGO_TARGET_DIR=../../target/web-release NO_COLOR=false trunk build --release --dist ../../target/trunk-dist'
       - name: Verify production web assets
         run: |
           test -s target/trunk-dist/index.html

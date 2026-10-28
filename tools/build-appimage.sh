@@ -26,19 +26,19 @@ mkdir -p "$output"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-echo "Building rsxp (release)..."
-cargo build --locked --release --bin rsxp --manifest-path "$root/Cargo.toml"
+echo "Building fanplay (release)..."
+cargo build --locked --release --bin fanplay --manifest-path "$root/Cargo.toml"
 
 echo "Staging AppDir with Ruby and native dependencies..."
-python3 "$root/tools/package-runtime.py" "$target/release/rsxp" "$work/AppDir"
+python3 "$root/tools/package-runtime.py" "$target/release/fanplay" "$work/AppDir"
 
 # Files the AppImage format expects at the AppDir root.
 install -m 0755 "$root/packaging/appimage/AppRun" "$work/AppDir/AppRun"
-install -m 0644 "$root/packaging/rsxp.desktop" "$work/AppDir/rsxp.desktop"
-install -m 0644 "$root/packaging/rsxp.png" "$work/AppDir/rsxp.png"
+install -m 0644 "$root/packaging/fanplay.desktop" "$work/AppDir/fanplay.desktop"
+install -m 0644 "$root/packaging/fanplay.png" "$work/AppDir/fanplay.png"
 
 echo "Building AppImage..."
-out="$output/rsxp-linux-x86_64.AppImage"
+out="$output/fanplay-linux-x86_64.AppImage"
 rm -f "$out"
 ARCH=x86_64 "$appimagetool" --no-appstream "$work/AppDir" "$out"
 echo "Wrote $out"

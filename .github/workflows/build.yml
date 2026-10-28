@@ -33,10 +33,11 @@ jobs:
       - uses: cachix/install-nix-action@v31
       - uses: cachix/cachix-action@v17
         with:
-          name: rsxp
+          # External cache identity is independent of the product rename.
+          name: ${{ vars.CACHIX_CACHE || 'rsxp' }}
           authToken: '${{ secrets.CACHIX_KEY }}'
       - name: Build and test desktop with Nix
-        run: nix build --print-build-logs .#rsxp
+        run: nix build --print-build-logs .#fanplay
 
   windows-nix:
     name: Windows / Nix cross-build
@@ -49,7 +50,8 @@ jobs:
       - uses: cachix/install-nix-action@v31
       - uses: cachix/cachix-action@v17
         with:
-          name: rsxp
+          # External cache identity is independent of the product rename.
+          name: ${{ vars.CACHIX_CACHE || 'rsxp' }}
           authToken: '${{ secrets.CACHIX_KEY }}'
       - name: Build Windows bundle with Nix and upload it to Cachix
         run: nix build --print-build-logs --print-out-paths .#windows | tee windows-store-path.txt
@@ -58,67 +60,82 @@ jobs:
           store_path="$(tail -n 1 windows-store-path.txt)"
           test -d "$store_path/bin"
           mkdir -p artifacts
-          (cd "$store_path/bin" && zip -qr "$GITHUB_WORKSPACE/artifacts/rsxp-windows-x86_64-nix.zip" .)
+          (cd "$store_path/bin" && zip -qr "$GITHUB_WORKSPACE/artifacts/fanplay-windows-x86_64-nix.zip" .)
       - uses: actions/upload-artifact@v4
         with:
-          name: rsxp-windows-x86_64-nix
-          path: artifacts/rsxp-windows-x86_64-nix.zip
+          name: fanplay-windows-x86_64-nix
+          path: artifacts/fanplay-windows-x86_64-nix.zip
           if-no-files-found: error
 
   appimage:
-    name: Linux / AppImage (Debian 11)
+    name: Linux / AppImage (Nix)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v17
+        with:
+          # External cache identity is independent of the product rename.
+          name: ${{ vars.CACHIX_CACHE || 'rsxp' }}
+          authToken: '${{ secrets.CACHIX_KEY }}'
+      - name: Build AppImage with its Nix runtime closure
+        run: |
+          nix build --print-build-logs .#appimage --out-link result-appimage
+          mkdir -p artifacts
+          cp -L result-appimage artifacts/fanplay-linux-x86_64.AppImage
+          chmod +x artifacts/fanplay-linux-x86_64.AppImage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fanplay-linux-x86_64
+          path: artifacts/*.AppImage
+          if-no-files-found: error
+
+  web:
+    name: Browser / WASM
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      # The AppImage is built in a plain Debian 11 image rather than with Nix,
-      # so it links against an old glibc (2.31) and runs on Ubuntu 20.04+ and
-      # every newer distribution. See packaging/appimage/Dockerfile.
-      - uses: docker/setup-buildx-action@v3
-      - name: Build the AppImage toolchain image
-        uses: docker/build-push-action@v6
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v17
         with:
-          context: packaging/appimage
-          file: packaging/appimage/Dockerfile
-          tags: rsxp-appimage
-          load: true
-          cache-from: type=gha,scope=appimage
-          cache-to: type=gha,mode=max,scope=appimage
-      - name: Restore Rust build cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            .appimage-cache/cargo-registry
-            .appimage-cache/cargo-git
-            .appimage-cache/target
-          key: appimage-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            appimage-${{ runner.os }}-
-      - name: Build AppImage
+          name: ${{ vars.CACHIX_CACHE || 'rsxp' }}
+          authToken: '${{ secrets.CACHIX_KEY }}'
+      - name: Pin legacy nix-shell to the flake nixpkgs
         run: |
-          mkdir -p .appimage-cache/cargo-registry .appimage-cache/cargo-git \
-            .appimage-cache/target artifacts
-          docker run --rm \
-            --user "$(id -u):$(id -g)" \
-            --env HOME=/tmp \
-            --volume "$PWD":/src \
-            --volume "$PWD/.appimage-cache/cargo-registry":/usr/local/cargo/registry \
-            --volume "$PWD/.appimage-cache/cargo-git":/usr/local/cargo/git \
-            --volume "$PWD/.appimage-cache/target":/src/target \
-            --workdir /src \
-            rsxp-appimage \
-            bash tools/build-appimage.sh /src/artifacts
-      - name: Smoke-test AppImage without a build environment
+          echo "NIXPKGS_PATH=$(nix eval --impure --raw --expr '(builtins.getFlake (toString ./.)).inputs.nixpkgs.outPath')" >> "$GITHUB_ENV"
+      - name: Build the browser Ruby image and native bindings
+        run: nix-shell -I "nixpkgs=$NIXPKGS_PATH" --run 'tools/build-ruby-wasm.sh'
+      - name: Install the browser Ruby smoke-test adapter
+        run: nix-shell -I "nixpkgs=$NIXPKGS_PATH" --run 'npm install --prefix target/ruby-wasm/check --no-save @ruby/wasm-wasi@2.10.1'
+      - name: Check Ruby WASM bindings and audio bridge
+        run: nix-shell -I "nixpkgs=$NIXPKGS_PATH" --run 'NODE_PATH="$PWD/target/ruby-wasm/check/node_modules" node tools/check-ruby-wasm.cjs'
+      - name: Check web worker JavaScript
+        run: nix-shell -I "nixpkgs=$NIXPKGS_PATH" --run 'node --check frontends/web/rgss_worker.js'
+      - name: Test RGSS worker route qualification
+        run: nix-shell -I "nixpkgs=$NIXPKGS_PATH" --run 'cargo test -p fanplay-rgss --lib'
+      - name: Build the production Trunk bundle
+        run: nix-shell -I "nixpkgs=$NIXPKGS_PATH" --run 'cd frontends/web && CARGO_TARGET_DIR=../../target/web-release NO_COLOR=false trunk build --release --dist ../../target/trunk-dist'
+      - name: Verify production web assets
         run: |
-          export APPIMAGE_EXTRACT_AND_RUN=1
-          artifacts/rsxp-linux-x86_64.AppImage --version
-          artifacts/rsxp-linux-x86_64.AppImage run --script tools/package-smoke.rb --headless
+          test -s target/trunk-dist/index.html
+          test -s target/trunk-dist/ruby.wasm
+          test -s target/trunk-dist/rgss_worker.js
+          grep -q 'fanplay-web-' target/trunk-dist/index.html
+      - name: Package browser bundle
+        run: |
+          mkdir -p artifacts/fanplay-web
+          cp -a target/trunk-dist/. artifacts/fanplay-web/
+          (cd artifacts/fanplay-web && zip -qr ../fanplay-web.zip .)
       - uses: actions/upload-artifact@v4
         with:
-          name: rsxp-linux-x86_64
-          path: artifacts/*.AppImage
+          name: fanplay-web
+          path: artifacts/fanplay-web.zip
           if-no-files-found: error
 
   desktop:
@@ -142,7 +159,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
         with:
           targets: ${{ matrix.target }}
       - uses: ruby/setup-ruby@v1
@@ -165,55 +182,55 @@ jobs:
       - name: Build desktop
         env:
           BUILD_TARGET: ${{ matrix.target }}
-        run: cargo build --locked --release --bin rsxp --target "$BUILD_TARGET"
+        run: cargo build --locked --release --bin fanplay --target "$BUILD_TARGET"
       - name: Smoke-test desktop and embedded Ruby
         env:
           BUILD_TARGET: ${{ matrix.target }}
           EXE_SUFFIX: ${{ matrix.suffix }}
         run: |
-          binary="target/$BUILD_TARGET/release/rsxp$EXE_SUFFIX"
+          binary="target/$BUILD_TARGET/release/fanplay$EXE_SUFFIX"
           "$binary" --version
-          "$binary" run --script src/testdata/rgss_smoke.rb --headless
+          "$binary" run --script crates/fanplay-rgss/testdata/rgss_smoke.rb --headless
       - name: Bundle Ruby and native dependencies
         env:
           BUILD_TARGET: ${{ matrix.target }}
         run: |
           if [ "$RUNNER_OS" = Windows ]; then
-            python tools/package-runtime.py "target/$BUILD_TARGET/release/rsxp.exe" artifacts/windows
+            python tools/package-runtime.py "target/$BUILD_TARGET/release/fanplay.exe" artifacts/windows
           else
-            python tools/package-runtime.py "target/$BUILD_TARGET/release/rsxp" artifacts/macos
+            python tools/package-runtime.py "target/$BUILD_TARGET/release/fanplay" artifacts/macos
           fi
       - name: Test relocated runtime without development environment
         if: runner.os == 'macOS'
         run: |
-          mv artifacts/macos 'artifacts/Relocated RSXP'
-          binary="$PWD/artifacts/Relocated RSXP/RSXP.app/Contents/MacOS/rsxp"
+          mv artifacts/macos 'artifacts/Relocated FANPLAY'
+          binary="$PWD/artifacts/Relocated FANPLAY/FANPLAY.app/Contents/MacOS/fanplay"
           env -u RUBYLIB -u GEM_HOME -u GEM_PATH -u DYLD_LIBRARY_PATH -u LD_LIBRARY_PATH \
             PATH=/usr/bin:/bin "$binary" --version
           env -u RUBYLIB -u GEM_HOME -u GEM_PATH -u DYLD_LIBRARY_PATH -u LD_LIBRARY_PATH \
             PATH=/usr/bin:/bin "$binary" run --script "$PWD/tools/package-smoke.rb" --headless
-          mv 'artifacts/Relocated RSXP' artifacts/macos
+          mv 'artifacts/Relocated FANPLAY' artifacts/macos
       - name: Build and test macOS disk image
         if: runner.os == 'macOS'
         run: |
           # The app bundles its own Ruby and libraries, so it ships as a normal
           # drag-to-Applications disk image rather than a system installer.
           mkdir -p artifacts/dmg
-          ditto artifacts/macos/RSXP.app artifacts/dmg/RSXP.app
+          ditto artifacts/macos/FANPLAY.app artifacts/dmg/FANPLAY.app
           ln -s /Applications artifacts/dmg/Applications
-          hdiutil create -volname RSXP -srcfolder artifacts/dmg -ov -format UDZO \
-            artifacts/rsxp-macos-arm64.dmg
+          hdiutil create -volname FANPLAY -srcfolder artifacts/dmg -ov -format UDZO \
+            artifacts/fanplay-macos-arm64.dmg
           rm -rf artifacts/dmg
           # Mount the image and copy the app out, exactly like dragging it to
           # /Applications, then smoke-test the relocated copy.
           mount=$(mktemp -d)
           install=$(mktemp -d)
-          hdiutil attach artifacts/rsxp-macos-arm64.dmg -nobrowse -readonly -mountpoint "$mount"
-          test -d "$mount/RSXP.app"
-          ditto "$mount/RSXP.app" "$install/RSXP.app"
+          hdiutil attach artifacts/fanplay-macos-arm64.dmg -nobrowse -readonly -mountpoint "$mount"
+          test -d "$mount/FANPLAY.app"
+          ditto "$mount/FANPLAY.app" "$install/FANPLAY.app"
           hdiutil detach "$mount"
           env -u RUBYLIB -u GEM_HOME -u GEM_PATH PATH=/usr/bin:/bin \
-            "$install/RSXP.app/Contents/MacOS/rsxp" run --script "$PWD/tools/package-smoke.rb" --headless
+            "$install/FANPLAY.app/Contents/MacOS/fanplay" run --script "$PWD/tools/package-smoke.rb" --headless
           rm -rf "$install" "$mount"
       - name: Diagnose Windows portable build
         if: runner.os == 'Windows'
@@ -224,7 +241,7 @@ jobs:
           # embedded manifest, how it behaves under a minimal PATH, and the
           # SideBySide/Application events Windows logged for the failed launch.
           $ErrorActionPreference = 'Continue'
-          $portable = Join-Path "$env:RUNNER_TEMP" 'RSXP portable test'
+          $portable = Join-Path "$env:RUNNER_TEMP" 'FANPLAY portable test'
           New-Item -ItemType Directory -Force -Path $portable | Out-Null
           Copy-Item -Recurse -Force artifacts/windows/* $portable
 
@@ -240,13 +257,13 @@ jobs:
               ForEach-Object { $_.Matches[0].Groups[1].Value }
           }
           if ($objdump) {
-            Write-Host "=== rsxp.exe imports (via $objdump) ==="
-            Get-Imports "$portable\rsxp.exe" | ForEach-Object { Write-Host "  $_" }
+            Write-Host "=== fanplay.exe imports (via $objdump) ==="
+            Get-Imports "$portable\fanplay.exe" | ForEach-Object { Write-Host "  $_" }
             Write-Host '=== unresolved dependencies across the portable set ==='
             $local = @{}
             Get-ChildItem $portable -Filter *.dll | ForEach-Object { $local[$_.Name.ToLowerInvariant()] = $true }
             $missing = 0
-            foreach ($bin in @(Get-Item "$portable\rsxp.exe") + @(Get-ChildItem $portable -Filter *.dll)) {
+            foreach ($bin in @(Get-Item "$portable\fanplay.exe") + @(Get-ChildItem $portable -Filter *.dll)) {
               foreach ($dep in Get-Imports $bin.FullName) {
                 if (-not $local.ContainsKey($dep.ToLowerInvariant()) -and
                     -not (Test-Path (Join-Path "$env:SystemRoot\System32" $dep))) {
@@ -260,17 +277,17 @@ jobs:
             Write-Host 'objdump not found; skipping import analysis'
           }
 
-          $manifest = Join-Path "$env:TEMP" 'rsxp.manifest'
+          $manifest = Join-Path "$env:TEMP" 'fanplay.manifest'
           Remove-Item $manifest -ErrorAction SilentlyContinue
           $mt = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\mt.exe' -ErrorAction SilentlyContinue |
             Sort-Object FullName -Descending | Select-Object -First 1
-          if ($mt) { & $mt.FullName "-inputresource:$portable\rsxp.exe;#1" "-out:$manifest" | Out-Null }
+          if ($mt) { & $mt.FullName "-inputresource:$portable\fanplay.exe;#1" "-out:$manifest" | Out-Null }
           if (Test-Path $manifest) {
-            Write-Host '=== rsxp.exe embedded manifest ==='
+            Write-Host '=== fanplay.exe embedded manifest ==='
             Get-Content $manifest | Write-Host
           } else {
             Write-Host '=== no manifest extracted; scanning exe bytes for <assembly> ==='
-            $text = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes("$portable\rsxp.exe"))
+            $text = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes("$portable\fanplay.exe"))
             $index = $text.IndexOf('<assembly')
             if ($index -ge 0) { Write-Host $text.Substring($index, [Math]::Min(1600, $text.Length - $index)) }
             else { Write-Host 'no <assembly> block found in exe' }
@@ -278,11 +295,11 @@ jobs:
 
           function Invoke-Probe([string]$label) {
             Write-Host "=== run: $label ==="
-            $out = Join-Path "$env:TEMP" 'rsxp-probe.out'
-            $err = Join-Path "$env:TEMP" 'rsxp-probe.err'
+            $out = Join-Path "$env:TEMP" 'fanplay-probe.out'
+            $err = Join-Path "$env:TEMP" 'fanplay-probe.err'
             Remove-Item $out, $err -ErrorAction SilentlyContinue
             try {
-              $proc = Start-Process -FilePath "$portable\rsxp.exe" -ArgumentList '--version' -Wait -PassThru -NoNewWindow -RedirectStandardOutput $out -RedirectStandardError $err
+              $proc = Start-Process -FilePath "$portable\fanplay.exe" -ArgumentList '--version' -Wait -PassThru -NoNewWindow -RedirectStandardOutput $out -RedirectStandardError $err
               Write-Host ("  exit=0x{0:X8}" -f $proc.ExitCode)
             } catch {
               Write-Host "  launch exception: $($_.Exception.Message)"
@@ -309,13 +326,13 @@ jobs:
         run: |
           # Package before smoke tests so the artifact remains available even
           # when a Windows runtime check exposes a failure for local debugging.
-          $portable = Join-Path $env:RUNNER_TEMP 'RSXP portable test'
+          $portable = Join-Path $env:RUNNER_TEMP 'FANPLAY portable test'
           New-Item -ItemType Directory -Force -Path $portable | Out-Null
           Copy-Item -Recurse -Force artifacts/windows/* $portable
-          $stage = 'artifacts/rsxp-windows-x86_64'
+          $stage = 'artifacts/fanplay-windows-x86_64'
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
           Copy-Item -Recurse -Force artifacts/windows/* $stage
-          Compress-Archive -Path $stage -DestinationPath artifacts/rsxp-windows-x86_64.zip -Force
+          Compress-Archive -Path $stage -DestinationPath artifacts/fanplay-windows-x86_64.zip -Force
       - name: Smoke-test Windows portable build
         if: runner.os == 'Windows'
         shell: pwsh
@@ -324,170 +341,38 @@ jobs:
           # Restrict PATH to the bundled files and Windows itself so the test
           # proves nothing is needed from the build toolchain. Failures remain
           # visible in the job summary but do not prevent artifact upload.
-          $portable = Join-Path $env:RUNNER_TEMP 'RSXP portable test'
+          $portable = Join-Path $env:RUNNER_TEMP 'FANPLAY portable test'
           $env:PATH = "$portable;$env:SystemRoot\System32;$env:SystemRoot"
           Remove-Item Env:RUBYLIB,Env:GEM_HOME,Env:GEM_PATH -ErrorAction SilentlyContinue
-          & "$portable\rsxp.exe" --version
+          & "$portable\fanplay.exe" --version
           if ($LASTEXITCODE -ne 0) {
             Get-ChildItem $portable | Select-Object Name | Out-String | Write-Host
-            throw "portable rsxp --version failed ($LASTEXITCODE)"
+            throw "portable fanplay --version failed ($LASTEXITCODE)"
           }
-          & "$portable\rsxp.exe" run --script "$PWD/tools/package-smoke.rb" --headless
+          & "$portable\fanplay.exe" run --script "$PWD/tools/package-smoke.rb" --headless
           if ($LASTEXITCODE -ne 0) { throw "portable runtime smoke test failed ($LASTEXITCODE)" }
       - name: Upload Windows portable debug files
         if: failure() && runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: rsxp-windows-portable-debug
+          name: fanplay-windows-portable-debug
           path: |
-            ${{ runner.temp }}/RSXP portable test/rsxp.exe
-            ${{ runner.temp }}/RSXP portable test/*.dll
+            ${{ runner.temp }}/FANPLAY portable test/fanplay.exe
+            ${{ runner.temp }}/FANPLAY portable test/*.dll
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         if: always() && (runner.os == 'Windows' || (runner.os == 'macOS' && hashFiles('artifacts/*.dmg') != ''))
         with:
-          name: rsxp-${{ matrix.platform }}
+          name: fanplay-${{ matrix.platform }}
           path: |
             artifacts/*.dmg
             artifacts/*.zip
           if-no-files-found: error
 
-  browser:
-    name: Browser bundle
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: cachix/install-nix-action@v31
-      - uses: cachix/cachix-action@v17
-        with:
-          name: rsxp
-          authToken: '${{ secrets.CACHIX_KEY }}'
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            web/engine -> target
-            web/xtask -> target
-            web -> target
-          key: browser
-      - name: Build browser player
-        run: nix develop --command cargo xtask web
-      - name: Check build tool and browser runtime
-        run: |
-          nix develop --command cargo test --locked --manifest-path web/xtask/Cargo.toml
-          nix develop --command cargo test --locked --manifest-path web/Cargo.toml
-          nix develop --command npm --prefix web test
-          nix develop --command npm --prefix web run test:cli
-      - name: Export the standalone player page
-        run: nix develop --command web/target/release/rsxp-web export web/dist/rsxp.html
-      - uses: actions/upload-artifact@v4
-        with:
-          name: rsxp.html
-          path: web/dist/rsxp.html
-          if-no-files-found: error
-
-  web-player:
-    name: Web player / ${{ matrix.platform }}
-    needs: browser
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            platform: linux-x86_64
-            suffix: ''
-          - os: windows-2022
-            platform: windows-x86_64
-            suffix: .exe
-          - os: macos-14
-            platform: macos-arm64
-            suffix: ''
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: cachix/install-nix-action@v31
-        if: runner.os == 'Linux'
-      - uses: cachix/cachix-action@v17
-        if: runner.os == 'Linux'
-        with:
-          name: rsxp
-          authToken: '${{ secrets.CACHIX_KEY }}'
-      - uses: dtolnay/rust-toolchain@stable
-        if: runner.os != 'Linux'
-      - uses: actions/download-artifact@v4
-        with:
-          name: rsxp.html
-          path: web/dist
-      - name: Stage the exported page as the compile-time embed
-        run: cp web/dist/rsxp.html web/dist/player.html
-      - name: Build native web player
-        run: |
-          if [ "$RUNNER_OS" = Linux ]; then
-            nix develop --command cargo build --locked --release --manifest-path web/Cargo.toml
-          else
-            cargo build --locked --release --manifest-path web/Cargo.toml
-          fi
-      - name: Smoke-test export
-        env:
-          EXE_SUFFIX: ${{ matrix.suffix }}
-        run: |
-          "web/target/release/rsxp-web$EXE_SUFFIX" --help
-          "web/target/release/rsxp-web$EXE_SUFFIX" export web/dist/export-test.html
-          cmp web/dist/player.html web/dist/export-test.html
-      - name: Package web player
-        env:
-          PLATFORM: ${{ matrix.platform }}
-          EXE_SUFFIX: ${{ matrix.suffix }}
-        run: |
-          mkdir -p artifacts/rsxp-web
-          cp "web/target/release/rsxp-web$EXE_SUFFIX" artifacts/rsxp-web/
-          cp COPYING web/README.md artifacts/rsxp-web/
-          tar -czf "artifacts/rsxp-web-$PLATFORM.tar.gz" -C artifacts rsxp-web
-      - uses: actions/upload-artifact@v4
-        with:
-          name: rsxp-web-${{ matrix.platform }}
-          path: artifacts/rsxp-web-${{ matrix.platform }}.tar.gz
-          if-no-files-found: error
-
-  pages:
-    name: Publish GitHub Pages
-    needs: browser
-    # Only the default branch publishes; pull requests just build.
-    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-    runs-on: ubuntu-24.04
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    concurrency:
-      group: pages
-      cancel-in-progress: false
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: rsxp.html
-          path: site
-      - name: Serve the player as the site index
-        run: cp site/rsxp.html site/index.html
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-      - id: deployment
-        uses: actions/deploy-pages@v4
-
   release-assets:
     name: Attach build artifacts to GitHub Release
     if: github.event_name == 'release'
-    needs: [appimage, desktop, windows-nix, browser, web-player]
+    needs: [appimage, desktop, web, windows-nix]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -496,56 +381,35 @@ jobs:
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          pattern: rsxp-linux-x86_64
+          pattern: fanplay-linux-x86_64
           path: release-assets
           merge-multiple: true
       - name: Download Windows Nix bundle
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          pattern: rsxp-windows-x86_64-nix
+          pattern: fanplay-windows-x86_64-nix
           path: release-assets
           merge-multiple: true
       - name: Download Windows portable bundle
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          pattern: rsxp-windows-x86_64
+          pattern: fanplay-windows-x86_64
           path: release-assets
           merge-multiple: true
       - name: Download macOS disk image
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          pattern: rsxp-macos-arm64
+          pattern: fanplay-macos-arm64
           path: release-assets
           merge-multiple: true
-      - name: Download standalone browser player
+      - name: Download browser bundle
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          pattern: rsxp.html
-          path: release-assets
-          merge-multiple: true
-      - name: Download Linux web player
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          pattern: rsxp-web-linux-x86_64
-          path: release-assets
-          merge-multiple: true
-      - name: Download Windows web player
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          pattern: rsxp-web-windows-x86_64
-          path: release-assets
-          merge-multiple: true
-      - name: Download macOS web player
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          pattern: rsxp-web-macos-arm64
+          pattern: fanplay-web
           path: release-assets
           merge-multiple: true
       - name: Upload files to the release

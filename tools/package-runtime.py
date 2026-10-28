@@ -273,7 +273,7 @@ def main():
     if destination.exists():
         raise RuntimeError(f"Refusing to overwrite {destination}")
     if sys.platform == "darwin":
-        app = destination / "RSXP.app"
+        app = destination / "FANPLAY.app"
         contents = app / "Contents"
         binaries = contents / "MacOS"
         # Non-Mach-O content must live outside the code locations (MacOS,
@@ -285,10 +285,10 @@ def main():
         runtime = destination
     else:
         # An AppDir for `appimagetool` (see tools/build-appimage.sh). Ruby's
-        # standard library lives under usr/lib/rsxp while the executable and its
+        # standard library lives under usr/lib/fanplay while the executable and its
         # manifest sit in usr/bin, which is where the runtime looks for them.
         binaries = destination / "usr/bin"
-        runtime = destination / "usr/lib/rsxp"
+        runtime = destination / "usr/lib/fanplay"
     binaries.mkdir(parents=True)
     executable = binaries / args.binary.name
     copy(args.binary, executable)
@@ -300,8 +300,8 @@ def main():
     config = ruby_runtime(binaries, runtime, manifest_dir=manifest_dir)
     if sys.platform == "darwin":
         with (contents / "Info.plist").open("wb") as handle:
-            plistlib.dump({"CFBundleExecutable": executable.name, "CFBundleName": "RSXP",
-                "CFBundleIdentifier": "org.rsxp.engine", "CFBundlePackageType": "APPL",
+            plistlib.dump({"CFBundleExecutable": executable.name, "CFBundleName": "Fanplay",
+                "CFBundleIdentifier": "org.fanplay.engine", "CFBundlePackageType": "APPL",
                 "CFBundleShortVersionString": "0.1.0", "CFBundleVersion": "1",
                 "LSMinimumSystemVersion": "14.0", "NSHighResolutionCapable": True}, handle)
         mac_dependencies(executable, config, contents)

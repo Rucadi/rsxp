@@ -1,0 +1,25 @@
+[workspace]
+members = [
+    "macros",
+]
+
+[package]
+name = "emu-utils"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[features]
+triple-buffer = []
+app = ["cocoa", "objc"]
+
+[dependencies]
+cfg-if = "1.0"
+emu-utils-macros = { path = "macros" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = { version = "0.25", optional = true }
+objc = { version = "0.2", optional = true }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(app_bundle)'] }

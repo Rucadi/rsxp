@@ -1,0 +1,258 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width,initial-scale=1'>
+    <title>Essentials Pokédex</title>
+    <style>
+        * {
+            box-sizing: border-box
+        }
+
+        body {
+            margin: 0;
+            background: #10141d;
+            color: #e9edf5;
+            font: 14px system-ui, sans-serif
+        }
+
+        button,
+        input,
+        select {
+            font: inherit
+        }
+
+        button {
+            border: 1px solid #39465d;
+            background: #1b2535;
+            color: #edf3ff;
+            border-radius: 6px;
+            padding: 7px 10px;
+            cursor: pointer
+        }
+
+        button:hover {
+            background: #293852
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            padding: 12px;
+            border-bottom: 1px solid #303b4f;
+            position: sticky;
+            top: 0;
+            background: #10141d;
+            z-index: 2
+        }
+
+        .toolbar input {
+            flex: 1;
+            min-width: 100px;
+            background: #171e2b;
+            border: 1px solid #39465d;
+            color: #fff;
+            border-radius: 6px;
+            padding: 8px
+        }
+
+        .toolbar label {
+            white-space: nowrap;
+            color: #aeb9ca
+        }
+
+        .status {
+            color: #93a4bd;
+            font-size: 12px
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: minmax(220px, 30%) 1fr;
+            min-height: calc(100vh - 62px)
+        }
+
+        .list {
+            border-right: 1px solid #303b4f;
+            overflow: auto
+        }
+
+        .row {
+            padding: 10px 12px;
+            border-bottom: 1px solid #232d3e;
+            cursor: pointer
+        }
+
+        .row:hover,
+        .row.selected {
+            background: #1c2c45
+        }
+
+        .row strong {
+            display: block
+        }
+
+        .row small {
+            color: #8e9db4
+        }
+
+        .empty {
+            padding: 18px;
+            color: #98a6ba
+        }
+
+        .detail {
+            padding: 18px;
+            overflow: auto
+        }
+
+        .hero {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            border-bottom: 1px solid #303b4f;
+            padding-bottom: 14px
+        }
+
+        .hero h1 {
+            margin: 0 0 4px;
+            font-size: 25px
+        }
+
+        .number {
+            font-size: 20px;
+            color: #7f91ad
+        }
+
+        .types {
+            display: flex;
+            gap: 6px
+        }
+
+        .type {
+            border-radius: 99px;
+            padding: 3px 9px;
+            background: #374765;
+            color: #fff;
+            font-size: 12px
+        }
+
+        .tabs {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+            margin: 14px 0
+        }
+
+        .tabs button.active {
+            background: #4c6da7;
+            border-color: #6c92d4
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 9px
+        }
+
+        .card {
+            background: #171e2b;
+            border: 1px solid #2b374b;
+            border-radius: 8px;
+            padding: 10px
+        }
+
+        .card h3 {
+            margin: 0 0 8px;
+            font-size: 13px;
+            color: #aebdde
+        }
+
+        .card p {
+            margin: 4px 0
+        }
+
+        .muted {
+            color: #91a0b5
+        }
+
+        .table {
+            width: 100%;
+            border-collapse: collapse
+        }
+
+        .table th,
+        .table td {
+            text-align: left;
+            padding: 7px;
+            border-bottom: 1px solid #2b374b
+        }
+
+        .table th {
+            color: #aebdde
+        }
+
+        .form {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 9px
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            color: #aebdde
+        }
+
+        .field input,
+        .field select {
+            background: #111925;
+            border: 1px solid #39465d;
+            color: #fff;
+            border-radius: 5px;
+            padding: 7px
+        }
+
+        .wide {
+            grid-column: 1/-1
+        }
+
+        .notice {
+            margin-top: 10px;
+            padding: 9px;
+            border-radius: 6px;
+            background: #1b2a3d;
+            color: #b9d1f5
+        }
+
+        .error {
+            color: #ff9d9d
+        }
+
+        .pill {
+            display: inline-block;
+            margin: 2px 4px 2px 0;
+            padding: 3px 7px;
+            background: #293852;
+            border-radius: 5px
+        }
+    </style>
+</head>
+
+<body>
+    <div class='toolbar'><input id='search' placeholder='Search species, number or ID'><label><input id='known'
+                type='checkbox'> known sources</label><button id='refresh'>Refresh</button><span id='status'
+            class='status'>Loading…</span></div>
+    <div class='layout'>
+        <div id='list' class='list'></div>
+        <main id='detail' class='detail'>
+            <div class='empty'>Choose a species.</div>
+        </main>
+    </div>
+    <script>(function () { 'use strict'; const state = { rows: [], entry: null, tab: 'overview' }; const $ = id => document.getElementById(id); const esc = v => String(v == null ? '—' : v).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); const arr = v => Array.isArray(v) ? v : []; const obj = v => v && typeof v === 'object' ? v : {}; function setStatus(text, error) { $('status').textContent = text; $('status').className = error ? 'status error' : 'status' } function json(path, options) { return fetch(path, options).then(r => r.text().then(t => { let v; try { v = t ? JSON.parse(t) : null } catch (e) { throw Error('Invalid server response') } if (!r.ok || v && v.error) throw Error(v && v.error || ('HTTP ' + r.status)); return v })) } function filtered() { const q = $('search').value.trim().toLowerCase(); const only = $('known').checked; return state.rows.filter(r => (!only || r.source) && (!q || [r.name, r.id, r.number].some(v => String(v == null ? '' : v).toLowerCase().includes(q)))) } function renderList() { const rows = filtered(); $('list').innerHTML = rows.length ? rows.map(r => `<div class='row ${state.entry && state.entry.id === r.id ? 'selected' : ''}' data-id='${esc(r.id)}'><strong>${esc(r.number ? ('#' + r.number + ' · ') : '')}${esc(r.name)}</strong><small>${esc(r.id)}${r.form_name ? ' · ' + esc(r.form_name) : ''}${r.source ? ' · ' + esc(r.source) : ''}</small></div>`).join('') : `<div class=empty>No species match this search.</div>`; $('status').textContent = `${rows.length} of ${state.rows.length} species` } function card(title, body) { return `<section class='card'><h3>${esc(title)}</h3>${body}</section>` } function list(values) { return arr(values).map(v => `<span class='pill'>${esc(typeof v === 'object' ? (v.name || v.id) : v)}</span>`).join('') || '<span class=muted>None supplied</span>' } function renderOverview() { const e = state.entry; const stats = obj(e.stats); const facts = obj(e.facts); return `<div class='grid'>${card('Pokédex entry', `<p>${esc(e.entry || 'No entry text supplied.')}</p>`)}${card('Types', `<div class='types'>${list(e.types)}</div>`)}${card('Stats', Object.keys(stats).map(k => `<p><b>${esc(k)}</b> <span class=muted>${esc(stats[k])}</span></p>`).join('') || '<span class=muted>No stats supplied</span>')}${card('Abilities', `<p>${list(e.abilities)}</p><p><b>Hidden:</b> ${list(e.hidden_abilities)}</p>`)}${card('Facts', Object.keys(facts).map(k => `<p><b>${esc(k.replaceAll('_', ' '))}:</b> ${esc(facts[k])}</p>`).join('') || '<span class=muted>No facts supplied</span>')}</div>` } function renderLocations() { const rows = arr(state.entry.locations); return rows.length ? `<table class='table'><tr><th>Map</th><th>Encounter</th><th>Levels</th><th>Chance</th></tr>${rows.map(r => `<tr><td>${esc(r.map_name || r.map_id)}</td><td>${esc(r.type)}${r.version ? ' · v' + esc(r.version) : ''}</td><td>${esc(r.min_level)}–${esc(r.max_level)}</td><td>${esc(r.percent == null ? '—' : r.percent + '%')}</td></tr>`).join('')}</table>` : '<p class=muted>No indexed locations.</p>' } function renderMoves() { const rows = arr(state.entry.moves); return rows.length ? `<table class='table'><tr><th>Move</th><th>Method</th><th>Type</th><th>Power</th></tr>${rows.map(r => `<tr><td>${esc(r.name || r.id)}</td><td>${esc(r.method)}${r.level != null ? ' · Lv ' + esc(r.level) : ''}</td><td>${esc(r.type)}</td><td>${esc(r.power == null ? '—' : r.power)}</td></tr>`).join('')}</table>` : '<p class=muted>No move data.</p>' } function renderEvolution() { const edge = (r, reverse) => `<div class='card'><b>${reverse ? 'Previous' : 'Evolves into'} ${esc(r.name || r.id)}</b><p class=muted>${esc(r.condition || r.method || '')}</p></div>`; return `<div class='grid'>${arr(state.entry.previous).map(r => edge(r, true)).join('')}${arr(state.entry.evolutions).map(r => edge(r, false)).join('') || '<p class=muted>No evolution data.</p>'}</div>` } function renderCheats() { const e = state.entry; return `<div class='card'><h3>Encounter generator</h3><p class=muted>Queues a wild encounter through the plugin Ruby binding on the game thread.</p><form id='cheat' class='form'><label class='field'>Level<input name='level' type='number' min='1' max='100' value='5'></label><label class='field'>Form<input name='form' type='number' min='0' placeholder='default'></label><label class='field'>Gender<select name='gender'><option value=''>default</option><option>male</option><option>female</option></select></label><label class='field'>Nature<input name='nature' placeholder='default'></label><label class='field'>Ability<input name='ability' placeholder='default'></label><label class='field'>Held item<input name='item' placeholder='default'></label><label class='field'>Friendship<input name='friendship' type='number' min='0' max='255' placeholder='default'></label><label class='field'><span>Options</span><span><input name='shiny' type='checkbox'> shiny</span><span><input name='max_ivs' type='checkbox'> max IVs</span></label><div class='wide'><button type='submit'>Generate ${esc(e.name)}</button></div></form><div id='cheat-result'></div></div>` } function renderDetail() { const e = state.entry; if (!e) { $('detail').innerHTML = '<div class=empty>Choose a species.</div>'; return } const tabs = [['overview', 'Overview'], ['locations', 'Locations'], ['moves', 'Moves'], ['evolution', 'Evolution'], ['cheats', 'Cheats']]; const body = state.tab === 'overview' ? renderOverview() : state.tab === 'locations' ? renderLocations() : state.tab === 'moves' ? renderMoves() : state.tab === 'evolution' ? renderEvolution() : renderCheats(); $('detail').innerHTML = `<div class='hero'><div><h1>${esc(e.name)} <span class='number'>#${esc(e.number || '—')}</span></h1><div class=muted>${esc(e.id)}${e.form_name ? ' · ' + esc(e.form_name) : ''}</div></div><div class='types'>${list(e.types)}</div></div><div class='tabs'>${tabs.map(t => `<button class='${state.tab === t[0] ? 'active' : ''}' data-tab='${t[0]}'>${t[1]}</button>`).join('')}</div>${body}`; document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { state.tab = b.dataset.tab; renderDetail() }); const form = $('cheat'); if (form) form.onsubmit = sendCheat } function selectSpecies(id) { setStatus('Loading details…'); json('/v1/pokemon-essentials/species/' + encodeURIComponent(id)).then(e => { state.entry = e; state.tab = 'overview'; renderList(); renderDetail(); setStatus(`${state.rows.length} species`) }).catch(e => setStatus(e.message, true)) } function loadDex(refresh) { setStatus('Loading Pokédex…'); json('/v1/pokemon-essentials/pokedex' + (refresh ? '?refresh=refresh' : '')).then(v => { state.rows = arr(v && v.species); renderList(); if (state.rows.length && !state.entry) selectSpecies(state.rows[0].id); else setStatus(`${state.rows.length} species`) }).catch(e => setStatus(e.message, true)) } function sendCheat(ev) { ev.preventDefault(); const f = new FormData(ev.target); const params = new URLSearchParams({ species: state.entry.id, level: f.get('level') || '5', shiny: f.get('shiny') ? 'true' : 'false', form: f.get('form') || '', gender: f.get('gender') || '', nature: f.get('nature') || '', ability: f.get('ability') || '', item: f.get('item') || '', max_ivs: f.get('max_ivs') ? 'true' : 'false', friendship: f.get('friendship') || '' }); $('cheat-result').innerHTML = `<div class='notice'>Sending encounter request…</div>`; json('/v1/pokemon-essentials/wild-encounter?' + params, { method: 'POST' }).then(v => { $('cheat-result').innerHTML = `<div class='notice'>${esc(v.name || 'Encounter scheduled')} · level ${esc(v.level)}</div>` }).catch(e => { $('cheat-result').innerHTML = `<div class='notice error'>${esc(e.message)}</div>` }) } $('search').oninput = renderList; $('known').onchange = renderList; $('refresh').onclick = () => loadDex(true); $('list').onclick = e => { const row = e.target.closest('[data-id]'); if (row) selectSpecies(row.dataset.id) }; loadDex(false) })();</script>
+</body>
+
+</html>`

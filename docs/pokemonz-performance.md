@@ -1,5 +1,10 @@
 # Pokémon Z renderer performance
 
+> Historical record. Measurements and implementation details below describe the
+> recorded workload/revision, not the current support matrix. Names and commands
+> have been adapted to Fanplay; timings have not been re-measured. See
+> [current architecture](architecture.md) and [development](development.md).
+
 Pokémon Z uses an older Essentials renderer than Ericlostie. At normal zoom,
 its `CustomTilemap` paints cached bitmap layers. The panoramic patch selects
 `SynchronizedTilemap`, which uses the engine's RGSS1 `Tilemap` path. Optimizations
@@ -52,7 +57,7 @@ changed. Compatibility viewport polling compares copied property values before
 notifying dependents; ordinary setter, nested mutation, flash and disposal
 notifications remain active.
 
-`RSXP_RETAINED_TILEMAP=0` disables legacy tilemap layout retention and internal
+`FANPLAY_RETAINED_TILEMAP=0` disables legacy tilemap layout retention and internal
 tile sprites for comparisons. The existing native-state switch still works.
 Game scripts and save formats are unchanged.
 
@@ -61,10 +66,10 @@ Game scripts and save formats are unchanged.
 `tools/benchmark-pokemonz.rb` loads an existing save through the real Continue
 loader into a temporary save directory and runs the restored overworld. It
 reports frame time, 95th percentile, worst frame, allocations, player positions,
-renderer classes and retained-state counters. Set `RSXP_BENCH_ZOOM=3`,
-`RSXP_YJIT=1`, `RSXP_INPUT=100:79:40,170:80:40` and run headless with wgpu and
+renderer classes and retained-state counters. Set `FANPLAY_BENCH_ZOOM=3`,
+`FANPLAY_YJIT=1`, `FANPLAY_INPUT=100:79:40,170:80:40` and run headless with wgpu and
 `--frames 240`. The default warmup is 60 updates; the remaining 180 are measured.
-`RSXP_POKEMONZ_ROOT` and `RSXP_POKEMONZ_SAVE` select alternate local assets/save.
+`FANPLAY_POKEMONZ_ROOT` and `FANPLAY_POKEMONZ_SAVE` select alternate local assets/save.
 
 The CLI regressions compare per-frame coordinates and pixels against rebuilt
 legacy tilemaps across scrolling, tile boundaries, layered autotiles, animation,
@@ -116,7 +121,7 @@ color, tone and visibility in one native call. Bitmap changes rewire resource
 dependencies. All Ruby work finishes before borrowing the runtime; only numeric
 render updates cross that boundary. Native updates clear stale full snapshots.
 Class-level value overrides, incompatible/frozen sprites and custom tile helpers
-retain the setter path. `RSXP_NATIVE_TILEMAP_BATCH=0` disables only native full
+retain the setter path. `FANPLAY_NATIVE_TILEMAP_BATCH=0` disables only native full
 refresh application for comparisons.
 
 The final three alternating release runs at zoom 3 measured these medians
@@ -138,5 +143,5 @@ Ruby setters and uncached rendering, with GC compaction enabled separately.
 The remaining boundary/coverage rebuilds can still cause isolated slower frames;
 this change reduces their cost rather than promising flat frame times on every
 map. Raw measurements are in `docs/benchmarks/pokemonz-scroll-artifacts.json`.
-Set `RSXP_BENCH_PIXEL_TRACE=1` on the benchmark harness to print per-frame pixel
+Set `FANPLAY_BENCH_PIXEL_TRACE=1` on the benchmark harness to print per-frame pixel
 hashes. That mode performs CPU snapshots and must not be used for timing claims.

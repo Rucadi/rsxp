@@ -1,0 +1,19 @@
+[package]
+name = "fanplay-core-gbc"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "GPL-2.0-or-later"
+description = "Game Boy and Game Boy Color core adapter for FANPLAY"
+publish = false
+
+[lib]
+name = "fanplay_core_gbc"
+path = "src/lib.rs"
+
+[dependencies]
+ciborium = "0.2.2"
+fanplay-core = { path = "../../../crates/fanplay-core" }
+# Use rboy strictly as a library. Its GUI dependencies are optional and no
+# features are enabled here, so they are not built for FANPLAY targets.
+rboy = { git = "https://github.com/mvdnes/rboy", rev = "4aa8f62b720a17c7a134b9e8d3c19390f1dd117d" }

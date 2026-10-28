@@ -1,0 +1,32 @@
+# Shared frontend and platform adapters
+
+`fanplay-ui::SharedApp` and `fanplay-ui::ui` own the eframe workspace, session
+widgets, themes, game texture and plugin interaction. The desktop adapter
+supplies capabilities and executes user intents. File dialogs, native process
+creation and device audio belong to that adapter.
+
+```mermaid
+flowchart TD
+    Native[Desktop dashboard] --> App[SharedApp / workspace]
+    App --> Session[SessionCapabilities / SessionActions]
+    App --> Services[Backend service contract]
+    App --> DS[fanplay-nds presentation]
+    App --> GBA[fanplay-gba presentation]
+    Services --> RGSS[RGSS runtime services]
+```
+
+Sources:
+
+- `crates/fanplay-ui/src/lib.rs`: shared application and texture presentation.
+- `crates/fanplay-ui/src/ui/backend.rs`: runtime-service boundary.
+- `crates/fanplay-ui/src/ui/session.rs`: capabilities and session actions.
+- `frontends/desktop/src/dashboard.rs`: native lifecycle and intent handling.
+
+The shared application still depends on `fanplay-rgss` for bitmap, controls and
+runtime-service integration. It is not a fully generic shell. The cartridge UI
+crates have no emulator dependency; core execution stays under `cores/`.
+
+There are Android-specific eframe/winit dependencies and package metadata in
+`fanplay-ui/Cargo.toml`. There is no complete Android activity/project or iOS
+application in this checkout. Mobile support must not be documented as a
+working app based solely on those dependency settings.

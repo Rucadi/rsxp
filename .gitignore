@@ -5,7 +5,7 @@
 *.frag.xxd
 *.ttf.xxd
 ericlostie
-rsxp
+fanplay
 xxd+
 JUEGO
 
@@ -13,27 +13,37 @@ JUEGO
 /build
 /builddir
 /target
+/frontends/web/dist/
+/frontends/web/ruby.wasm
+/frontends/web/ruby-wasm/.bundle/
+/frontends/web/ruby-wasm/build/
+/frontends/web/ruby-wasm/extensions/
+/frontends/web/ruby-wasm/Gemfile.lock
+/frontends/web/ruby-wasm/pkg/
+/frontends/web/ruby-wasm/rubies/
+/frontends/web/ruby-wasm/vendor/
+/frontends/web/ruby-wasm/fanplay-rgss-wasm/ext/fanplay_native/target/
 /mobile/build/
 /mobile/core/target/
 /mobile/android/.gradle/
 /mobile/android/app/build/
 /mobile/android/local.properties
-!/mobile/android/app/src/main/java/org/rsxp/
-!/mobile/ios/RSXP/
+!/mobile/android/app/src/main/java/org/fanplay/
+!/mobile/ios/FANPLAY/
 /profiles/
 /result
 /result-*
 /artifacts/
 /.appimage-cache/
 /ccache
-
+anil
 # VS Code
 /.vscode
 *.code-workspace
 
 # Codeblocks
-rsxp.layout
-rsxp.cbp
+fanplay.layout
+fanplay.cbp
 
 # General
 .DS_Store

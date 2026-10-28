@@ -17,34 +17,55 @@ let
   crossCC = crossPkgs.stdenv.cc;
   mingwRuntime = crossPkgs.windows.mingw_w64;
 
+  # webview2-com-sys links the MinGW build to the WebView2 loader DLL. The
+  # crate ships the matching architecture-specific loader beside its import
+  # libraries, but Cargo only consumes the latter during linking.
+  webview2ComSys = pkgs.fetchurl {
+    url = "https://crates.io/api/v1/crates/webview2-com-sys/0.39.1/download";
+    hash = "sha256-s6BxMndRF9YGWFPZ0ReBV7jJDiKN5HEp1rzix+3r7fs=";
+  };
+
 in
 crossPkgs.rustPlatform.buildRustPackage {
-  pname = "rsxp";
+  pname = "fanplay";
   version = "0.1.0";
 
   src = root;
 
-  cargoLock.lockFile = root + "/Cargo.lock";
+  cargoLock = {
+    lockFile = root + "/Cargo.lock";
+    outputHashes = {
+      "arm-decoder-0.0.0" = "sha256-HG8Gh5H7ez1ad6VtWNCKcQ6ywA1yguwrMeFL5ZbKyIE=";
+      "dust-core-0.0.0" = "sha256-BT/AofCPtDt22l0G/yW2bvDG+QqP2Po/8Q17Lp3lwIs=";
+      "arm7tdmi-0.1.0" = "sha256-AFWdWuNieoQkQbSuOy9daOiUh8ekf86TYWCMual3Zm0=";
+      "rustboyadvance-core-0.1.0" = "sha256-AFWdWuNieoQkQbSuOy9daOiUh8ekf86TYWCMual3Zm0=";
+      "rustboyadvance-utils-0.1.0" = "sha256-AFWdWuNieoQkQbSuOy9daOiUh8ekf86TYWCMual3Zm0=";
+      "rboy-0.2.0" = "sha256-9FRgeWcguV9J6eUW1wu1U51T8vkeGMco81joe5NsJ88=";
+    };
+  };
 
   CARGO_BUILD_TARGET = target;
 
   cargoBuildFlags = [
     "-p"
-    "rsxp-desktop"
+    "fanplay-desktop"
     "--bin"
-    "rsxp"
+    "fanplay"
     "--target"
     target
   ];
 
   cargoInstallFlags = [
     "-p"
-    "rsxp-desktop"
+    "fanplay-desktop"
     "--bin"
-    "rsxp"
+    "fanplay"
     "--target"
     target
   ];
+
+  # Dust uses nightly-only language features and is in the desktop defaults.
+  RUSTC_BOOTSTRAP = "1";
 
   buildInputs = [
     crossPkgs.windows.pthreads
@@ -136,8 +157,8 @@ crossPkgs.rustPlatform.buildRustPackage {
     mkdir -p "$out/bin"
 
     # Windows executable.
-    if [ ! -f "$out/bin/rsxp.exe" ]; then
-      cp "target/${target}/release/rsxp.exe" "$out/bin/"
+    if [ ! -f "$out/bin/fanplay.exe" ]; then
+      cp "target/${target}/release/fanplay.exe" "$out/bin/"
     fi
 
     # Ruby runtime DLL.
@@ -163,6 +184,14 @@ crossPkgs.rustPlatform.buildRustPackage {
       fi
     done
 
+    # webview2-com-sys uses the dynamic WebView2 loader for MinGW. Ship the
+    # x64 loader next to fanplay.exe so Windows can resolve it from the portable
+    # distribution directory.
+    webview2_src="$TMPDIR/webview2-com-sys"
+    mkdir -p "$webview2_src"
+    tar -xzf ${webview2ComSys} -C "$webview2_src" --strip-components=1
+    cp "$webview2_src/x64/WebView2Loader.dll" "$out/bin/"
+
     # Ruby's extension modules and standard library are shipped next to the
     # executable. Keep any DLLs from Ruby in the same loader-search directory.
     find ${ruby}/bin ${ruby}/lib -type f -iname '*.dll' -exec cp -n {} "$out/bin/" \; 2>/dev/null || true
@@ -174,7 +203,7 @@ crossPkgs.rustPlatform.buildRustPackage {
   '';
 
   meta = with pkgs.lib; {
-    description = "RSXP Windows desktop application";
+    description = "FANPLAY Windows desktop application";
     platforms = [ "x86_64-windows" ];
   };
 }

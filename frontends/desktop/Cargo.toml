@@ -1,0 +1,75 @@
+[package]
+name = "fanplay-desktop"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "GPL-2.0-or-later"
+publish = false
+
+[dependencies]
+fanplay-provision = { path = "../../crates/fanplay-provision" }
+fanplay-control = { path = "../../crates/fanplay-control" }
+serde = { version = "1", features = ["derive"] }
+fanplay-core-nds = { path = "../../cores/nds/core", optional = true }
+fanplay-core-gba = { path = "../../cores/gba/core", optional = true }
+fanplay-core-gbc = { path = "../../cores/gbc/core", optional = true }
+fanplay-rgss = { path = "../../crates/fanplay-rgss", features = ["gpu", "game-api", "portable-media"], optional = true }
+fanplay-core = { path = "../../crates/fanplay-core" }
+fanplay-extension-api = { path = "../../crates/fanplay-extension-api" }
+fanplay-cores = { path = "../../crates/fanplay-cores", default-features = false }
+fanplay-frontend = { path = "../../crates/fanplay-frontend" }
+fanplay-ui = { path = "../../crates/fanplay-ui", optional = true }
+eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "default_fonts", "x11", "wayland", "clipboard", "system_fonts"] }
+ruby_rgss_core = { package = "fanplay-rgss-ruby", path = "../../cores/rgss/ruby", optional = true }
+getrandom = "0.4.3"
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "vulkan", "gles", "metal", "wgsl"] }
+pollster = "1.0.1"
+bytemuck = { version = "1", features = ["derive"] }
+egui = { version = "0.37.0", features = ["default_fonts"] }
+egui-wgpu = { version = "0.37.0", default-features = false }
+egui-winit = { version = "0.37.0", default-features = false, features = ["wayland", "x11", "clipboard"] }
+wry = "0.57"
+fontdue = "0.9"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp"] }
+kira = { version = "0.12.5", default-features = false, features = ["cpal", "flac", "mp3", "ogg", "pcm", "vorbis", "wav"] }
+cpal = "0.18"
+winit = { version = "0.30.13", features = ["rwh_06", "wayland", "x11"] }
+rfd = "0.17.2"
+serde_json = "1"
+base64 = "0.22"
+memmap2 = "0.9"
+
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+gilrs = "0.11.2"
+
+# XInput avoids the Windows Gaming Input API, which returns E_NOTIMPL in Wine.
+[target.'cfg(target_os = "windows")'.dependencies]
+gilrs = { version = "0.11.2", default-features = false, features = ["xinput"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+
+[dev-dependencies]
+gif = "0.14"
+
+[features]
+default = ["gpu", "gbc", "gba", "nds", "rgss"]
+gbc = ["dep:fanplay-core-gbc", "fanplay-cores/gbc"]
+gba = ["dep:fanplay-core-gba", "fanplay-cores/gba"]
+nds = ["dep:fanplay-core-nds", "fanplay-cores/nds"]
+rgss = ["dep:fanplay-rgss", "dep:fanplay-ui", "dep:ruby_rgss_core", "fanplay-cores/rgss"]
+gpu = []
+
+[[bin]]
+name = "fanplay"
+path = "src/main.rs"
+
+[[test]]
+name = "cli"
+path = "tests/cli.rs"
+required-features = ["rgss"]
+
+[[example]]
+name = "session-bench"
+path = "examples/session_bench.rs"
+required-features = ["rgss", "gpu"]

@@ -1,5 +1,10 @@
 # Dashboard transport performance
 
+> Historical record. Measurements and implementation details below describe the
+> recorded workload/revision, not the current support matrix. Names and commands
+> have been adapted to Fanplay; timings have not been re-measured. See
+> [current architecture](architecture.md) and [development](development.md).
+
 The original dashboard implementation used `GpuRenderer::readback()` for every
 native game frame. That API is deliberately synchronous: it allocates a staging
 buffer, copies the framebuffer, maps it, and waits for GPU completion. TCP then
@@ -31,7 +36,7 @@ ordinary presentation.
 
 ## Reproducing a comparison
 
-`cargo run --release --example session-bench -- /path/to/rsxp` runs a finite,
+`cargo run --release --example session-bench -- /path/to/fanplay` runs a finite,
 uncapped scene with identical GPU work. The consumer substitutes for the window
 using the same compositor, fences the GPU around measurement, excludes startup
 and 60 warmup frames, and reports time/update and bytes/update. An optional script
@@ -39,7 +44,7 @@ and frame limit select a real-game workload:
 
 ```sh
 cargo run --release --example session-bench -- \
-  /path/to/rsxp /path/to/benchmark-script.rb 650
+  /path/to/fanplay /path/to/benchmark-script.rb 650
 ```
 
 For Añil, use `tools/benchmark-anil.rb` with saving disabled, fixed simulation

@@ -3,6 +3,16 @@
 let
   inherit (pkgs) lib;
   isLinux = pkgs.stdenv.hostPlatform.isLinux;
+  rustcBase = pkgs.rustPlatform.rust.rustc;
+  rustSysroot = pkgs.runCommand "fanplay-rust-sysroot" {} ''
+    mkdir -p $out/lib/rustlib
+    for path in ${rustcBase.unwrapped}/lib/rustlib/*; do
+      ln -s "$path" "$out/lib/rustlib/$(basename "$path")"
+    done
+    mkdir -p $out/lib/rustlib/src/rust
+    ln -s ${pkgs.rustPlatform.rustLibSrc} $out/lib/rustlib/src/rust/library
+  '';
+  rustcWithSources = rustcBase.override { sysroot = rustSysroot; };
   runtimeLibraries = lib.optionals isLinux (
     with pkgs;
     [
@@ -12,28 +22,35 @@ let
       libxkbcommon
       vulkan-loader
       wayland
+      pkgs.webkitgtk_4_1
     ]
   );
 in
 pkgs.mkShell {
-  inputsFrom = [ (import ./package.nix { inherit pkgs; }) ];
-
   packages =
     with pkgs;
     [
       cargo
-      rustc
+      curl
+      unzip
+      rustcWithSources
       rustfmt
       clippy
-      wasm-bindgen-cli
-      binaryen
       lld
       nodejs
+      trunk
     ]
     ++ lib.optionals isLinux [ pkgs.mold ];
 
+  nativeBuildInputs = [
+    pkgs.pkg-config
+    pkgs.ruby_4_0
+    pkgs.rustPlatform.bindgenHook
+  ];
+
   # Keep dynamically linked cargo binaries runnable outside the build phase.
-  buildInputs = [
+  buildInputs = runtimeLibraries ++ [
+    pkgs.ruby_4_0
     pkgs.zlib
     pkgs.libffi
   ];
@@ -41,6 +58,8 @@ pkgs.mkShell {
     lib.makeLibraryPath (runtimeLibraries ++ [ pkgs.ruby_4_0 ])
   );
 
-  # WebAssembly builds need a wasm-capable linker (rust-lld is not shipped here).
-  CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_LINKER = "${pkgs.lld}/bin/wasm-ld";
+  # Dust uses nightly-only language features. Keep the Nix-provided latest
+  # rustc usable for the default DS-enabled build.
+  RUSTC_BOOTSTRAP = "1";
+
 }

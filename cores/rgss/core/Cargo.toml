@@ -1,0 +1,23 @@
+[package]
+name = "fanplay-core-rgss"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "GPL-2.0-or-later"
+description = "RGSS emulator core adapter for the FANPLAY multi-core contract"
+publish = false
+
+[lib]
+name = "fanplay_core_rgss"
+path = "src/lib.rs"
+
+[dependencies]
+fanplay-core = { path = "../../../crates/fanplay-core" }
+ruby_rgss_core = { package = "fanplay-rgss-ruby", path = "../ruby" }
+bytemuck = "1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+fanplay-rgss = { path = "../../../crates/fanplay-rgss", default-features = false, features = ["gpu", "game-api", "portable-media"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+fanplay-rgss = { path = "../../../crates/fanplay-rgss", default-features = false, features = ["game-api", "portable-media"] }

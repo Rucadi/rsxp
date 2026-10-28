@@ -1,5 +1,10 @@
 # Change-driven graphics, retained map chunks and a native camera
 
+> Historical record. Measurements and implementation details below describe the
+> recorded workload/revision, not the current support matrix. Names and commands
+> have been adapted to Fanplay; timings have not been re-measured. See
+> [current architecture](architecture.md) and [development](development.md).
+
 Desktop execution enables change-driven graphics synchronization and a native
 visible-cell cache for the supported Essentials `TilemapRenderer`. Game scripts,
 script bundles, plugins and save formats do not need modification. The game
@@ -14,7 +19,7 @@ their existing Ruby validation/copy behavior. Desktop observers notify a native
 dirty-resource registry when those
 properties change; only dirty objects resolve and submit a new snapshot.
 
-`src/ruby/desktop/bindings/retained.rs` stores IDs, dirty sets, and resource dependencies. It
+`cores/rgss/ruby/src/bindings/retained.rs` stores IDs, dirty sets, and resource dependencies. It
 stores no Ruby `Value`s or strong Ruby object references. A mutex shares change
 notifications across Ruby threads. Ruby conversions and property access happen
 outside its lock and outside engine borrows. `retained.rb` supplies the API
@@ -43,7 +48,7 @@ the resource to polling.
 
 ## Retained maps
 
-`src/engine/retained_map.rs` selects visible cells using native `Table` storage.
+`crates/fanplay-rgss/src/engine/retained_map.rs` selects visible cells using native `Table` storage.
 The desktop binding supplies map/table identity, table revision, dimensions and
 camera tile offsets. An unchanged input returns without traversing the grid.
 Changed inputs resolve the grid in Rust and return only changed cells to Ruby.
@@ -61,7 +66,7 @@ priority helpers, preserving terrain/bridge/reflection and resource behavior.
 It retains animated-tile membership rather than finding animated tiles through
 a full Ruby map traversal every frame.
 
-`src/engine/map_chunks.rs` caches 16×16×3 tile-ID chunks in world coordinates.
+`crates/fanplay-rgss/src/engine/map_chunks.rs` caches 16×16×3 tile-ID chunks in world coordinates.
 It prefetches a 16-tile margin around the viewport, including nearby connected
 maps. Hidden chunks remain cached and are reused when revisited. The default
 budget is 128 chunks (192 KiB of tile-ID payload, plus bookkeeping); least
@@ -72,7 +77,7 @@ texture for every hidden tile. A Table revision validates cached chunk contents;
 only chunks whose cells changed replace their data. Hidden stale chunks are
 validated before reuse.
 
-`src/engine/world_map.rs` retains world placements for compatible tile sprites
+`crates/fanplay-rgss/src/engine/world_map.rs` retains world placements for compatible tile sprites
 and applies one shared camera. Ordinary pixel scrolling updates this camera
 without walking the Ruby sprite pool or rewriting every tile's x/y/z. Tile
 boundaries bind only newly exposed cells. Ruby's public x/y/z getters resolve
@@ -100,33 +105,28 @@ on every tile helper being invoked should use the map compatibility switch.
 
 ## Comparison switches
 
-- `RSXP_NATIVE_STATE=0`: restore full Ruby graphics-object polling.
-- `RSXP_RETAINED_MAP=0`: restore Essentials' original map update.
-- `RSXP_RETAINED_TILEMAP=0`: disable the separate desktop RGSS1 tilemap cache.
-- `RSXP_NATIVE_TILEMAP_BATCH=0`: keep that cache but apply full refreshes with Ruby setters.
-- `RSXP_WORLD_CAMERA=0`: disable shared-camera scrolling.
-- `RSXP_MAP_CHUNKS=0`: disable chunk prefetch/retention.
-- `RSXP_NATIVE_SCROLL=0`: keep retained maps but use Ruby scrolling helpers.
-- `RSXP_NATIVE_TILEMAP=0`: independently disable the existing tile atlas adapter.
-- `RSXP_SPRITE_SYNC=ruby`: use the existing serialized binding, which also
+- `FANPLAY_NATIVE_STATE=0`: restore full Ruby graphics-object polling.
+- `FANPLAY_RETAINED_MAP=0`: restore Essentials' original map update.
+- `FANPLAY_RETAINED_TILEMAP=0`: disable the separate desktop RGSS1 tilemap cache.
+- `FANPLAY_NATIVE_TILEMAP_BATCH=0`: keep that cache but apply full refreshes with Ruby setters.
+- `FANPLAY_WORLD_CAMERA=0`: disable shared-camera scrolling.
+- `FANPLAY_MAP_CHUNKS=0`: disable chunk prefetch/retention.
+- `FANPLAY_NATIVE_SCROLL=0`: keep retained maps but use Ruby scrolling helpers.
+- `FANPLAY_NATIVE_TILEMAP=0`: independently disable the existing tile atlas adapter.
+- `FANPLAY_SPRITE_SYNC=ruby`: use the existing serialized binding, which also
   disables the new change-driven state path.
 
-The browser keeps its existing graphics synchronization. The visible-cell
-algorithm is portable, but its new Ruby binding is desktop-only.
+The visible-cell algorithm is portable, but its new Ruby binding is desktop-only.
 
 ## Verification
 
-`cargo test -p rsxp-desktop --test cli retained_native_state_and_map_match_legacy_frames` compares
-per-frame pixel and public-coordinate digests across eight combinations of
-state, map, native scrolling, world camera and chunk caching. The map
-fixture loads the actual, unmodified game renderer and covers animation,
-scrolling, connected maps, data replacement/resizing, terrain, bridges,
-priorities, viewport effects and bitmap changes. It also verifies idle frames
-skip resource submissions and cell refreshes. Lifecycle coverage includes weak
-references, nested values, Marshal/copy, Ruby-thread mutation, allocation followed
-by initialization, late overrides and alias-based plugin wrappers.
+`cargo test -p fanplay-desktop --test cli retained_native_state_matches_legacy_frames`
+compares a repository-owned RGSS fixture across eight combinations of state,
+map, native scrolling, world camera and chunk caching. Other hermetic CLI tests
+cover the legacy retained tilemap, sprite lifecycle, native tiles and rendering
+paths.
 
-`cargo test -p rsxp --lib --no-default-features` exercises the portable map cache without
+`cargo test -p fanplay-rgss --lib --no-default-features` exercises the portable map cache without
 Ruby or GPU dependencies. Existing sprite/lifecycle and native-tile integration
 tests continue to cover the original synchronization and rendering paths.
 
@@ -138,9 +138,6 @@ identical output pixels.
 
 The portable tests cover chunk prefetch reuse, hidden-chunk retention, targeted
 rebuilds after edits, budget eviction and camera projection/priority rules.
-`world_camera_gpu_frames_match_software_during_scrolling` (ignored by default;
-requires a GPU adapter) compares actual GPU output against software at pixel
-scrolling, tile boundaries, bridges and connected-map transitions.
 
 A three-run alternating release benchmark of the saved overworld at panoramic
 zoom 3 (1536×1152, scripted walking, RTX 2080, YJIT) reduced median measured

@@ -1,0 +1,10 @@
+[package]
+name = "fanplay-core"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "GPL-2.0-or-later"
+description = "Emulator core contract shared by every FANPLAY core and frontend"
+publish = false
+
+[dependencies]

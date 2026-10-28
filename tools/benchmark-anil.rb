@@ -1,18 +1,18 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Read an existing Pokémon Añil save, bypass the menu, and time scene updates.
-# Supply RSXP_BENCH_SAVE and the runtime's --frames limit; this harness never saves.
-# RSXP_BENCH_ZOOM_SWEEP=1 drives the "map panoramic mode" zoom slider once per
-# measured frame, to time live zoom changes (requires RSXP_PATCH=map_panoramic).
-# For repeatable visual captures, also set RSXP_BENCH_SEED=0 and
-# RSXP_BENCH_CLOCK_START=0 (with RSXP_BENCH_FIXED_CLOCK=1).
-# RSXP_BENCH_ZOOM=3 enables panoramic mode at 3x before entering the map.
-srand(Integer(ENV['RSXP_BENCH_SEED'])) if ENV['RSXP_BENCH_SEED']
-save = File.expand_path(ENV.fetch('RSXP_BENCH_SAVE'))
-warmup = Integer(ENV.fetch('RSXP_BENCH_WARMUP','150'))
+# Supply FANPLAY_BENCH_SAVE and the runtime's --frames limit; this harness never saves.
+# FANPLAY_BENCH_ZOOM_SWEEP=1 drives the "map panoramic mode" zoom slider once per
+# measured frame, to time live zoom changes (requires FANPLAY_PATCH=map_panoramic).
+# For repeatable visual captures, also set FANPLAY_BENCH_SEED=0 and
+# FANPLAY_BENCH_CLOCK_START=0 (with FANPLAY_BENCH_FIXED_CLOCK=1).
+# FANPLAY_BENCH_ZOOM=3 enables panoramic mode at 3x before entering the map.
+srand(Integer(ENV['FANPLAY_BENCH_SEED'])) if ENV['FANPLAY_BENCH_SEED']
+save = File.expand_path(ENV.fetch('FANPLAY_BENCH_SAVE'))
+warmup = Integer(ENV.fetch('FANPLAY_BENCH_WARMUP','150'))
 raise ArgumentError, 'warmup must be positive' unless warmup.positive?
-Dir.chdir(ENV.fetch('RSXP_BENCH_GAME', File.expand_path('../ericlostie', __dir__)))
+Dir.chdir(ENV.fetch('FANPLAY_BENCH_GAME', File.expand_path('../ericlostie', __dir__)))
 title = File.read('Game.ini')[/^Title=(.*)$/,1]&.strip
-ENV['RSXP_GAME_TITLE'] = title if title
+ENV['FANPLAY_GAME_TITLE'] = title if title
 
 load 'preload.rb'
 $RGSS_SCRIPTS=load_data('Data/Scripts.rxdata')
@@ -20,15 +20,15 @@ $RGSS_SCRIPTS.each { |s| s[3]=Zlib.inflate(s[2]).force_encoding(Encoding::UTF_8)
 $RGSS_SCRIPTS.each do |s|
   source=s[1]=='Main' ? s[3].split(/^loop do/,2).first : s[3]
   eval(source,TOPLEVEL_BINDING,s[1],1)
-  RSXP.publish_top_level_methods
+  FANPLAY.publish_top_level_methods
 end
 MessageTypes.load_default_messages if FileTest.exist?('Data/messages_core.dat')
 PluginManager.runPlugins
 Compiler.main
 # Essentials movement uses System.uptime. A fixed simulation clock makes
 # scripted movement comparable even when different binaries run uncapped.
-if ENV['RSXP_BENCH_FIXED_CLOCK'] == '1'
-  $benchmark_game_time=Float(ENV.fetch('RSXP_BENCH_CLOCK_START') { System.uptime })
+if ENV['FANPLAY_BENCH_FIXED_CLOCK'] == '1'
+  $benchmark_game_time=Float(ENV.fetch('FANPLAY_BENCH_CLOCK_START') { System.uptime })
   module System
     def self.uptime = $benchmark_game_time
   end
@@ -40,11 +40,11 @@ module Game
   def self.auto_save(*) = nil
 end
 Game.load(Marshal.load(File.binread(save)))
-if ENV['RSXP_BENCH_ZOOM']
-  $benchmark_zoom=Float(ENV['RSXP_BENCH_ZOOM'])
+if ENV['FANPLAY_BENCH_ZOOM']
+  $benchmark_zoom=Float(ENV['FANPLAY_BENCH_ZOOM'])
   raise ArgumentError, 'zoom must be between 1 and 3' unless (1.0..3.0).cover?($benchmark_zoom)
-  RSXP.call('runtime_patch_value_set','map_panoramic',$benchmark_zoom)
-  RSXP.call('runtime_patch_set','map_panoramic',1)
+  FANPLAY.call('runtime_patch_value_set','map_panoramic',$benchmark_zoom)
+  FANPLAY.call('runtime_patch_set','map_panoramic',1)
 end
 puts "BENCH_SCENE map=#{$game_map.map_id} events=#{$game_map.events.size} x=#{$game_player.x} y=#{$game_player.y}"
 $benchmark_game_step=1.0/Graphics.frame_rate

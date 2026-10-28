@@ -1,0 +1,19 @@
+[package]
+name = "dust-wgpu-3d"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "GPL-3.0-or-later"
+
+[features]
+threaded = ["emu-utils", "crossbeam-channel", "parking_lot"]
+
+[dependencies]
+dust-core = { git = "https://github.com/kelpsyberry/dust", rev = "76d79f25e4ea3ce355c4ac868f5ac9a233e64b89", features = ["3d-hi-res-coords"] }
+dust-soft-3d = { git = "https://github.com/kelpsyberry/dust", rev = "76d79f25e4ea3ce355c4ac868f5ac9a233e64b89" }
+emu-utils = { git = "https://github.com/kelpsyberry/emu-utils", rev = "fff4bcd769b2fd1b452d79aad7d7741589e64c0a", features = ["triple-buffer"], optional = true }
+proc-bitfield = { version = "0.5", features = ["nightly"] }
+ahash = "0.8"
+wgpu = "23.0"
+crossbeam-channel = { version = "0.5", optional = true }
+parking_lot = { version = "0.12", optional = true }

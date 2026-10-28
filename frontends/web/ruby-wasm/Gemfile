@@ -1,0 +1,10 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+
+# ruby.wasm cannot dlopen an extension after startup. rbwasm links this gem's
+# Magnus archive into the Ruby interpreter it builds.
+gem "fanplay-rgss-wasm", path: "fanplay-rgss-wasm"
+gem "js"
+gem "bigdecimal"
+gem "ruby_wasm", "~> 2.10", group: :development

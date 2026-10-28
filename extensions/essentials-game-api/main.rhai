@@ -72,11 +72,21 @@ fn on_operation_result(request_id, result) {
     let pending = state_get("pending");
     if pending == request_id {
         state_set("pending", ());
+        if result == () {
+            state_set("status_request", ());
+            state_set("status", "Essentials Game API error: " + last_error());
+            return;
+        }
         state_set("patch_handle", result["patch_id"]);
         state_set("status_request", request("pokemon_essentials_status", #{}));
         return;
     }
     if state_get("status_request") == request_id {
+        if result == () {
+            state_set("status_request", ());
+            state_set("status", "Essentials status error: " + last_error());
+            return;
+        }
         if result["available"] == true {
             state_set("status_request", ());
             state_set("status", "Essentials is active.");

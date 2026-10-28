@@ -17,9 +17,21 @@ module FANPLAY::Retained
   @signatures = {}
   @value_signatures = {}
   @reclassify = false
-  @stats = Hash.new(0)
+  STATS_ENABLED = ENV['FANPLAY_WEB'] != '1' || ENV['FANPLAY_NATIVE_DIAGNOSTICS'] == '1'
+  # Keep the hot path allocation-free when web diagnostics are disabled. The
+  # reporting bridge is gated by the same flag, so a nil stats object cannot
+  # be observed by the normal runtime.
+  @stats = STATS_ENABLED ? Hash.new(0) : nil
   class << self
     attr_reader :stats
+    if STATS_ENABLED
+      def stat(name, amount=1)
+        @stats[name] += amount
+      end
+    else
+      def stat(_name, _amount=1)
+      end
+    end
     def invalidate!
       @reclassify = true
     end
@@ -148,7 +160,15 @@ module FANPLAY::Retained
               end
             end
             object.__sync
-            @stats[:synced] += 1
+            stat(:synced)
+            stat = if base == Sprite
+                     :sprites_synced
+                   elsif base == Viewport
+                     :viewports_synced
+                   else
+                     :planes_synced
+                   end
+            self.stat(stat)
           end
         rescue FANPLAY::ResourceRef::RefError
           forget(id)
@@ -437,19 +457,19 @@ module FANPLAY::RetainedMapAdapter
         @tile_offset_x,@tile_offset_y,@pixel_offset_x,@pixel_offset_y,
         self.class::DISPLAY_TILE_WIDTH,self.class::DISPLAY_TILE_HEIGHT,self.class::SOURCE_TILE_HEIGHT,
         @bridge>0,!!(full || previous_map_id!=@current_map_id))
-      FANPLAY::Retained.stats[:world_camera_frames]+=1 if world
+      FANPLAY::Retained.stat(:world_camera_frames) if world
     end
     if !world && @__fanplay_world_active
       __fanplay_world_release(@__fanplay_cell_cache.object_id,@tiles)
     end
     @__fanplay_world_active=world
     bulk=world
-    FANPLAY::Retained.stats[:bulk_scrolls]+=1 if world && (@screen_moved || @screen_moved_vertically)
+    FANPLAY::Retained.stat(:bulk_scrolls) if world && (@screen_moved || @screen_moved_vertically)
     if !bulk && !full && (@screen_moved || @screen_moved_vertically) && FANPLAY.retained_map_bulk_supported?(self)
       bulk=__fanplay_scroll_tiles(@tiles,@pixel_offset_x,@pixel_offset_y,
         self.class::DISPLAY_TILE_WIDTH,self.class::DISPLAY_TILE_HEIGHT,self.class::SOURCE_TILE_HEIGHT,
         @screen_moved,@screen_moved_vertically,@bridge>0,FANPLAY::Retained::ENABLED)
-      FANPLAY::Retained.stats[:bulk_scrolls]+=1 if bulk
+      FANPLAY::Retained.stat(:bulk_scrolls) if bulk
     end
     if !bulk && !full && (@screen_moved || @screen_moved_vertically)
       @tiles.each_with_index do |col,i|
@@ -468,7 +488,7 @@ module FANPLAY::RetainedMapAdapter
     end
     @need_refresh=false
     @autotiles.changed=false
-    FANPLAY::Retained.stats[:map_changed_cells] += changes.length
+    FANPLAY::Retained.stat(:map_changed_cells, changes.length)
     false
   end
   def dispose
@@ -590,16 +610,16 @@ module FANPLAY::LegacyTilemapCache
           sprite.src_rect.x=x
           updated+=1
         end
-        FANPLAY::Retained.stats[:legacy_tilemap_animated_tiles]+=updated
+        FANPLAY::Retained.stat(:legacy_tilemap_animated_tiles, updated)
       end
-      FANPLAY::Retained.stats[:legacy_tilemap_reused]+=1
+      FANPLAY::Retained.stat(:legacy_tilemap_reused)
     else
       @__fanplay_batch_tiles=ENV['FANPLAY_NATIVE_TILEMAP_BATCH']!='0' && [Rect,Color,Tone].all? do |klass|
         FANPLAY::Retained.instance_variable_get(:@value_signatures).fetch(klass).all? { |name,method| klass.instance_method(name)==method }
       end
       super
       @__fanplay_layout=key
-      FANPLAY::Retained.stats[:legacy_tilemap_rebuilt]+=1
+      FANPLAY::Retained.stat(:legacy_tilemap_rebuilt)
     end
     @__fanplay_last_ox=@ox
     @__fanplay_last_oy=@oy

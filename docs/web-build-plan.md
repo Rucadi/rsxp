@@ -4,7 +4,7 @@ The browser frontend is a thin Rust/WASM host for the existing eframe
 application. It reuses the shared workspace, launcher, runtime tools, plugin
 UI, core contract, video conversion, input model, save-state model and core
 adapters. Browser-specific code is limited to file handles, `localStorage`,
-Web Audio, the eframe canvas and the cooperative frame loop.
+Web Audio, the eframe canvas, worker transport and the cooperative frame loop.
 
 ## Supported web application
 
@@ -23,7 +23,12 @@ browser-compatible cartridge cores:
 - cooperative frame execution so the browser event loop remains responsive
 - bounded browser speed controls for cores that support them; GB/GBC stay at game rate
 - browser Web Audio output backed by the existing PCM ring
-- battery saves in browser storage, save import/export and latest-save backup
+- WGPU-first eframe presentation: the dashboard and live game callback share
+  one browser GPU device; the game framebuffer is uploaded directly as raw
+  RGBA/BGRA bytes to a nearest-neighbor texture shader, with egui-wgpu's
+  WebGL fallback retained for browsers without WebGPU
+- cartridge battery saves in browser storage; RGSS writes `Game.rxdata` to
+  Ruby's private WASI VFS and exports/imports that file directly
 - four persistent save-state slots
 - bundled Rhai plugin UI and GBA/NDS extension requests
 - `.rhai` plugin import through the browser file picker
@@ -58,6 +63,27 @@ slice advances at most one frame; GBC, GBA and NDS drain commands, present
 video, queue audio, flush saves at their existing intervals and observe
 pause/fast-forward/stop controls. Native `Core::run` behavior remains
 unchanged.
+
+The web canvas selects `Renderer::Wgpu` when the WGPU eframe feature is
+available. `wgpu` chooses WebGPU first and keeps WebGL as its adapter fallback;
+both the dashboard and the game paint callback use the same eframe device. The
+callback retains one texture and only calls `write_texture` for a new worker
+revision, avoiding the previous BGRA/RGBA-to-`Color32` conversion and second
+egui texture upload.
+
+RGSS uses a dedicated module worker. The worker instantiates the same compiled
+frontend module without starting egui, then owns the RGSS core, Ruby VM and
+software renderer. The window never resumes Ruby inside an egui draw pass.
+Input and pause/rate controls are messages; audio playback stays on the window
+thread, with playback-position snapshots sent back to the worker. Video uses
+transferable buffers with one unacknowledged frame and one replaceable latest
+frame, preventing a presentation backlog. Script-loading checkpoints yield
+without consuming a full game-frame pacing interval. FPS is measured from
+completed game frames rather than displaying the requested rate.
+
+The imported immutable game file map is shared between the library entry and
+its session. Starting or restarting a game does not deep-copy the whole folder
+inside the UI WASM memory (the local Añil folder is about 1.4 GB).
 
 The workspace release profile uses full cross-crate LTO and one codegen unit.
 The GBA adapter now tracks `Rucadi/rustboyadvance-ng`'s `master` branch, whose
@@ -105,6 +131,10 @@ The frontend respects RGSS1's native 40 Hz default. Catch-up credit is capped
 at two frames, and the host stops starting extra frames after 8 ms of game
 work per repaint. A single Ruby frame remains cooperative and may exceed that
 budget, but a backlog no longer blocks the UI for 16 consecutive game frames.
+For RGSS, that work now occurs in the dedicated worker; the UI only drains
+messages. Parsed fonts and glyph coverage are cached in bounded per-thread
+caches. Text measurement uses font metrics without rasterizing glyphs, and
+foreground/outline/shadow drawing reuses the same glyph coverage.
 The WASI build does not provide browser threads or networking, so the browser
 path is intentionally offline and uses uploaded folders, ZIPs or RGSS
 script/archive files.

@@ -63,6 +63,10 @@ fn on_ui_event(widget_id, value) {
 
 fn on_operation_result(_request_id, result) {
     state_set("pending", ());
+    if result == () {
+        state_set("status", last_error());
+        return;
+    }
     if result["complete"] == true {
         state_set("status", "Item added.");
     } else {

@@ -16,9 +16,13 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs,
     path::Path,
-    sync::{Mutex, OnceLock},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex, OnceLock,
+    },
 };
 static ACTIVE_THEME: OnceLock<Mutex<ThemeDefinition>> = OnceLock::new();
+static THEME_REVISION: AtomicU64 = AtomicU64::new(1);
 
 // ---------------------------------------------------------------------------
 // Palette
@@ -143,6 +147,7 @@ pub fn save_themes(path: &Path, themes: &[ThemeDefinition]) -> std::io::Result<(
 pub fn set_active_theme(theme: ThemeDefinition) {
     let slot = ACTIVE_THEME.get_or_init(|| Mutex::new(ThemeDefinition::default()));
     *slot.lock().expect("theme lock") = theme;
+    THEME_REVISION.fetch_add(1, Ordering::Relaxed);
 }
 
 fn active_theme() -> ThemeDefinition {
@@ -300,6 +305,11 @@ fn install_fonts(context: &egui::Context) {
 
 /// Installs the Adventure Journal style. Safe to call every frame.
 pub fn apply(context: &egui::Context) {
+    let revision = THEME_REVISION.load(Ordering::Relaxed);
+    let revision_id = egui::Id::unique("fanplay-theme-revision");
+    if context.data(|data| data.get_temp::<u64>(revision_id)) == Some(revision) {
+        return;
+    }
     let theme = active_theme();
     let dark = theme.background.starts_with("#0A") || theme.name == "Arcade Neon";
     context.set_theme(if dark {
@@ -437,6 +447,7 @@ pub fn apply(context: &egui::Context) {
             .text_styles
             .insert(egui::TextStyle::Name("metric".into()), mono_font(26.0));
     });
+    context.data_mut(|data| data.insert_temp(revision_id, revision));
 }
 
 // ---------------------------------------------------------------------------

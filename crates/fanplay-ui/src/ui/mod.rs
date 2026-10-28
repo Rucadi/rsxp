@@ -252,6 +252,15 @@ impl Workspace {
         self.logs.push(message.into());
     }
 
+    /// Shows the dashboard around an active game without changing the game
+    /// session itself. Browser frontends use this when a game starts so the
+    /// first rendered frame does not silently replace the launcher UI.
+    pub fn show_controls(&mut self) {
+        self.controls_visible = true;
+        self.view_mode = ViewMode::Docked;
+        self.panels_performance = true;
+    }
+
     pub fn performance_visible(&self) -> bool {
         self.controls_visible && !self.is_workspace_fullscreen() && self.panels_performance
     }
@@ -367,7 +376,7 @@ impl Workspace {
                     native_aspect(info.logical_size)
                 };
             }
-            self.draw_game_view(ui, &mut output, info.core_id, info.logical_size);
+            self.draw_game_view(ui, &mut output, info);
             return output;
         }
         self.draw_toolbar(ui, info, &mut output);
@@ -451,7 +460,7 @@ impl Workspace {
         if !fullscreen && self.panels_performance {
             self.draw_performance_panel(ui, info);
         }
-        self.draw_game_view(ui, &mut output, info.core_id, info.logical_size);
+        self.draw_game_view(ui, &mut output, info);
         self.draw_controller_settings(&context);
         self.draw_shortcuts(&context);
 
@@ -710,6 +719,14 @@ mod workspace_tests {
         assert_eq!(hidden.game_rect, game_only.game_rect);
         assert_eq!(hidden.fit_aspect, Some(4.0 / 3.0));
         assert!(!workspace.controls_visible);
+    }
+
+    #[test]
+    fn showing_web_game_controls_reveals_performance_panel() {
+        let mut workspace = Workspace::new();
+        workspace.show_controls();
+        assert!(workspace.controls_visible);
+        assert!(workspace.performance_visible());
     }
 
     #[test]

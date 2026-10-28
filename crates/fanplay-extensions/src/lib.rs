@@ -726,6 +726,24 @@ impl ExtensionHost {
             .collect()
     }
 
+    /// Returns the extension owner for each operation exposed through an HTTP
+    /// route. Desktop HTTP keeps using the short operation name, while the
+    /// RGSS worker needs the fully-qualified extension.operation envelope.
+    pub fn route_operation_owners(&self) -> Vec<(String, String)> {
+        self.instances
+            .values()
+            .flat_map(|instance| {
+                let owner = instance.manifest.id.clone();
+                instance
+                    .manifest
+                    .operations
+                    .iter()
+                    .filter(|operation| !operation.route_aliases.is_empty())
+                    .map(move |operation| (operation.id.clone(), owner.clone()))
+            })
+            .collect()
+    }
+
     pub fn take_requests(&mut self) -> Vec<OperationRequest> {
         let mut requests = std::mem::take(&mut self.shutdown_requests);
         for owner in &self.load_order {
@@ -933,7 +951,10 @@ fn register_host_functions(
     let extension_id_for_webview_open = extension_id.to_owned();
     engine.register_fn(
         "webview_open",
-        move |view_id: ImmutableString, title: ImmutableString, html: ImmutableString| -> i64 {
+        // Keep the HTML argument dynamic at the host boundary. A malformed or
+        // partially loaded text block must become a normal plugin error, not a
+        // Rhai overload/indexing exception from the UI event itself.
+        move |view_id: ImmutableString, title: ImmutableString, html: Dynamic| -> i64 {
             let mut state = state_for_webview_open
                 .lock()
                 .unwrap_or_else(|error| error.into_inner());
@@ -941,6 +962,10 @@ fn register_host_functions(
                 state.last_error = Some("plugin lacks ui.webview capability".into());
                 return -1;
             }
+            let Some(html) = html.try_cast::<ImmutableString>() else {
+                state.last_error = Some("webview_open requires HTML text".into());
+                return -1;
+            };
             if view_id.trim().is_empty() || title.trim().is_empty() || html.trim().is_empty() {
                 state.last_error = Some("webview_open requires a view id, title, and HTML".into());
                 return -1;
@@ -2000,6 +2025,39 @@ fn on_shutdown() { gba_clear_cheats(); }
     }
 
     #[test]
+    fn malformed_webview_html_becomes_a_plugin_error() {
+        let package = ExtensionPackage::from_rhai(
+            "bad-webview",
+            r#"
+// fanplay:capabilities = ui.webview
+// fanplay:panel = main,Bad Webview
+fn build_ui() { [ui_button("open", "Open")] }
+fn on_activate() { }
+fn on_ui_event(id, _value) {
+    if id == "open" { webview_open("bad", "Bad", state_get("missing")); }
+}
+fn on_operation_result(_id, _result) { }
+fn on_shutdown() { }
+"#
+            .into(),
+        )
+        .unwrap();
+        let mut host = ExtensionHost::new();
+        host.load(package).unwrap();
+        host.activate_all().unwrap();
+        host.dispatch_ui_event(UiEvent {
+            panel_id: "bad-webview.main".into(),
+            widget_id: "open".into(),
+            value: Value::Bool(true),
+        })
+        .unwrap();
+        assert_eq!(
+            host.get("bad-webview").unwrap().last_error().as_deref(),
+            Some("webview_open requires HTML text")
+        );
+    }
+
+    #[test]
     fn pokedex_is_a_single_file_plugin_with_embedded_ruby_and_html() {
         let package = pokedex_package();
         assert_eq!(package.manifest.id, "essentials-pokedex");
@@ -2186,6 +2244,28 @@ fn on_shutdown() { gba_clear_cheats(); }
             html.contains("/v1/pokemon-essentials/status")
                 && html.contains("/v1/pokemon-essentials/encounters/current-map")
         }));
+    }
+
+    #[test]
+    fn failed_ruby_injection_is_reported_without_rhai_index_error() {
+        let mut host = ExtensionHost::new();
+        host.load(encounters_package()).unwrap();
+        host.activate_all().unwrap();
+        let request = host.take_requests().pop().unwrap();
+        host.dispatch_response(OperationResponse {
+            id: request.id,
+            generation: request.generation,
+            result: Err(OperationError::new(
+                "game",
+                "Ruby patch could not be applied",
+            )),
+        })
+        .unwrap();
+        let ui = host.get("essentials-encounters").unwrap().ui().unwrap();
+        assert!(ui.nodes.iter().any(|node| matches!(
+            node,
+            UiNode::Label { text, .. } if text == "Ruby patch could not be applied"
+        )));
     }
 
     #[test]

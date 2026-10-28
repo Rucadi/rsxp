@@ -13,6 +13,7 @@ pub mod ui;
 pub mod workspace_services;
 use fanplay_extension_api::{OperationRequest, OperationResponse, UiDescription};
 use fanplay_extensions::{ExtensionError, ExtensionHost, ExtensionPackage};
+use std::sync::Arc;
 #[cfg(feature = "game-api")]
 use std::{env, fs, path::PathBuf};
 pub use ui::session;
@@ -25,6 +26,7 @@ pub struct SharedApp {
     pub workspace: Workspace,
     info: WorkspaceInfo,
     frame: Option<egui::TextureHandle>,
+    frame_image: Option<Arc<egui::ColorImage>>,
     frame_size: Option<[usize; 2]>,
     frame_revision: Option<u64>,
     context: Option<egui::Context>,
@@ -32,6 +34,7 @@ pub struct SharedApp {
     rgba: Vec<u8>,
     pub extension_ui: fanplay_extension_ui::ExtensionUi,
     extensions: ExtensionHost,
+    plugin_ui_dirty: bool,
     extension_error: Option<String>,
     extension_import_requested: bool,
     plugin_paste_open: bool,
@@ -137,6 +140,9 @@ impl Default for SharedApp {
         }
         load_external_plugins(&mut plugins);
         fanplay_rgss::api_bridge::register_extension_routes(plugins.route_aliases());
+        fanplay_rgss::api_bridge::register_extension_operation_owners(
+            plugins.route_operation_owners(),
+        );
         Self::new(
             Workspace::new(),
             WorkspaceInfo {
@@ -222,11 +228,54 @@ fn load_external_plugins(plugins: &mut ExtensionHost) {
 }
 
 impl SharedApp {
+    fn prepare_frame_image(&mut self, size: [usize; 2]) -> bool {
+        let Some(pixel_count) = size[0].checked_mul(size[1]) else {
+            return false;
+        };
+        let needs_new_image = self
+            .frame_image
+            .as_ref()
+            .is_none_or(|image| image.size != size || Arc::strong_count(image) > 1);
+        if needs_new_image {
+            self.frame_image = Some(Arc::new(egui::ColorImage::new(
+                size,
+                vec![egui::Color32::TRANSPARENT; pixel_count],
+            )));
+        }
+        true
+    }
+
+    fn submit_frame_image(
+        &mut self,
+        context: &egui::Context,
+        size: [usize; 2],
+        size_changed: bool,
+    ) {
+        let Some(image) = self.frame_image.as_ref().map(Arc::clone) else {
+            return;
+        };
+        if size_changed {
+            self.frame = Some(context.load_texture(
+                "fanplay-game-frame",
+                image,
+                egui::TextureOptions::NEAREST,
+            ));
+            self.frame_size = Some(size);
+        } else if let Some(frame) = &mut self.frame {
+            frame.set(image, egui::TextureOptions::NEAREST);
+        }
+        self.frame_revision = None;
+        self.workspace
+            .set_frame_texture(self.frame.as_ref().map(egui::TextureHandle::id));
+        context.request_repaint();
+    }
+
     pub fn new(workspace: Workspace, info: WorkspaceInfo) -> Self {
         Self {
             workspace,
             info,
             frame: None,
+            frame_image: None,
             frame_size: None,
             frame_revision: None,
             context: None,
@@ -234,6 +283,7 @@ impl SharedApp {
             rgba: Vec::new(),
             extension_ui: fanplay_extension_ui::ExtensionUi::default(),
             extensions: ExtensionHost::new(),
+            plugin_ui_dirty: true,
             extension_error: None,
             extension_import_requested: false,
             plugin_paste_open: false,
@@ -246,6 +296,7 @@ impl SharedApp {
     #[cfg(feature = "game-api")]
     fn with_plugins(mut self, plugins: ExtensionHost) -> Self {
         self.extensions = plugins;
+        self.plugin_ui_dirty = true;
         self
     }
 
@@ -256,8 +307,14 @@ impl SharedApp {
         self.extensions
             .load_rhai(id, source)
             .map_err(|error| self.record_extension_error(error))?;
+        self.plugin_ui_dirty = true;
         #[cfg(feature = "game-api")]
-        fanplay_rgss::api_bridge::register_extension_routes(self.extensions.route_aliases());
+        {
+            fanplay_rgss::api_bridge::register_extension_routes(self.extensions.route_aliases());
+            fanplay_rgss::api_bridge::register_extension_operation_owners(
+                self.extensions.route_operation_owners(),
+            );
+        }
         Ok(())
     }
 
@@ -270,8 +327,14 @@ impl SharedApp {
         self.extensions
             .load(package)
             .map_err(|error| self.record_extension_error(error))?;
+        self.plugin_ui_dirty = true;
         #[cfg(feature = "game-api")]
-        fanplay_rgss::api_bridge::register_extension_routes(self.extensions.route_aliases());
+        {
+            fanplay_rgss::api_bridge::register_extension_routes(self.extensions.route_aliases());
+            fanplay_rgss::api_bridge::register_extension_operation_owners(
+                self.extensions.route_operation_owners(),
+            );
+        }
         Ok(())
     }
 
@@ -320,19 +383,27 @@ impl SharedApp {
         self.workspace.set_game_paint_callback(callback);
     }
 
+    /// Reveals the dashboard while keeping the current game session active.
+    pub fn show_workspace_controls(&mut self) {
+        self.workspace.show_controls();
+    }
+
     pub fn set_logical_size(&mut self, size: (u32, u32)) {
         self.info.logical_size = size;
     }
 
     pub fn draw(&mut self, ui: &mut egui::Ui) {
         self.context = Some(ui.ctx().clone());
-        let mut descriptions: Vec<_> = self.extensions.ui().cloned().collect();
-        if let Some(error) = &self.extension_error {
-            for description in &mut descriptions {
-                description.error = Some(error.clone());
+        if self.plugin_ui_dirty {
+            let mut descriptions: Vec<_> = self.extensions.ui().cloned().collect();
+            if let Some(error) = &self.extension_error {
+                for description in &mut descriptions {
+                    description.error = Some(error.clone());
+                }
             }
+            self.extension_ui.set_descriptions(descriptions);
+            self.plugin_ui_dirty = false;
         }
-        self.extension_ui.set_descriptions(descriptions);
         self.workspace
             .set_frame_texture(self.frame.as_ref().map(egui::TextureHandle::id));
         let extension_ui = &mut self.extension_ui;
@@ -353,6 +424,9 @@ impl SharedApp {
                 self.plugin_paste_error = None;
             } else if let Err(error) = self.extensions.dispatch_ui_event(event) {
                 self.extension_error = Some(error.to_string());
+                self.plugin_ui_dirty = true;
+            } else {
+                self.plugin_ui_dirty = true;
             }
         }
         self.draw_plugin_paste_window(ui.ctx());
@@ -447,6 +521,7 @@ impl SharedApp {
         descriptions: impl IntoIterator<Item = UiDescription>,
     ) {
         self.extension_ui.set_descriptions(descriptions);
+        self.plugin_ui_dirty = false;
     }
 
     pub fn set_extension_descriptions(
@@ -458,18 +533,28 @@ impl SharedApp {
 
     /// Activates all loaded plugins after a game session is ready.
     pub fn activate_plugins(&mut self) -> Result<(), String> {
-        self.extensions
+        let result = self
+            .extensions
             .activate_all()
-            .map_err(|error| self.record_extension_error(error))
+            .map_err(|error| self.record_extension_error(error));
+        if result.is_ok() {
+            self.plugin_ui_dirty = true;
+        }
+        result
     }
 
     /// Activates loaded Rhai packages for a specific emulator core. This is
     /// used by cartridge sessions so an NDS or GBA package can expose memory
     /// and cheat helpers without waking RGSS-only packages.
     pub fn activate_plugins_for_core(&mut self, core_id: &str) -> Result<(), String> {
-        self.extensions
+        let result = self
+            .extensions
             .activate_for_core(core_id)
-            .map_err(|error| self.record_extension_error(error))
+            .map_err(|error| self.record_extension_error(error));
+        if result.is_ok() {
+            self.plugin_ui_dirty = true;
+        }
+        result
     }
 
     pub fn activate_extensions(&mut self) -> Result<(), String> {
@@ -480,6 +565,7 @@ impl SharedApp {
     pub fn reset_plugins(&mut self) {
         self.extensions.reset_generation();
         self.extension_error = None;
+        self.plugin_ui_dirty = true;
     }
 
     pub fn reset_extensions(&mut self) {
@@ -498,9 +584,19 @@ impl SharedApp {
 
     /// Delivers a completed operation to the owning plugin.
     pub fn dispatch_plugin_response(&mut self, response: OperationResponse) -> Result<(), String> {
-        self.extensions
+        let result = self
+            .extensions
             .dispatch_response(response)
-            .map_err(|error| self.record_extension_error(error))
+            .map_err(|error| self.record_extension_error(error));
+        if result.is_ok() {
+            // A response completing successfully means the previous global
+            // plugin error (if any) is no longer actionable. Keeping it here
+            // made one transient bridge failure stay painted on every panel
+            // forever, even after the plugin recovered.
+            self.extension_error = None;
+            self.plugin_ui_dirty = true;
+        }
+        result
     }
 
     pub fn dispatch_extension_response(
@@ -532,6 +628,7 @@ impl SharedApp {
     fn record_extension_error(&mut self, error: ExtensionError) -> String {
         let message = error.to_string();
         self.extension_error = Some(message.clone());
+        self.plugin_ui_dirty = true;
         message
     }
 
@@ -587,21 +684,56 @@ impl SharedApp {
         }
 
         self.info.logical_size = (width, height);
-        let image = egui::ColorImage::from_rgba_unmultiplied(size, &rgba[..byte_count]);
-        if self.frame_size != Some(size) {
-            self.frame = Some(context.load_texture(
-                "fanplay-game-frame",
-                image,
-                egui::TextureOptions::NEAREST,
-            ));
-            self.frame_size = Some(size);
-        } else if let Some(frame) = &mut self.frame {
-            frame.set(image, egui::TextureOptions::NEAREST);
+        let size_changed = self.frame_size != Some(size) || self.frame.is_none();
+        if !self.prepare_frame_image(size) {
+            return;
         }
-        self.frame_revision = None;
-        self.workspace
-            .set_frame_texture(self.frame.as_ref().map(egui::TextureHandle::id));
-        context.request_repaint();
+        let image = Arc::make_mut(self.frame_image.as_mut().expect("frame image prepared"));
+        for (target, pixel) in image
+            .pixels
+            .iter_mut()
+            .zip(rgba[..byte_count].chunks_exact(4))
+        {
+            *target = egui::Color32::from_rgba_unmultiplied(pixel[0], pixel[1], pixel[2], pixel[3]);
+        }
+        self.submit_frame_image(context, size, size_changed);
+    }
+
+    /// Uploads a tightly packed BGRA8 frame without first materializing an
+    /// intermediate RGBA byte buffer. The web RGSS worker preserves the
+    /// native bitmap layout until this conversion, saving one full-frame pass.
+    pub fn set_bgra_frame(
+        &mut self,
+        context: &egui::Context,
+        width: u32,
+        height: u32,
+        bgra: &[u8],
+    ) {
+        let size = [width as usize, height as usize];
+        let Some(pixel_count) = size[0].checked_mul(size[1]) else {
+            return;
+        };
+        let Some(byte_count) = pixel_count.checked_mul(4) else {
+            return;
+        };
+        if width == 0 || height == 0 || bgra.len() < byte_count {
+            return;
+        }
+
+        self.info.logical_size = (width, height);
+        let size_changed = self.frame_size != Some(size) || self.frame.is_none();
+        if !self.prepare_frame_image(size) {
+            return;
+        }
+        let image = Arc::make_mut(self.frame_image.as_mut().expect("frame image prepared"));
+        for (target, pixel) in image
+            .pixels
+            .iter_mut()
+            .zip(bgra[..byte_count].chunks_exact(4))
+        {
+            *target = egui::Color32::from_rgba_unmultiplied(pixel[2], pixel[1], pixel[0], pixel[3]);
+        }
+        self.submit_frame_image(context, size, size_changed);
     }
 
     pub fn update_bitmap(&mut self, bitmap: &Bitmap) {

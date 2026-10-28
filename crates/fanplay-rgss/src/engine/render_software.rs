@@ -62,22 +62,30 @@ impl Runtime {
     pub(super) fn compose_scene(&mut self) -> Result<(), String> {
         self.gpu_frame = false;
         self.target.clear(Color::rgb(0, 0, 0));
-        let sprites: Vec<RuntimeSprite> = self
-            .sprites
-            .values()
-            .filter(|sprite| sprite.visible)
-            .map(|sprite| sprite.resolved(&self.map_cameras))
-            .collect();
-        let planes: Vec<RuntimePlane> = self
-            .planes
-            .values()
-            .filter(|plane| plane.visible)
-            .cloned()
-            .collect();
-        let mut elements: Vec<(i32, u64, Element)> = Vec::new();
-        let mut viewport_sprites: HashMap<u64, Vec<RuntimeSprite>> = HashMap::new();
-        let mut viewport_planes: HashMap<u64, Vec<RuntimePlane>> = HashMap::new();
-        for sprite in sprites {
+        let mut sprites = std::mem::take(&mut self.software_sprites);
+        sprites.clear();
+        sprites.extend(
+            self.sprites
+                .values()
+                .filter(|sprite| sprite.visible)
+                .map(|sprite| sprite.resolved(&self.map_cameras)),
+        );
+        let mut planes = std::mem::take(&mut self.software_planes);
+        planes.clear();
+        planes.extend(self.planes.values().filter(|plane| plane.visible).cloned());
+        let mut elements = std::mem::take(&mut self.software_elements);
+        elements.clear();
+        let mut viewport_sprites = std::mem::take(&mut self.software_viewport_sprites);
+        let mut viewport_planes = std::mem::take(&mut self.software_viewport_planes);
+        // Keep each viewport's Vec allocation alive. Clearing the maps would
+        // drop those Vecs and force their scene capacity to be rebuilt.
+        for group in viewport_sprites.values_mut() {
+            group.clear();
+        }
+        for group in viewport_planes.values_mut() {
+            group.clear();
+        }
+        for sprite in sprites.drain(..) {
             if sprite.viewport != 0 && self.viewports.contains_key(&sprite.viewport) {
                 viewport_sprites
                     .entry(sprite.viewport)
@@ -87,7 +95,7 @@ impl Runtime {
                 elements.push((sprite.z, sprite.order, Element::Sprite(sprite)));
             }
         }
-        for plane in planes {
+        for plane in planes.drain(..) {
             if plane.viewport != 0 && self.viewports.contains_key(&plane.viewport) {
                 viewport_planes
                     .entry(plane.viewport)
@@ -103,7 +111,7 @@ impl Runtime {
             }
         }
         elements.sort_by_key(|(z, order, _)| (*z, *order));
-        for (_, _, element) in elements {
+        for (_, _, element) in elements.drain(..) {
             match element {
                 Element::Sprite(sprite) => {
                     Self::draw_sprite_into(&mut self.target, &self.bitmaps, &sprite, (0, 0));
@@ -116,6 +124,11 @@ impl Runtime {
                 }
             }
         }
+        self.software_sprites = sprites;
+        self.software_planes = planes;
+        self.software_elements = elements;
+        self.software_viewport_sprites = viewport_sprites;
+        self.software_viewport_planes = viewport_planes;
         Ok(())
     }
 
@@ -230,7 +243,8 @@ impl Runtime {
         };
         buffer.clear(Color::default());
         let offset = (viewport.rect.x - viewport.ox, viewport.rect.y - viewport.oy);
-        let mut items: Vec<(i32, i64, u64, DrawItem)> = Vec::new();
+        let mut items = std::mem::take(&mut self.software_items);
+        items.clear();
         for (i, sprite) in sprites.iter().enumerate() {
             items.push((sprite.z, sprite.y as i64, sprite.order, DrawItem::Sprite(i)));
         }
@@ -241,7 +255,7 @@ impl Runtime {
         // as a tie-breaker would push full-screen overlays (y = 0) behind
         // windows and option boxes drawn lower on the screen.
         items.sort_by_key(|(z, _y, order, _)| (*z, *order));
-        for (_, _, _, item) in items {
+        for (_, _, _, item) in items.drain(..) {
             match item {
                 DrawItem::Sprite(i) => {
                     Self::draw_sprite_into(&mut buffer, &self.bitmaps, &sprites[i], offset);
@@ -258,6 +272,7 @@ impl Runtime {
         self.viewports.insert(id, viewport);
         groups.insert(id, sprites);
         plane_groups.insert(id, planes);
+        self.software_items = items;
         Ok(())
     }
 }

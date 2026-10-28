@@ -48,6 +48,10 @@ fn on_ui_event(widget_id, _value) {
 fn on_operation_result(request_id, result) {
     if request_id == state_get("pending") {
         state_set("pending", ());
+        if result == () {
+            state_set("error", last_error());
+            return;
+        }
         state_set("patch_handle", result["patch_id"]);
     }
 }

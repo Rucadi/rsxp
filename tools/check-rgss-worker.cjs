@@ -28,6 +28,11 @@ const game = path.resolve(process.argv[2] || path.join(root, 'ericlostie'));
     buffers.push(new Uint8Array(fs.readFileSync(path.join(game, name))));
   }
   const module = await WebAssembly.compile(fs.readFileSync(path.join(dist, wasm)));
+  const gameApiRuby = fs.readFileSync(path.join(root, 'extensions/essentials-game-api/game_api.rb'), 'utf8');
+  const gameApiPatch = `{ apply: proc { ${gameApiRuby} }, revert: proc { FANPLAY.send(:remove_const, :GameAPI) if defined?(FANPLAY::GameAPI) } }`;
+  const pokedexSource = fs.readFileSync(path.join(root, 'extensions/essentials-pokedex.rhai'), 'utf8');
+  const pokedexRuby = pokedexSource.match(/\/\* fanplay:text ruby-begin\n([\s\S]*?)\nfanplay:text ruby-end \*\//)[1];
+  const pokedexPatch = `{ apply: proc { ${pokedexRuby} }, revert: proc { FANPLAY::PokedexPlugin.uninstall if defined?(FANPLAY::PokedexPlugin) } }`;
   const bootstrap = `
     import { parentPort } from 'node:worker_threads';
     import fs from 'node:fs/promises';
@@ -42,7 +47,9 @@ const game = path.resolve(process.argv[2] || path.join(root, 'ericlostie'));
     parentPort.on('message', data => globalThis.onmessage({data}));
   `;
   const worker = new Worker(new URL(`data:text/javascript,${encodeURIComponent(bootstrap)}`));
-  let beats = 0, lastBeat = performance.now(), longestGap = 0, frames = 0, audio = 0;
+  const webviewRequestId = 2 ** 40;
+  let pokedexResponse = false, highIdResponse = false;
+  let beats = 0, lastBeat = performance.now(), longestGap = 0, frames = 0, audio = 0, pluginResponses = 0, pluginErrors = [];
   const heartbeat = setInterval(() => { const now=performance.now(); longestGap=Math.max(longestGap,now-lastBeat); lastBeat=now; beats++; }, 10);
   const timeout = setTimeout(() => { worker.terminate(); throw new Error('RGSS worker smoke timed out'); }, 90000);
   await new Promise((resolve, reject) => {
@@ -50,14 +57,47 @@ const game = path.resolve(process.argv[2] || path.join(root, 'ericlostie'));
     worker.on('message', message => {
       if (message.type === 'error') reject(new Error(message.message));
       if (message.type === 'audio') audio++;
+      if (message.type === 'plugin_response') {
+        pluginResponses++;
+        const response = JSON.parse(message.response);
+        if (response.error) pluginErrors.push(response.error.message);
+        if (response.request_id === 2 && !response.error) {
+          worker.postMessage({type:'plugin_request', request_id:3, generation:0,
+            operation:'essentials-pokedex.__ruby.inject',
+            arguments:{name:'worker-pokedex', source:pokedexPatch}});
+        }
+        if (response.request_id === 3 && !response.error) {
+          worker.postMessage({type:'plugin_request', request_id:4, generation:0,
+            operation:'essentials-pokedex.pokemon_essentials_pokedex', arguments:[]});
+        }
+        if (response.request_id === 4 && !response.error) {
+          pokedexResponse = true;
+          // Webview requests use a high but Number-safe ID. If this comes back
+          // unchanged, the JSON/Number/BigInt boundary preserved the key that
+          // the window-side webview bridge uses to resolve its Promise.
+          worker.postMessage({type:'plugin_request', request_id:webviewRequestId, generation:0,
+            operation:'essentials-pokedex.pokemon_essentials_pokedex', arguments:[]});
+        }
+        if (response.request_id === webviewRequestId) {
+          highIdResponse = true;
+          if (frames >= 20) resolve();
+        }
+      }
       if (message.type === 'frame') {
         frames++;
         assert(message.pixels instanceof Uint8Array);
         assert.equal(message.pixels.length, message.width * message.height * 4);
         worker.postMessage({type:'frame_ack'});
-        if (frames >= 20) resolve();
+        if (frames >= 20 && highIdResponse) resolve();
       }
-      if (message.type === 'ready') worker.postMessage({type:'control', paused:false, fast:false, rate:null, events:[], positions:[0,0,0,0], volumes:[100,100,100,100]});
+      if (message.type === 'ready') {
+        worker.postMessage({type:'control', paused:false, fast:false, rate:null, events:[], positions:[0,0,0,0], volumes:[100,100,100,100]});
+        // Exercise the u64 -> BigInt wasm-bindgen boundary used by dashboard
+        // plugin activation. Number arguments throw before Ruby sees a request.
+        worker.postMessage({type:'plugin_request', request_id:2, generation:0,
+          operation:'essentials-game-api.__ruby.inject',
+          arguments:{name:'worker-game-api', source:gameApiPatch}});
+      }
     });
     worker.postMessage({type:'load', module, entry:'data/scripts.rxdata', label:'Pokemon Anil', paths, buffers,
       bindings:url(path.join(dist, bindings)), rubyWasm:url(path.join(dist,'ruby.wasm')),
@@ -66,5 +106,9 @@ const game = path.resolve(process.argv[2] || path.join(root, 'ericlostie'));
   }).finally(async () => {clearInterval(heartbeat);clearTimeout(timeout);await worker.terminate();});
   assert(beats > 20, 'window thread heartbeat did not run');
   assert(longestGap < 250, `window thread blocked for ${longestGap.toFixed(1)} ms`);
-  console.log(JSON.stringify({frames, audio_messages:audio, window_heartbeats:beats, longest_window_gap_ms:longestGap},null,2));
+  assert(pluginResponses > 0, 'plugin request did not receive a response');
+  assert(pokedexResponse, 'Pokedex plugin request did not receive a successful response');
+  assert(highIdResponse, 'Number-safe webview request ID did not round-trip');
+  assert.deepEqual(pluginErrors, [], `plugin request failed: ${pluginErrors.join('; ')}`);
+  console.log(JSON.stringify({frames, audio_messages:audio, plugin_responses:pluginResponses, window_heartbeats:beats, longest_window_gap_ms:longestGap},null,2));
 })().catch(error => {console.error(error);process.exitCode=1;});

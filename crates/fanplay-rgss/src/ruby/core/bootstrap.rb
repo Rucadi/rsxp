@@ -141,7 +141,24 @@ module FANPLAY
   ERROR_OUTPUT = STDERR.method(:write)
   ERROR_FORMAT = Exception.instance_method(:full_message)
   SYNC_QUEUE = []
+  NATIVE_USAGE_ENABLED = ENV['FANPLAY_WEB'] == '1' && ENV['FANPLAY_NATIVE_DIAGNOSTICS'] == '1'
+  # Browser-only diagnostics keep a set of native operations that have
+  # actually crossed the bridge. Define the disabled path as a true no-op so
+  # the normal web build pays only a method dispatch, not a branch or hash
+  # allocation, on every sprite/bitmap call.
+  if NATIVE_USAGE_ENABLED
+    NATIVE_USAGE = {}
+    def self.mark_native_usage(operation)
+      operation = operation.to_s unless operation.is_a?(String)
+      NATIVE_USAGE[operation] = true unless NATIVE_USAGE.key?(operation)
+    end
+  else
+    NATIVE_USAGE = nil
+    def self.mark_native_usage(_operation)
+    end
+  end
   def self.call(op, *args, payload: ''.b)
+    mark_native_usage(op)
     flush_sync unless op == 'sync_batch'
     result = __fanplay_native(([op, *args].join("\t") + "\n").b + payload.b)
     raise FANPLAYStop if result.nil?
@@ -151,6 +168,7 @@ module FANPLAY
   # adjacent snapshots to avoid crossing the Ruby bridge once per object.
   def self.flush_sync
     return if SYNC_QUEUE.empty?
+    mark_native_usage('sync_batch')
     payload = SYNC_QUEUE.join("\x1e").b
     SYNC_QUEUE.clear
     result = __fanplay_native("sync_batch\n".b + payload)
@@ -172,6 +190,7 @@ module FANPLAY
   def self.sync(object, op, *values)
     return if object.instance_variable_get(:@__native_state)==values
     SYNC_QUEUE << ([op, object.__id, *values].join("\t").b)
+    mark_native_usage(op)
     object.instance_variable_set(:@__native_state,values)
   end
   def self.channel(value) = [[Float(value).to_i, 0].max, 255].min
@@ -341,6 +360,7 @@ module FANPLAY
     patch_plugin_manager
     install_native_tilemap
     install_legacy_byte_reader
+    native_bindings_report if respond_to?(:native_bindings_report)
   end
   # Essentials' Ruby 1.8 StringInput implements each_byte by yielding getc.
   # Restore getc's byte-number contract for that reader without changing the

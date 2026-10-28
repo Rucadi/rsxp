@@ -28,6 +28,7 @@
 //! shuttle the same protocol across the session boundary. [`end_session`] fails
 //! any in-flight requests when the selected game ends, so they are never
 //! replayed into another game.
+use serde_json::Value;
 use std::sync::{atomic::AtomicBool, Arc};
 use std::{
     collections::{HashMap, HashSet},
@@ -86,6 +87,7 @@ pub struct ExtensionRoute {
 
 static EXTENSION_ROUTES: OnceLock<Mutex<Vec<ExtensionRoute>>> = OnceLock::new();
 static EXTENSION_OPERATIONS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+static EXTENSION_OPERATION_OWNERS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 
 /// Registers route patterns and operation names exposed by the active Rhai
 /// extensions. Re-registering a route replaces its previous definition so a
@@ -120,6 +122,36 @@ where
             }
         }
     }
+}
+
+/// Registers the owner of each route operation for the browser RGSS worker.
+/// The desktop HTTP bridge deliberately uses short operation names, whereas
+/// the worker's positional Ruby adapter requires extension.operation.
+pub fn register_extension_operation_owners<I>(owners: I)
+where
+    I: IntoIterator<Item = (String, String)>,
+{
+    let store = EXTENSION_OPERATION_OWNERS.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(mut registered) = store.lock() {
+        registered.clear();
+        registered.extend(owners);
+    }
+}
+
+/// Qualifies a route operation for the RGSS worker without changing the
+/// desktop HTTP/API contract. Already-qualified host operations are preserved.
+pub fn operation_for_rgss_worker(operation: &str) -> String {
+    if operation.contains('.') {
+        return operation.to_owned();
+    }
+    EXTENSION_OPERATION_OWNERS
+        .get()
+        .and_then(|owners| owners.lock().ok())
+        .and_then(|owners| owners.get(operation).cloned())
+        .map_or_else(
+            || operation.to_owned(),
+            |owner| format!("{owner}.{operation}"),
+        )
 }
 
 /// Snapshot of the route aliases currently supplied by loaded extensions.
@@ -161,19 +193,28 @@ pub fn extension_routes_json() -> String {
 }
 
 pub fn route_http(method: &str, target: &str) -> Result<(String, Vec<String>), (u16, String)> {
-    route_extension(method, target)
+    route_extension(method, target, "")
 }
 
-fn route_extension(method: &str, target: &str) -> Result<(String, Vec<String>), (u16, String)> {
+/// Routes an in-game webview request without opening a socket. The browser
+/// bridge carries POST bodies here as either JSON or URL-encoded form data;
+/// query/path values remain compatible with the desktop HTTP transport.
+pub fn route_http_with_body(
+    method: &str,
+    target: &str,
+    body: &str,
+) -> Result<(String, Vec<String>), (u16, String)> {
+    route_extension(method, target, body)
+}
+
+fn route_extension(
+    method: &str,
+    target: &str,
+    body: &str,
+) -> Result<(String, Vec<String>), (u16, String)> {
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
-    let query = query
-        .split('&')
-        .filter(|pair| !pair.is_empty())
-        .filter_map(|pair| {
-            let (key, value) = pair.split_once('=')?;
-            Some((url_decode(key)?, url_decode(value)?))
-        })
-        .collect::<HashMap<_, _>>();
+    let query = parse_parameters(query);
+    let body = parse_body_parameters(body);
     let routes = EXTENSION_ROUTES
         .get()
         .and_then(|routes| routes.lock().ok())
@@ -193,6 +234,7 @@ fn route_extension(method: &str, target: &str) -> Result<(String, Vec<String>), 
                 path_values
                     .get(name)
                     .or_else(|| query.get(name))
+                    .or_else(|| body.get(name))
                     .cloned()
                     .unwrap_or_default()
             })
@@ -204,6 +246,40 @@ fn route_extension(method: &str, target: &str) -> Result<(String, Vec<String>), 
     } else {
         Err((404, "unknown API path".into()))
     }
+}
+
+fn parse_parameters(value: &str) -> HashMap<String, String> {
+    value
+        .split('&')
+        .filter(|pair| !pair.is_empty())
+        .filter_map(|pair| {
+            let (key, value) = pair.split_once('=')?;
+            Some((url_decode(key)?, url_decode(value)?))
+        })
+        .collect()
+}
+
+fn parse_body_parameters(body: &str) -> HashMap<String, String> {
+    let body = body.trim();
+    if body.is_empty() {
+        return HashMap::new();
+    }
+    if body.starts_with('{') {
+        if let Ok(Value::Object(values)) = serde_json::from_str::<Value>(body) {
+            return values
+                .into_iter()
+                .map(|(key, value)| {
+                    let value = match value {
+                        Value::Null => String::new(),
+                        Value::String(value) => value,
+                        value => value.to_string(),
+                    };
+                    (key, value)
+                })
+                .collect();
+        }
+    }
+    parse_parameters(body)
 }
 
 fn match_route_path(template: &str, path: &str) -> Option<HashMap<String, String>> {
@@ -258,6 +334,21 @@ pub fn send_from_ui(method: &str, args: Vec<String>) -> Result<u64, String> {
     if !is_supported_operation(method) {
         return Err("unknown game API operation".into());
     }
+    send_from_ui_internal(method, args)
+}
+
+/// Queues a request from the browser RGSS worker.
+///
+/// The browser window has already validated the operation against the loaded
+/// extension declarations. The worker has a separate WASM instance, though,
+/// so it cannot see the window's route registry; applying the registry check a
+/// second time would reject every extension operation before Ruby can handle
+/// it. Keep this entry point private to the web transport's worker adapter.
+pub fn send_from_ui_worker(method: &str, args: Vec<String>) -> Result<u64, String> {
+    send_from_ui_internal(method, args)
+}
+
+fn send_from_ui_internal(method: &str, args: Vec<String>) -> Result<u64, String> {
     initialize();
     let bridge = BRIDGE.get().ok_or("game API is unavailable")?;
     let id = bridge.next_id.fetch_add(1, Ordering::Relaxed);
@@ -529,6 +620,29 @@ mod tests {
     }
 
     #[test]
+    fn worker_route_operations_are_qualified_without_changing_http_names() {
+        register_test_extension_routes();
+        register_extension_operation_owners([(
+            "pokemon_essentials_pokedex".into(),
+            "essentials-pokedex".into(),
+        )]);
+        assert_eq!(
+            operation_for_rgss_worker("pokemon_essentials_pokedex"),
+            "essentials-pokedex.pokemon_essentials_pokedex"
+        );
+        assert_eq!(
+            operation_for_rgss_worker("essentials-pokedex.pokemon_essentials_pokedex"),
+            "essentials-pokedex.pokemon_essentials_pokedex"
+        );
+        assert_eq!(
+            route_http("GET", "/v1/pokemon-essentials/pokedex")
+                .unwrap()
+                .0,
+            "pokemon_essentials_pokedex"
+        );
+    }
+
+    #[test]
     fn inventory_and_registry_routes_validate_mutations() {
         register_test_extension_routes();
         assert_eq!(
@@ -554,6 +668,18 @@ mod tests {
             .unwrap()
             .1,
             vec!["TM99", "0"]
+        );
+        assert_eq!(
+            route_http_with_body(
+                "POST",
+                "/v1/pokemon-essentials/inventory/add",
+                r#"{"item":"TM99","quantity":3}"#,
+            )
+            .unwrap(),
+            (
+                "pokemon_essentials_add_item".to_string(),
+                vec!["TM99".into(), "3".into()]
+            )
         );
     }
 

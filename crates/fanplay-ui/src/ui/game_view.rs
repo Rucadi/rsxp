@@ -34,16 +34,18 @@ impl Workspace {
         &mut self,
         ui: &mut egui::Ui,
         output: &mut WorkspaceOutput,
-        core_id: &str,
-        logical_size: (u32, u32),
+        info: &WorkspaceInfo,
     ) {
-        if core_id == "nds" && logical_size == (256, 384) {
+        if info.core_id == "nds" && info.logical_size == (256, 384) {
             egui::CentralPanel::default()
                 .frame(egui::Frame::new().fill(egui::Color32::BLACK))
                 .show(ui, |ui| {
                     (output.game_rect, output.touch_rect) =
                         self.ds_layout
                             .paint(ui, self.frame_texture, self.controls_visible);
+                    if self.show_fps_overlay() {
+                        paint_fps_overlay(ui, output.game_rect, info.fps);
+                    }
                 });
             return;
         }
@@ -81,7 +83,7 @@ impl Workspace {
                 .show(&context, |ui| {
                     let (rect, _) =
                         ui.allocate_exact_size(ui.available_size(), egui::Sense::hover());
-                    let game_rect = aspect_rect(rect, logical_size);
+                    let game_rect = aspect_rect(rect, info.logical_size);
                     output.game_rect = game_rect;
                     self.paint_game(ui, game_rect);
                 });
@@ -92,13 +94,47 @@ impl Workspace {
                     // Always preserve the core's native aspect ratio. The native
                     // frontend may resize the window to this ratio while the UI
                     // is hidden; it never stretches the framebuffer.
-                    let game_rect = aspect_rect(ui.max_rect(), logical_size);
+                    let game_rect = aspect_rect(ui.max_rect(), info.logical_size);
                     self.paint_game(ui, game_rect);
+                    if self.show_fps_overlay() {
+                        paint_fps_overlay(ui, game_rect, info.fps);
+                    }
                     game_rect
                 })
                 .inner;
         }
     }
+
+    fn show_fps_overlay(&self) -> bool {
+        !self.controls_visible || self.is_workspace_fullscreen()
+    }
+}
+
+fn paint_fps_overlay(ui: &egui::Ui, game_rect: egui::Rect, fps: f64) {
+    if !fps.is_finite() || fps <= 0.0 || game_rect.width() < 70.0 || game_rect.height() < 28.0 {
+        return;
+    }
+    let badge =
+        egui::Rect::from_min_size(game_rect.min + egui::vec2(8.0, 8.0), egui::vec2(78.0, 24.0));
+    let painter = ui.painter();
+    painter.rect_filled(
+        badge,
+        egui::CornerRadius::same(5),
+        egui::Color32::from_black_alpha(190),
+    );
+    painter.rect_stroke(
+        badge,
+        egui::CornerRadius::same(5),
+        egui::Stroke::new(1.0, theme::CYAN.gamma_multiply(0.8)),
+        egui::StrokeKind::Inside,
+    );
+    painter.text(
+        badge.center(),
+        egui::Align2::CENTER_CENTER,
+        format!("{:.1} FPS", fps),
+        theme::mono_font(11.0),
+        theme::LIME,
+    );
 }
 
 /// Fits the native framebuffer inside its available region without changing

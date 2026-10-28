@@ -33,6 +33,9 @@ fn on_ui_event(widget_id, value) {
 
 fn on_operation_result(_request_id, result) {
     state_set("pending", ());
+    if result == () {
+        return;
+    }
     if result["debug"] != () {
         state_set("debug", result["debug"]);
     }

@@ -1886,6 +1886,7 @@ name = "fanplay-web"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "bytemuck",
  "eframe",
  "egui",
  "fanplay-core",

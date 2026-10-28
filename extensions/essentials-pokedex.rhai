@@ -698,6 +698,10 @@ fn on_ui_event(widget_id, _value) {
 fn on_operation_result(request_id, result) {
     if request_id == state_get("pending") {
         state_set("pending", ());
+        if result == () {
+            state_set("error", last_error());
+            return;
+        }
         state_set("patch_handle", result["patch_id"]);
     }
 }
@@ -796,10 +800,10 @@ module FANPLAY
           'form' => api.read(record, :form) || 0, 'form_name' => api.read(record, :form_name),
           'types' => Array(api.read(record, :types) || [api.read(record, :type1), api.read(record, :type2)]).compact.uniq.map(&:to_s),
           'source' => obtainable[id], 'map_count' => locations[id].map { |row| row['map_id'] }.uniq.length }
-        # List rows only need a compact icon. Full battler sheets stay on the
-        # detail request so the index response cannot balloon with every
-        # species' animation frames.
-        row['sprite'] = sprite_data(id, row, :icon)
+        # Keep the index request bounded: resolving an icon asks the legacy
+        # game helpers to probe several VFS naming conventions. Doing that for
+        # every species blocks the Ruby game thread, so artwork is resolved by
+        # the detail request instead of making the list wait on every sprite.
         row
       end
       @dex = { 'records' => by_id, 'locations' => locations,
@@ -1018,7 +1022,7 @@ module FANPLAY
       locations.each_key { |species| obtainable[species] = 'Wild encounters' if records[species] }
       api.legacy_party_species_ids.each { |species| obtainable[species] ||= 'In your party' if records[species] }
       @legacy_dex = { 'records' => records.each_with_object({}) { |(species, record), out| out[record['key']] = record }, 'locations' => locations,
-        'index' => { 'species' => records.values.map { |record| species = record['id']; row = { 'id' => record['key'], 'name' => record['name'], 'number' => species, 'form' => 0, 'form_name' => nil, 'types' => record['types'], 'source' => obtainable[species], 'map_count' => locations[species].map { |row| row['map_id'] }.uniq.length }; row['sprite'] = sprite_data(record['key'], row, :icon); row }, 'note' => 'Known sources include wild encounters and your party.' } }
+        'index' => { 'species' => records.values.map { |record| species = record['id']; { 'id' => record['key'], 'name' => record['name'], 'number' => species, 'form' => 0, 'form_name' => nil, 'types' => record['types'], 'source' => obtainable[species], 'map_count' => locations[species].map { |row| row['map_id'] }.uniq.length } }, 'note' => 'Known sources include wild encounters and your party.' } }
       @legacy_dex['index']
     end
 

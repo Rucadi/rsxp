@@ -47,6 +47,12 @@
         HOME: "/",
         USER: "fanplay",
         LANG: "en_US.UTF-8",
+        FANPLAY_WEB: "1",
+        FANPLAY_NATIVE_DIAGNOSTICS:
+          globalThis.FANPLAY_NATIVE_DIAGNOSTICS === "1" ? "1" : "0",
+        FANPLAY_NATIVE_STATE: "1",
+        FANPLAY_NATIVE_TILEMAP: "1",
+        FANPLAY_SPRITE_SYNC: "native",
         RUBY_FIBER_VM_STACK_SIZE: String(64 * 1024 * 1024),
         RUBY_FIBER_MACHINE_STACK_SIZE: String(16 * 1024 * 1024),
         RUBY_THREAD_VM_STACK_SIZE: String(64 * 1024 * 1024),
@@ -55,6 +61,19 @@
     });
     vm = loaded.vm;
     vm.eval('require "/bundle/setup"');
+    // web_bridge.rb calls this after the RGSS Ruby shim and the static
+    // fanplay_native extension have installed their bindings. Keeping the
+    // signal on the worker makes it visible to the UI without touching the
+    // game/engine bridge protocol.
+    globalThis.__fanplay_native_bindings_loaded = function (status) {
+      console.info(String(status));
+      if (typeof globalThis.__fanplay_worker_output === "function") {
+        globalThis.__fanplay_worker_output({
+          type: "native_bindings",
+          status: String(status),
+        });
+      }
+    };
     ready = true;
     if (pendingStart) {
       beginGame(pendingStart);
@@ -106,10 +125,20 @@
       "ENV['FANPLAY_SCRIPTS']=" + rubyLiteral(config.scripts) + ";" +
       "ENV['FANPLAY_GAME_TITLE']=" + rubyLiteral(config.title) + ";" +
       "ENV['FANPLAY_WEB']='1';" +
+      "ENV['FANPLAY_NATIVE_DIAGNOSTICS']=" +
+        rubyLiteral(globalThis.FANPLAY_NATIVE_DIAGNOSTICS || "0") +
+        ";" +
       "ENV['FANPLAY_NATIVE_STATE']='1';" +
       "ENV['FANPLAY_NATIVE_TILEMAP']='1';" +
       "ENV['FANPLAY_SPRITE_SYNC']='native';";
     ruby.eval(env);
+    const initialSave = globalThis.__fanplay_initial_save;
+    // Seed the VFS before the RGSS fiber starts. SaveData checks the path while
+    // booting the title scene, so importing after the first resume is too late.
+    if (initialSave && initialSave.length) {
+      fanplay_ruby_import_save(initialSave);
+      globalThis.__fanplay_initial_save = null;
+    }
     ruby.eval(
       "$fanplay_fiber=Fiber.new{eval(" +
         rubyLiteral(config.source) +
@@ -136,6 +165,22 @@
 
   globalThis.fanplay_ruby_step = function () {
     return resumeGame();
+  };
+
+  globalThis.fanplay_ruby_import_save = function (bytes) {
+    const array = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
+    let binary = "";
+    for (let index = 0; index < array.length; index++) {
+      binary += String.fromCharCode(array[index]);
+    }
+    const encoded = btoa(binary);
+    return requireVm().eval(
+      "FANPLAY.__fanplay_import_save(" + rubyLiteral(encoded) + ")"
+    );
+  };
+
+  globalThis.fanplay_ruby_export_save = function () {
+    return requireVm().eval("FANPLAY.__fanplay_export_save");
   };
 
   globalThis.fanplay_ruby_eval = function (source) {

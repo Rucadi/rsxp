@@ -249,6 +249,16 @@ pub struct Runtime {
     brightness: u8,
     target: Bitmap,
 
+    // Reusable software-compositor scratch storage. The browser build uses
+    // the CPU renderer, so allocating these collections on every
+    // Graphics.update was visible even when the scene itself was unchanged.
+    software_sprites: Vec<RuntimeSprite>,
+    software_planes: Vec<RuntimePlane>,
+    software_elements: Vec<(i32, u64, Element)>,
+    software_viewport_sprites: HashMap<u64, Vec<RuntimeSprite>>,
+    software_viewport_planes: HashMap<u64, Vec<RuntimePlane>>,
+    software_items: Vec<(i32, i64, u64, DrawItem)>,
+
     // Native resources. Ruby wrappers keep IDs, never references into these maps.
     bitmaps: HashMap<u64, Bitmap>,
     font_cache: HashMap<String, Option<Arc<Vec<u8>>>>,
@@ -416,6 +426,12 @@ impl Runtime {
             transitioning: None,
             brightness: 255,
             target,
+            software_sprites: Vec::new(),
+            software_planes: Vec::new(),
+            software_elements: Vec::new(),
+            software_viewport_sprites: HashMap::new(),
+            software_viewport_planes: HashMap::new(),
+            software_items: Vec::new(),
             bitmaps: HashMap::new(),
             sprites: HashMap::new(),
             map_cameras: HashMap::new(),

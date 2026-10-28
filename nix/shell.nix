@@ -3,6 +3,16 @@
 let
   inherit (pkgs) lib;
   isLinux = pkgs.stdenv.hostPlatform.isLinux;
+  rustcBase = pkgs.rustPlatform.rust.rustc;
+  rustSysroot = pkgs.runCommand "fanplay-rust-sysroot" {} ''
+    mkdir -p $out/lib/rustlib
+    for path in ${rustcBase.unwrapped}/lib/rustlib/*; do
+      ln -s "$path" "$out/lib/rustlib/$(basename "$path")"
+    done
+    mkdir -p $out/lib/rustlib/src/rust
+    ln -s ${pkgs.rustPlatform.rustLibSrc} $out/lib/rustlib/src/rust/library
+  '';
+  rustcWithSources = rustcBase.override { sysroot = rustSysroot; };
   runtimeLibraries = lib.optionals isLinux (
     with pkgs;
     [
@@ -22,7 +32,8 @@ pkgs.mkShell {
     [
       cargo
       curl
-      rustc
+      unzip
+      rustcWithSources
       rustfmt
       clippy
       lld

@@ -1,20 +1,27 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! The RGSS-only embedded MRI runtime and its native engine bindings.
 //!
-//! Magnus is an implementation detail of this crate. Desktop code interacts
-//! through [`RubyCore`].
+//! Native builds use Magnus to embed MRI. The browser build keeps the Rust
+//! bindings and engine in WASM and delegates CRuby execution to ruby.wasm.
 
+#[cfg(all(target_os = "wasi", feature = "ruby"))]
+use magnus::Ruby;
+#[cfg(not(target_arch = "wasm32"))]
 use magnus::{embed::Cleanup, function, Ruby, Value};
 
+#[cfg(any(not(target_arch = "wasm32"), all(target_os = "wasi", feature = "ruby")))]
 mod bindings;
+#[cfg(not(target_arch = "wasm32"))]
 mod bridge;
 
+#[cfg(not(target_arch = "wasm32"))]
 /// An initialized MRI VM with all RGSS native bindings and scripts installed.
 pub struct RubyCore {
     ruby: Cleanup,
     startup_status: Option<Result<i64, String>>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl RubyCore {
     /// Create an RGSS VM, install bindings, then evaluate the embedded RGSS core.
     pub fn new() -> Result<Self, String> {
@@ -32,9 +39,6 @@ impl RubyCore {
         // concurrent Ruby VMs; the desktop runner and RGSS core both do this on
         // their dedicated game thread.
         let ruby = unsafe { magnus::embed::init() };
-        // The Windows dashboard uses stdout for framed runner IPC. Keep Ruby's
-        // normal `puts`/`print` output on stderr so game scripts cannot corrupt
-        // that byte stream; the dashboard already captures stderr as runtime logs.
         if std::env::var_os("FANPLAY_SESSION_STDIO").is_some() {
             Self::eval::<Value>(&ruby, "$stdout = $stderr", "<fanplay-session-stdio>")
                 .map_err(|error| error.to_string())?;
@@ -54,9 +58,6 @@ impl RubyCore {
     }
 
     /// Evaluate the embedded RGSS shim and, for a game bundle, run the game.
-    ///
-    /// Returns the game's exit status. Calling this twice returns the first
-    /// result without evaluating the scripts again.
     pub fn start(&mut self) -> Result<i64, String> {
         if let Some(status) = &self.startup_status {
             return status.clone();
@@ -67,7 +68,6 @@ impl RubyCore {
         status
     }
 
-    /// Result code returned by the embedded RGSS game scripts.
     pub fn startup_status(&self) -> Result<i64, String> {
         match &self.startup_status {
             Some(status) => status.clone(),
@@ -75,19 +75,16 @@ impl RubyCore {
         }
     }
 
-    /// Evaluate source in the VM. The result is discarded at this boundary.
     pub fn inject_eval(&self, source: &str, name: &str) -> Result<(), String> {
         Self::eval::<Value>(&self.ruby, source, name)
             .map(|_| ())
             .map_err(|error| error.to_string())
     }
 
-    /// Evaluate an expression and extract an integer without exposing Magnus.
     pub fn extract_i64(&self, expression: &str) -> Result<i64, String> {
         self.eval_named(expression, "<fanplay-extract>")
     }
 
-    /// Evaluate an expression and extract a UTF-8 string without exposing Magnus.
     pub fn extract_string(&self, expression: &str) -> Result<String, String> {
         self.eval_named(expression, "<fanplay-extract>")
     }
@@ -110,6 +107,7 @@ impl RubyCore {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn ruby_string_literal(value: &str) -> String {
     let mut hex = String::with_capacity(value.len() * 2);
     for byte in value.as_bytes() {
@@ -118,3 +116,21 @@ fn ruby_string_literal(value: &str) -> String {
     }
     format!("[\"{hex}\"].pack(\"H*\").force_encoding(Encoding::UTF_8)")
 }
+
+/// Entry point linked into a ruby.wasm interpreter by the companion gem.
+///
+/// This deliberately uses the same Magnus extension archive as the desktop
+/// embed, with only the browser-safe, self-contained bindings installed.
+/// `rbwasm` supplies the Ruby headers and statically links the archive; there
+/// is no second Ruby-facing extension API for the browser build.
+#[cfg(all(target_os = "wasi", feature = "ruby"))]
+#[magnus::init(name = "fanplay_native")]
+fn fanplay_native_init(ruby: &Ruby) -> Result<(), magnus::Error> {
+    bindings::bind_wasm(ruby)?;
+    Ok(())
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+mod web;
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub use web::RubyCore;

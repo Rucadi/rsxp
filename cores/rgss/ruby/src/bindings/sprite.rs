@@ -14,13 +14,16 @@
 //! is held. Arguments are read straight off the Ruby stack, and `int`/`channel`
 //! are shared with the tilemap binding. The whole conversion runs inside
 //! the RGSS native bridge.
+use super::host;
 use fanplay_rgss::{
-    engine::{self, SpriteState},
+    engine::SpriteState,
     graphics::{Color, Rect, Tone},
 };
 use magnus::{
-    function, prelude::*, value::LazyId, Error, ExceptionClass, RArray, RString, Ruby, TryConvert,
-    Value,
+    function,
+    prelude::*,
+    value::{Fixnum, LazyId},
+    Error, ExceptionClass, RArray, RString, Ruby, TryConvert, Value,
 };
 
 macro_rules! get {
@@ -37,7 +40,12 @@ pub(super) fn int(ruby: &Ruby, value: Value) -> Result<i64, Error> {
     }
 }
 fn float(ruby: &Ruby, value: Value) -> Result<f64, Error> {
-    if RString::from_value(value).is_some() {
+    // WASI has heap Float objects instead of tagged flonums. Magnus's generic
+    // conversion protects rb_num2dbl there; an already-typed Float cannot
+    // raise and can be read directly, avoiding a VM stack unwind boundary.
+    if let Some(value) = magnus::Float::from_value(value) {
+        Ok(value.to_f64())
+    } else if RString::from_value(value).is_some() {
         ruby.module_kernel().funcall("Float", (value,))
     } else {
         f64::try_convert(value)
@@ -101,7 +109,7 @@ fn sync(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
     // src x/y/w/h, x, y, ox, oy, angle, mirror, z, opacity, invert,
     // pattern blend/tile/opacity/scroll x/y/zoom x/y, color rgba, tone rgbg,
     // bush depth/opacity.
-    if args.len() != 39 {
+    if args.len() != 39 && args.len() != 48 {
         return Err(Error::new(
             ruby.exception_arg_error(),
             "invalid sprite snapshot",
@@ -115,10 +123,14 @@ fn sync(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
         } else {
             blend
         };
-        if !blend.equal(ruby.integer_from_i64(0))?
-            && !blend.equal(ruby.integer_from_i64(1))?
-            && !blend.equal(ruby.integer_from_i64(2))?
-        {
+        let supported = if let Some(value) = Fixnum::from_value(blend) {
+            (0..=2).contains(&value.to_i64())
+        } else {
+            blend.equal(ruby.integer_from_i64(0))?
+                || blend.equal(ruby.integer_from_i64(1))?
+                || blend.equal(ruby.integer_from_i64(2))?
+        };
+        if !supported {
             return Err(Error::new(
                 ruby.exception_not_imp_error(),
                 "unsupported sprite blend type",
@@ -135,42 +147,79 @@ fn sync(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
         let bitmap: Value = argument(args, 5)?;
         let viewport: Value = argument(args, 6)?;
         let pattern: Value = argument(args, 7)?;
-        let visible: bool = bool_or(argument(args, 8)?, false)?;
-        let bitmap_disposed: bool = if bitmap.to_bool() {
-            get!(bitmap, "disposed?")
-        } else {
-            false
-        };
-        let mut visible = visible && bitmap.to_bool() && !bitmap_disposed;
-        let clip = if viewport.to_bool() {
-            let viewport_visible: bool = get!(viewport, "visible");
-            let disposed: bool = get!(viewport, "disposed?");
-            visible &= viewport_visible && !disposed;
-            {
-                let rect: Value = get!(viewport, "rect");
-                rectangle(get!(rect, "to_a"))?
-            }
-        } else {
-            let graphics: Value = ruby.class_object().const_get("Graphics")?;
-            Rect::new(0, 0, get!(graphics, "width"), get!(graphics, "height"))
-        };
-        if pattern.to_bool() {
-            let disposed: bool = get!(pattern, "disposed?");
-            if disposed {
+        // The shared Ruby snapshot already resolved virtual getters. Accept
+        // those values to avoid re-entering Ruby for bitmap/viewport metadata,
+        // especially expensive across the WASI protected-call boundary.
+        let (clip, visible, bitmap_id, viewport_id, pattern_id) = if args.len() == 48 {
+            if argument::<bool>(args, 47)? {
                 let class: ExceptionClass = ruby.class_object().const_get("RGSSError")?;
                 return Err(Error::new(class, "disposed pattern Bitmap"));
             }
-        }
+            (
+                Rect::new(
+                    argument(args, 39)?,
+                    argument(args, 40)?,
+                    argument(args, 41)?,
+                    argument(args, 42)?,
+                ),
+                argument(args, 46)?,
+                argument(args, 43)?,
+                argument(args, 44)?,
+                argument(args, 45)?,
+            )
+        } else {
+            let visible: bool = bool_or(argument(args, 8)?, false)?;
+            let bitmap_disposed: bool = if bitmap.to_bool() {
+                get!(bitmap, "disposed?")
+            } else {
+                false
+            };
+            let mut visible = visible && bitmap.to_bool() && !bitmap_disposed;
+            let clip = if viewport.to_bool() {
+                let viewport_visible: bool = get!(viewport, "visible");
+                let disposed: bool = get!(viewport, "disposed?");
+                visible &= viewport_visible && !disposed;
+                {
+                    let rect: Value = get!(viewport, "rect");
+                    rectangle(get!(rect, "to_a"))?
+                }
+            } else {
+                let graphics: Value = ruby.class_object().const_get("Graphics")?;
+                Rect::new(0, 0, get!(graphics, "width"), get!(graphics, "height"))
+            };
+            if pattern.to_bool() {
+                let disposed: bool = get!(pattern, "disposed?");
+                if disposed {
+                    let class: ExceptionClass = ruby.class_object().const_get("RGSSError")?;
+                    return Err(Error::new(class, "disposed pattern Bitmap"));
+                }
+            }
+            (
+                clip,
+                visible,
+                if bitmap.to_bool() {
+                    get!(bitmap, "__id")
+                } else {
+                    0
+                },
+                if viewport.to_bool() {
+                    get!(viewport, "__id")
+                } else {
+                    0
+                },
+                if pattern.to_bool() {
+                    get!(pattern, "__id")
+                } else {
+                    0
+                },
+            )
+        };
         let state = SpriteState {
             clip,
             zoom_x,
             zoom_y,
             visible,
-            bitmap: if bitmap.to_bool() {
-                get!(bitmap, "__id")
-            } else {
-                0
-            },
+            bitmap: bitmap_id,
             src: Rect::new(
                 int_or(ruby, argument(args, 9)?, 0)? as i32,
                 int_or(ruby, argument(args, 10)?, 0)? as i32,
@@ -206,11 +255,7 @@ fn sync(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
                 .max(0)
                 .min(i64::from(i32::MAX)) as i32,
             bush_opacity: channel_or(ruby, argument(args, 38)?, 128)?,
-            pattern: if pattern.to_bool() {
-                get!(pattern, "__id")
-            } else {
-                0
-            },
+            pattern: pattern_id,
             pattern_blend: i32::try_convert(
                 ruby.integer_from_i64(int_or(ruby, argument(args, 22)?, 0)?)
                     .as_value(),
@@ -221,23 +266,13 @@ fn sync(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
             pattern_scroll_y: int_or(ruby, argument(args, 26)?, 0)? as f64,
             pattern_zoom_x: float_or(ruby, argument(args, 27)?, 1.0)?,
             pattern_zoom_y: float_or(ruby, argument(args, 28)?, 1.0)?,
-            viewport: if viewport.to_bool() {
-                get!(viewport, "__id")
-            } else {
-                0
-            },
+            viewport: viewport_id,
         };
         // No Ruby calls while the runtime is borrowed: conversions above may
         // trigger GC and resource finalizers that reenter the command bridge.
         let world_bound = super::world::bound(id);
-        engine::with_runtime_mut(|runtime| {
-            if !world_bound {
-                runtime.clear_world_tile(id);
-            }
-            runtime.sync_sprite(id, state)
-        })
-        .unwrap_or_else(|| Err("runtime is closed".into()))
-        .map_err(|message| Error::new(ruby.exception_runtime_error(), message))
+        host::sync_sprite(id, state, world_bound)
+            .map_err(|message| Error::new(ruby.exception_runtime_error(), message))
     }
 }
 pub(super) fn bind(ruby: &Ruby) -> Result<(), Error> {

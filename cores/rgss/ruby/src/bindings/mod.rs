@@ -22,6 +22,7 @@
 use magnus::{Error, Ruby};
 
 mod audio;
+mod host;
 mod retained;
 mod retained_map;
 mod scroll;
@@ -46,4 +47,11 @@ pub(crate) fn bind(ruby: &Ruby) -> Result<(), Error> {
     retained::bind(ruby)?;
     retained_map::bind(ruby)?;
     win32::bind(ruby)
+}
+
+/// Install the same bindings in WASI; host updates cross the browser bridge.
+#[cfg(target_os = "wasi")]
+pub(crate) fn bind_wasm(ruby: &Ruby) -> Result<(), Error> {
+    bind(ruby)?;
+    host::bind(ruby)
 }

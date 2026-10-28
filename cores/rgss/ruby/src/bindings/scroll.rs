@@ -20,7 +20,8 @@
 //! against the fresh position instead of the pre-scroll one. All Ruby work
 //! completes before the engine borrow; overflow is reported as `RangeError` and
 //! unsupported pools return `false` so the game keeps its Ruby fallback.
-use fanplay_rgss::engine::{self, SpriteMotion};
+use super::host;
+use fanplay_rgss::engine::SpriteMotion;
 use magnus::{
     function,
     prelude::*,
@@ -159,7 +160,7 @@ fn scroll(ruby: &Ruby, args: &[Value]) -> Result<bool, Error> {
     }
     // All Ruby work finishes before taking an engine borrow. Dirty snapshots
     // (newly exposed or animated tiles) later resolve against these new ivars.
-    engine::with_runtime_mut(|runtime| runtime.move_sprites(&motions));
+    host::move_sprites(motions);
     Ok(true)
 }
 // RGSS1's priority z includes the pixel camera y (unlike Essentials v21).
@@ -209,7 +210,7 @@ fn scroll_rgss(tiles: RArray, dx: i64, dy: i64) -> Result<bool, Error> {
         set!(tile, "@z", motion.z.unwrap());
         patch_snapshot(tile, Some((x as i64, y as i64)), motion.z)?;
     }
-    engine::with_runtime_mut(|runtime| runtime.move_sprites(&motions));
+    host::move_sprites(motions);
     Ok(true)
 }
 pub(super) fn bind(ruby: &Ruby) -> Result<(), Error> {

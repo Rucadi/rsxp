@@ -13,8 +13,9 @@
 //! `engine::with_runtime_mut` call applies the updates; the whole call runs under
 //! the native `tilemap_sync_native` bridge. Returns
 //! `false` (game fallback) on any unsupported sprite.
+use super::host;
 use fanplay_rgss::{
-    engine::{self, NativeTileUpdate},
+    engine::NativeTileUpdate,
     graphics::{Color, Rect, Tone},
 };
 use magnus::{function, prelude::*, Error, RArray, RModule, RObject, Ruby, TryConvert, Value};
@@ -131,7 +132,7 @@ fn apply(
         }
         // All Ruby reads, allocations and dependency callbacks finish before
         // borrowing the runtime; finalizers may safely reenter the engine.
-        engine::with_runtime_mut(|runtime| runtime.update_native_tiles(&updates, &hidden));
+        host::update_native_tiles(updates, hidden);
         Ok(true)
     }
 }

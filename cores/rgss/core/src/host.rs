@@ -14,11 +14,13 @@ pub(crate) const GPU_PACKET_KIND: &str = "rgss-gpu-v1";
 
 pub(crate) struct CoreHost {
     context: CoreContext,
+    #[cfg(not(target_arch = "wasm32"))]
     gpu: Option<fanplay_rgss::gpu::GpuRenderer>,
     events: Vec<InputEvent>,
 }
 
 impl CoreHost {
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn new(context: CoreContext, width: u32, height: u32) -> Result<Self, String> {
         let renderer = std::env::var("FANPLAY_RENDERER").unwrap_or_else(|_| "auto".into());
         let gpu = if renderer == "software" {
@@ -43,6 +45,14 @@ impl CoreHost {
         Ok(Self {
             context,
             gpu,
+            events: Vec::with_capacity(32),
+        })
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn new(context: CoreContext, _width: u32, _height: u32) -> Result<Self, String> {
+        Ok(Self {
+            context,
             events: Vec::with_capacity(32),
         })
     }
@@ -75,10 +85,12 @@ impl Host for CoreHost {
         Some(self)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn gpu(&mut self) -> Option<&mut fanplay_rgss::gpu::GpuRenderer> {
         self.gpu.as_mut()
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn present_gpu(&mut self) -> Result<(), String> {
         let gpu = self
             .gpu

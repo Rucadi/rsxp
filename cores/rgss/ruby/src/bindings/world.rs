@@ -19,10 +19,8 @@
 //! invalidates it so the next camera update rebuilds placements. `bound`/`forget`
 //! expose this state to `sprite.rs` and `retained.rs`. State is read fresh per
 //! call; `MapCamera`/`WorldTile` come from `fanplay_rgss::engine::world_map`.
-use fanplay_rgss::engine::{
-    self,
-    world_map::{MapCamera, WorldTile},
-};
+use super::host;
+use fanplay_rgss::engine::world_map::{MapCamera, WorldTile};
 use magnus::{
     function, method,
     prelude::*,
@@ -76,7 +74,7 @@ pub(super) fn forget(id: u64) {
         }
     });
     if let Some(group) = empty_group {
-        engine::with_runtime_mut(|runtime| runtime.clear_map_camera(group));
+        host::clear_map_camera(group);
     }
 }
 
@@ -111,7 +109,7 @@ pub(super) fn detach(object: RObject, internal: bool) -> Result<(), Error> {
         set!(object, "@z", z);
     }
     set!(object, "@__fanplay_world_group", ());
-    engine::with_runtime_mut(|runtime| runtime.clear_world_tile(id));
+    host::clear_world_tile(id);
     Ok(())
 }
 fn coordinate(ruby: &Ruby, object: RObject, axis: u8) -> Result<Value, Error> {
@@ -290,16 +288,7 @@ fn update(ruby: &Ruby, args: &[Value]) -> Result<bool, Error> {
             world.tiles.insert(tile, placement);
         }
     });
-    engine::with_runtime_mut(|runtime| {
-        if reset {
-            runtime.clear_map_camera(id);
-        }
-        for &tile in &removed {
-            runtime.clear_world_tile(tile);
-        }
-        runtime.set_map_camera(id, camera);
-        runtime.bind_world_tiles(&placements);
-    });
+    host::update_world(id, camera, placements, removed, reset);
     Ok(true)
 }
 fn release(group: u64, tiles: RArray) -> Result<(), Error> {
@@ -313,7 +302,7 @@ fn release(group: u64, tiles: RArray) -> Result<(), Error> {
             }
         }
     });
-    engine::with_runtime_mut(|runtime| runtime.clear_map_camera(group));
+    host::clear_map_camera(group);
     Ok(())
 }
 fn metadata_changed(object: RObject) -> Result<(), Error> {

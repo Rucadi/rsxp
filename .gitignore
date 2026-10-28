@@ -13,6 +13,16 @@ JUEGO
 /build
 /builddir
 /target
+/frontends/web/dist/
+/frontends/web/ruby.wasm
+/frontends/web/ruby-wasm/.bundle/
+/frontends/web/ruby-wasm/build/
+/frontends/web/ruby-wasm/extensions/
+/frontends/web/ruby-wasm/Gemfile.lock
+/frontends/web/ruby-wasm/pkg/
+/frontends/web/ruby-wasm/rubies/
+/frontends/web/ruby-wasm/vendor/
+/frontends/web/ruby-wasm/fanplay-rgss-wasm/ext/fanplay_native/target/
 /mobile/build/
 /mobile/core/target/
 /mobile/android/.gradle/

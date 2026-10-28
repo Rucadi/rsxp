@@ -15,7 +15,7 @@
 //! position/scale/rotation matrix (origin offset, zoom, angle, mirror).
 use super::Bitmap;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Color {
     pub red: u8,
     pub green: u8,
@@ -48,7 +48,7 @@ impl Color {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Rect {
     pub x: i32,
     pub y: i32,
@@ -66,7 +66,7 @@ impl Rect {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Tone {
     pub red: i32,
     pub green: i32,

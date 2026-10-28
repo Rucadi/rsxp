@@ -28,6 +28,7 @@ mod frame;
 pub mod host;
 pub mod input;
 pub mod map_chunks;
+pub mod native_updates;
 #[cfg(feature = "gpu")]
 mod render_gpu;
 mod render_software;
@@ -80,7 +81,7 @@ pub fn with_runtime_mut<R>(f: impl FnOnce(&mut Runtime) -> R) -> Option<R> {
 
 /// Fully converted sprite snapshot. Host bindings must finish Ruby conversions
 /// before submitting this value, so GC cannot reenter a borrowed runtime.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct SpriteState {
     pub clip: Rect,
     pub bitmap: u64,
@@ -321,6 +322,7 @@ pub fn parse_scripted(value: &str) -> Result<Vec<ScriptedKey>, String> {
 }
 
 /// Validated, engine-owned RGSS1 tile properties for one bulk refresh.
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct NativeTileUpdate {
     pub id: u64,
     pub bitmap: u64,
@@ -336,6 +338,7 @@ pub struct NativeTileUpdate {
 }
 /// Geometry-only changes prepared without borrowing the engine during Ruby
 /// access or conversion. Other retained sprite properties survive.
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct SpriteMotion {
     pub id: u64,
     pub position: Option<(f64, f64)>,

@@ -12,7 +12,7 @@
 //! invalidate the retained scene, but pixel `x`/`y` scrolling does not.
 use super::Runtime;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapCamera {
     pub x: i64,
     pub y: i64,
@@ -20,7 +20,7 @@ pub struct MapCamera {
     pub source_height: i64,
     pub bridge: bool,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct WorldTile {
     pub group: u64,
     pub x: i64,

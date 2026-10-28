@@ -26,8 +26,13 @@ def forgotten_sprite
   WeakRef.new(Sprite.new)
 end
 forgotten=forgotten_sprite
+# A native call can leave its most recent VALUE in a conservative WASI stack
+# slot. Overwrite that temporary with a live resource before testing whether
+# the registry itself holds the unreachable sprite strongly.
+gc_marker=Sprite.new
 GC.start
 raise 'registry retained an unreachable sprite' if forgotten.weakref_alive?
+gc_marker.dispose
 checksums=[]
 8.times do |frame|
   sprite.pattern_scroll_x.replace('2') if frame==1

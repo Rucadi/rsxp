@@ -83,13 +83,48 @@ written by an older build cannot silently replace the embedded GBA BIOS.
 
 ## RGSS boundary
 
-RGSS is not included in the WASM target yet. Its core adapter depends on
-`fanplay-rgss-ruby`, which embeds MRI Ruby through `magnus`; that is a native
-Ruby runtime and cannot be enabled for `wasm32-unknown-unknown` by changing
-eframe or Cargo feature flags. Supporting RGSS in the browser requires a
-browser-compatible Ruby runtime/binding layer or a deliberate Rust replacement
-for the embedded Ruby execution path. The web build keeps RGSS disabled rather
-than shipping a misleading runtime that cannot load games.
+Native RGSS keeps its existing MRI/Magnus bindings. Browser RGSS uses a local
+Ruby 4.0 WASI image built with `rbwasm`, following the companion-gem pattern
+used by HyperCast. The local `fanplay-rgss-wasm` gem compiles the Rust Magnus
+extension as a static library during Ruby's WASI build, packages it into
+`/bundle/setup`, and makes it available as `require "fanplay_native"` inside
+Ruby. This keeps the same Ruby extension surface across desktop and browser.
+
+The browser image installs the same Magnus bindings as desktop: Audio, Table,
+sprite conversion, bulk scrolling, RGSS tile plans, world camera placement,
+retained dirty/dependency tracking, retained map/chunk caches and Win32API.
+The portable Win32 compatibility layer handles supported calls off Windows.
+Table storage, Ruby property updates and native caches live beside Ruby.
+Converted rendering updates are batched into the shared `native_updates`
+protocol before the next engine query, frame or resource disposal; the outer
+Rust/WASM instance owns the actual rendering state. This avoids maintaining an
+inactive engine inside the interpreter. Native Audio calls use the same web
+bridge and the browser AudioSink decodes streams with HTMLAudioElement.
+
+The frontend respects RGSS1's native 40 Hz default. Catch-up credit is capped
+at two frames, and the host stops starting extra frames after 8 ms of game
+work per repaint. A single Ruby frame remains cooperative and may exceed that
+budget, but a backlog no longer blocks the UI for 16 consecutive game frames.
+The WASI build does not provide browser threads or networking, so the browser
+path is intentionally offline and uses uploaded folders, ZIPs or RGSS
+script/archive files.
+
+Build the embedded Ruby image before building the Trunk application:
+
+```bash
+nix-shell --run 'tools/build-ruby-wasm.sh'
+nix-shell --run 'cd frontends/web && CARGO_TARGET_DIR=../../target/web-release trunk build --release --dist ../../target/trunk-dist'
+```
+
+The generated `frontends/web/ruby.wasm` and Ruby-WASM build directory are
+ignored artifacts. The build script uses `bundle install`, builds the local
+companion gem, then runs `bundle exec rbwasm build --ruby-version 4.0`; it
+does not depend on a CDN Ruby image at runtime.
+
+The build passes `--remake` because rbwasm's gem cache does not track the Rust
+sources outside the companion gem. This reruns extconf/Cargo and relinks the
+interpreter with current bindings instead of silently retaining an older
+`Audio.bgm_play` that dispatches into the interpreter's inactive engine.
 
 ## Verification
 
@@ -98,7 +133,8 @@ Run all commands from the repository's Nix shell:
 ```bash
 nix-shell --run 'NO_COLOR=false cargo check -p fanplay-web --target wasm32-unknown-unknown'
 nix-shell --run 'cargo fmt --all -- --check'
-nix-shell --run 'cd frontends/web && NO_COLOR=false trunk build --release --dist ../../target/trunk-dist'
+nix-shell --run 'tools/build-ruby-wasm.sh'
+nix-shell --run 'cd frontends/web && CARGO_TARGET_DIR=../../target/web-release NO_COLOR=false trunk build --release --dist ../../target/trunk-dist'
 nix-shell --run 'cd frontends/web && NO_COLOR=false trunk serve --release=true'
 ```
 
@@ -106,4 +142,55 @@ The last command serves `frontends/web/index.html`; Trunk discovers the
 `fanplay-web` package from that directory. Running Trunk from the workspace
 root with the HTML path makes it search for a package root and produces the
 `could not find the root package of the target crate` error.
+
+To check the built interpreter's bindings and audio bridge under Node, install
+the same ruby.wasm adapter used by the HTML loader into an ignored directory:
+
+```bash
+nix-shell --run 'npm install --prefix target/ruby-wasm/check --no-save @ruby/wasm-wasi@2.10.1'
+nix-shell --run 'NODE_PATH="$PWD/target/ruby-wasm/check/node_modules" node tools/check-ruby-wasm.cjs'
+```
+
+An optional game directory argument (for example `ericlostie`) also executes
+Pokémon Añil's own `Game_System#bgm_play_internal2` from `Data/Scripts.rxdata`,
+including its five-argument `Audio.bgm_play` call. The check verifies the actual
+WASI interpreter and serialized requests; browser decoding/playback still
+requires a browser run.
+
+For native-binding rendering parity and synchronization measurements, build
+the small headless WASM engine (the same dispatcher and renderer used by the
+browser). Use Trunk's installed wasm-bindgen executable if it is not on PATH:
+
+```bash
+nix-shell --run 'cargo build -p fanplay-rgss --example web-check --no-default-features --features portable-media,game-api --target wasm32-unknown-unknown --release'
+nix-shell --run 'wasm-bindgen target/wasm32-unknown-unknown/release/examples/web_check.wasm --target nodejs --out-dir target/ruby-wasm/check-engine'
+nix-shell --run 'NODE_PATH="$PWD/target/ruby-wasm/check/node_modules" node tools/benchmark-ruby-wasm.cjs'
+nix-shell --run 'NODE_PATH="$PWD/target/ruby-wasm/check/node_modules" FANPLAY_WEB_FIXTURE=crates/fanplay-rgss/testdata/rgss_web_native.rb node tools/benchmark-ruby-wasm.cjs frontends/web/ruby.wasm native'
+```
+
+The benchmark compares the portable and native paths in the same Ruby image,
+checks their final framebuffer hashes, and reports static/changing sprite
+work plus full software rendering. It excludes browser presentation and UI.
+`FANPLAY_WEB_FIXTURE` runs an existing Ruby rendering fixture through both
+paths. `FANPLAY_WEB_GAME=ericlostie FANPLAY_WEB_FRAMES=300` instead replays the
+local game through the two real WASM instances; pass `native` as the final
+argument to select just the native path. This smoke replay exercises assets
+and startup but does not validate a complete playthrough.
+
+The native-binding change was measured with 256 sprites and 80 iterations per
+workload, using three isolated runs per mode in alternating order. Medians on
+the development host (milliseconds per iteration):
+
+| Workload | Portable bindings | Native bindings |
+| --- | ---: | ---: |
+| Unchanged sprites | 2.667 | 0.048 |
+| One quarter of sprites moving | 5.641 | 4.660 |
+| Moving sprites plus update/render | 5.666 | 3.911 |
+
+Render-workload Ruby allocations fell from about 3,319 to 58 per iteration.
+All runs produced framebuffer SHA-256
+`decfcad98aa62616a86768d36dd0d0a6d036e74078927e55d4ed598c52e41d7f`.
+These are synthetic throughput measurements; timings vary with host load and
+exclude browser presentation, UI and real-game startup. Separate Añil smoke
+replays completed 1,000 Fiber resumes with nonblank frames on both paths.
 

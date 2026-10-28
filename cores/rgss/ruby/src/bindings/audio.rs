@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Magnus implementation of the RGSS Audio module for the desktop VM.
-use fanplay_rgss::engine;
-use magnus::{function, prelude::*, Error, ExceptionClass, RString, Ruby, Value};
+use magnus::{function, prelude::*, Error, RString, Ruby, Value};
 
 pub(super) fn bind(ruby: &Ruby) -> Result<(), Error> {
     let audio = ruby.define_module("Audio")?;
@@ -100,10 +99,18 @@ fn set_volume(ruby: &Ruby, value: Value) -> Result<(), Error> {
 }
 
 fn dispatch(ruby: &Ruby, request: &[u8]) -> Result<Vec<u8>, Error> {
-    match engine::native_call_bytes(request) {
+    #[cfg(target_os = "wasi")]
+    {
+        let fanplay: magnus::RModule = ruby.class_object().const_get("FANPLAY")?;
+        let response: RString =
+            fanplay.funcall("__fanplay_native", (ruby.str_from_slice(request),))?;
+        response.funcall("bytes", ())
+    }
+    #[cfg(not(target_os = "wasi"))]
+    match fanplay_rgss::engine::native_call_bytes(request) {
         Ok(Some(result)) => Ok(result),
         Ok(None) => {
-            let stop: ExceptionClass = ruby.eval("FANPLAYStop")?;
+            let stop: magnus::ExceptionClass = ruby.eval("FANPLAYStop")?;
             Err(Error::new(stop, ""))
         }
         Err(error) => Err(Error::new(ruby.exception_runtime_error(), error)),

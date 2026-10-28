@@ -67,6 +67,12 @@ impl Runtime {
         let payload = request.get(split + 1..).unwrap_or_default();
         let args: Vec<_> = header.split('\t').collect();
         match args[0] {
+            "native_updates" => {
+                let updates = super::native_updates::decode(payload)?;
+                for update in updates {
+                    update.apply(self)?;
+                }
+            }
             "api_supported" => {
                 return Ok(text(if cfg!(feature = "game-api") { "1" } else { "0" }));
             }

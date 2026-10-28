@@ -224,7 +224,8 @@ class Sprite
       if NATIVE_SYNC
         __fanplay_sprite_sync(self,__id,blend,zx,zy,bmp,vp,pat,vis,
           sx,sy,sw,sh,px,py,pox,poy,pang,pmirror,pz,pop,pinv,
-          pblend,ptile,popac,psx,psy,pzx,pzy,cr,cg,cb,ca,tr,tg,tb,tgray,bush,bush_alpha)
+          pblend,ptile,popac,psx,psy,pzx,pzy,cr,cg,cb,ca,tr,tg,tb,tgray,bush,bush_alpha,
+          clip_x,clip_y,clip_w,clip_h,bmp_id,vp_id,pat_id,shown,pat_disposed)
       else
         unless blend==0 || blend==1 || blend==2
           raise NotImplementedError, "sprite blend type #{blend} is not supported"

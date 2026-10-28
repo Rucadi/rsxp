@@ -67,11 +67,6 @@ crossPkgs.rustPlatform.buildRustPackage {
   # Dust uses nightly-only language features and is in the desktop defaults.
   RUSTC_BOOTSTRAP = "1";
 
-  # The integration suite launches the just-built executable and is exercised
-  # by the native Windows job. Keep the cross package's post-install smoke
-  # checks, but avoid running it inside Nix's restricted test sandbox.
-  doCheck = false;
-
   buildInputs = [
     crossPkgs.windows.pthreads
   ];
